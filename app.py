@@ -76,20 +76,27 @@ _tg_queue = queue.Queue()
 
 
 def load_tg_config():
-    """telegram.json ဦးစားပေး — မရှိရင် TG_TOKEN / TG_CHAT env vars (cloud hosting)"""
+    """telegram.json ဦးစားပေး — မရှိရင် TG_TOKEN / TG_CHAT env vars (cloud hosting)
+       rsi_up / rsi_down keys နဲ့ level တွေ ကိုယ်တိုင် ချိန်လို့ရ။"""
+    token = chat = ""
+    up, down = TG_RSI_UP, TG_RSI_DOWN
     try:
         with open(TG_CONFIG_FILE, encoding="utf-8") as f:
             c = json.load(f)
         token = str(c.get("token") or "").strip()
         chat = str(c.get("chat_id") or "").strip()
-        if token and chat and "PUT_YOUR" not in token and "PUT_YOUR" not in chat:
-            return (token, chat)
+        try:
+            up = float(c.get("rsi_up", TG_RSI_UP))
+            down = float(c.get("rsi_down", TG_RSI_DOWN))
+        except (TypeError, ValueError):
+            pass
     except (OSError, ValueError):
         pass
-    token = os.environ.get("TG_TOKEN", "").strip()
-    chat = os.environ.get("TG_CHAT", "").strip()
+    if not (token and chat and "PUT_YOUR" not in token and "PUT_YOUR" not in chat):
+        token = os.environ.get("TG_TOKEN", "").strip()
+        chat = os.environ.get("TG_CHAT", "").strip()
     if token and chat:
-        return (token, chat)
+        return (token, chat, up, down)
     return None
 
 
@@ -102,7 +109,7 @@ def _tg_worker():
         if not cfg:
             print("TG skip — telegram.json မှာ bot token / chat_id ဖြည့်ပါ", flush=True)
             continue
-        token, chat = cfg
+        token, chat = cfg[0], cfg[1]
         try:
             r = requests.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
@@ -725,16 +732,25 @@ def engine_loop():
 
                         analysis = analyze_all_in_one(parsed_history)
 
-                        # ---- Telegram: RSI 60/40 cross alerts (chart RSI pane values) ----
+                        # ---- Telegram: RSI cross alerts (levels from telegram.json) ----
                         r_now = analysis.get("rsi")
                         if r_now is not None:
-                            if prev_rsi is not None:
-                                crossed_up = prev_rsi < TG_RSI_UP <= r_now
-                                crossed_down = prev_rsi > TG_RSI_DOWN >= r_now
+                            cfg = load_tg_config()
+                            up_lv = cfg[2] if cfg else TG_RSI_UP
+                            dn_lv = cfg[3] if cfg else TG_RSI_DOWN
+                            if prev_rsi is None:
+                                # restart ပြီး baseline — ရှိပြီးသား zone ထဲနေရင် ချက်ချင်း အသိပေး
+                                if r_now >= up_lv:
+                                    tg_notify(f"ℹ️ RSI လက်ရှိ {up_lv:.0f} အပေါ် ရောက်နေပါသည် ({r_now:.1f}) — 60 အောက် ဆင်းပြီးမှ ပြန်တက်တာနဲ့ Noti ပို့မယ်")
+                                elif r_now <= dn_lv:
+                                    tg_notify(f"ℹ️ RSI လက်ရှိ {dn_lv:.0f} အောက် ရောက်နေပါသည် ({r_now:.1f}) — 40 အပေါ် ပြန်တက်ပြီးမှ ဆင်းတာနဲ့ Noti ပို့မယ်")
+                            elif prev_rsi is not None:
+                                crossed_up = prev_rsi < up_lv <= r_now
+                                crossed_down = prev_rsi > dn_lv >= r_now
                                 ts = time.time()
                                 if (crossed_up or crossed_down) and ts - _tg_last_ts >= TG_MIN_GAP_SEC:
                                     _tg_last_ts = ts
-                                    lvl = TG_RSI_UP if crossed_up else TG_RSI_DOWN
+                                    lvl = up_lv if crossed_up else dn_lv
                                     arrow = "⬆️" if crossed_up else "⬇️"
                                     tg_notify(
                                         f"{arrow} RSI {lvl:.0f} level ဖြတ်သွားပါသည်\n"
@@ -893,6 +909,26 @@ def api_history():
     })
 
 
+@app.route("/api/telegram-test")
+def api_telegram_test():
+    """Header 📡 button — Telegram ချိတ်ဆက်မှု ချက်ချင်း စမ်းသပ်။"""
+    cfg = load_tg_config()
+    if not cfg:
+        return jsonify({"ok": False,
+                        "error": "telegram.json မှာ token & chat_id မဖြည့်ရသေးပါ"})
+    token, chat = cfg[0], cfg[1]
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat, "text": "✅ TRX Terminal — Telegram Test OK"},
+            timeout=10)
+        if r.status_code == 200:
+            return jsonify({"ok": True})
+        return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {r.text[:100]}"})
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": str(e)[:100]})
+
+
 @app.route("/api/backtest")
 def api_backtest():
     if request.args.get("refresh") == "1":
@@ -916,7 +952,9 @@ def start_engine():
         try:
             with open(TG_CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump({"token": "PUT_YOUR_BOT_TOKEN_HERE",
-                           "chat_id": "PUT_YOUR_CHAT_ID_HERE"}, f, indent=2)
+                           "chat_id": "PUT_YOUR_CHAT_ID_HERE",
+                           "rsi_up": 60,
+                           "rsi_down": 40}, f, indent=2)
             print("📄 telegram.json created — bot token & chat_id ဖြည့်ပါ (TG RSI alerts)", flush=True)
         except OSError:
             pass
@@ -937,8 +975,10 @@ if __name__ == "__main__":
     print(f"   Entry ≥ |{SCORE_TRADE}| | Risk: Flat {BET_SIZE:,} MMK | SL {-STOP_LOSS_UNITS}u / TP +{TAKE_PROFIT_UNITS}u", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+    app.run(
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
+        threaded=True)
 
 
 # ---- cloud hosting (gunicorn / Render) — engine starts on module import ----

@@ -390,3 +390,21 @@ if (bellBtn) {
     if (soundOn) beep();   // audible confirmation
   });
 }
+
+/* Telegram connectivity test (📡 header button) */
+const tgBtn = $("tg-btn");
+if (tgBtn) {
+  tgBtn.addEventListener("click", async () => {
+    tgBtn.textContent = "⏳";
+    try {
+      const r = await fetch("/api/telegram-test", { cache: "no-store" });
+      const d = await r.json();
+      tgBtn.textContent = d.ok ? "✅" : "❌";
+      tgBtn.title = d.ok ? "Telegram OK — test message ပို့ပြီး" : ("Telegram error: " + (d.error || "unknown"));
+    } catch (e) {
+      tgBtn.textContent = "❌";
+      tgBtn.title = "Telegram test failed: " + (e && e.message ? e.message : e);
+    }
+    setTimeout(() => { tgBtn.textContent = "📡"; }, 3000);
+  });
+}
