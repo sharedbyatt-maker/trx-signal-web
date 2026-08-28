@@ -1039,9 +1039,10 @@ if __name__ == "__main__":
     print(f"   Entry ≥ |{SCORE_TRADE}| | Risk: Flat {BET_SIZE:,} MMK | SL {-STOP_LOSS_UNITS}u / TP +{TAKE_PROFIT_UNITS}u", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
+    port = int(os.environ.get("PORT", 10000))
     app.run(
-        host=os.environ.get("HOST", "127.0.0.1"),
-        port=int(os.environ.get("PORT", "5000")),
+        host="0.0.0.0",
+        port=port,
         threaded=True)
 
 
