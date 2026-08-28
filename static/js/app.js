@@ -148,6 +148,15 @@ function renderAnalytics(s) {
     fdEl.textContent = (d != null && d >= 120) ? `⏳ FEED +${Math.floor(d / 60)}m` : "";
     fdEl.className = "orange";
   }
+
+  /* 📡 button tooltip shows last Telegram event (sent/skip/error + time) */
+  const tgB = $("tg-btn");
+  if (tgB) {
+    const t = s.tg_last;
+    tgB.title = t
+      ? `Telegram နောက်ဆုံး event — ${t.time} · ${t.result}\n${t.msg}`
+      : "Telegram ချိတ်ဆက်မှု စမ်းသပ် (နှိပ်) · နောက်ဆုံး event မရှိသေးဘူး";
+  }
 }
 
 /* ---- backtest panel removed from UI — /api/backtest endpoint still available ---- */
