@@ -243,6 +243,9 @@ function render(s, merged) {
 }
 
 let refreshing = false;
+let lastState = null;
+let lastKnownIssue = "";
+
 async function refresh() {
   if (refreshing) return;          // guard: never overlap polls
   refreshing = true;
@@ -250,6 +253,7 @@ async function refresh() {
     const r = await fetch("/api/state", { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const s = await r.json();
+    lastState = s;
 
     // refresh the 10-day chart buffer periodically or when it falls behind
     const lastLocal = fullRows.length ? fullRows[fullRows.length - 1].issue : "";
@@ -346,11 +350,38 @@ if (sigBtn) sigBtn.addEventListener("click", () => {
   if (window.TRXChart && TRXChart.toggleSignals) TRXChart.toggleSignals();
 });
 
-setInterval(refresh, 2500);
+setInterval(refresh, 2000);
 setInterval(() => fetchFullHistory(false), HIST_REFETCH_MS);
 setInterval(tickClock, 1000);
 tickClock();
 fetchFullHistory(true).then(refresh);
+
+/* ================= instant candle: /api/latest micro-poll =================
+   Candle တစ်တင်တာနဲ့ chart ချက်ချင်း update — /api/state ကို မစောင့်ရတော့ဘူး */
+async function pollLatest() {
+  try {
+    const r = await fetch("/api/latest", { cache: "no-store" });
+    const d = await r.json();
+    const rd = d.round;
+    if (!rd || !rd.issue || rd.issue === lastKnownIssue) return;
+    const first = lastKnownIssue === "";
+    lastKnownIssue = rd.issue;
+    if (first || !lastState) return;
+    if (!fullRows.some((x) => x.issue === rd.issue)) {
+      fullRows.push({
+        issue: String(rd.issue),
+        short_issue: String(rd.issue).slice(-6),
+        number: rd.number,
+        block_time: rd.block_time || "",
+        type: rd.number >= 5 ? "BIG" : "SMALL",
+      });
+      if (rd.block_time) lastResultTime = rd.block_time;
+      const merged = mergeRows(fullRows, lastState.history);
+      safeRender(() => render(lastState, merged), lastState);
+    }
+  } catch (e) { /* noop */ }
+}
+setInterval(pollLatest, 1200);
 
 /* ================= alerts: sound + desktop notification ================= */
 let soundOn = localStorage.getItem("trx_sound") === "1";

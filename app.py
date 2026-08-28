@@ -21,7 +21,7 @@ if sys_stdout := __import__("sys").stdout:
 # ================= DATA SOURCE =================
 URL_DATA = "https://trxchart.com/api/trx-data"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-POLL_SEC = 3
+POLL_SEC = 2        # tail-mode (?limit=500 ≈ 80KB) — fast candle updates
 
 # ================= INDICATOR SETTINGS =================
 FAST_EMA = 5
@@ -700,17 +700,43 @@ def resolve_pending(latest):
 def engine_loop():
     global last_issue, pending, units, lose_streak, cooldown, unresolved_signal
     global prev_rsi, _tg_last_ts
+    # ---- tail-mode polling state (local to engine thread) ----
+    all_rows = []          # persistent parsed rows (newest at end)
+    seen_issues = set()
+    have_full = False      # boot-time full snapshot done?
+    err_streak = 0
     while True:
         try:
+            url = URL_DATA if not have_full else URL_DATA + "?limit=500"
             res = session.get(
-                URL_DATA, timeout=15,
+                url, timeout=15,
                 headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
             if res.status_code == 200:
                 data = res.json()
                 data_list = data if isinstance(data, list) else data.get("data", [])
-                parsed_history = parse_history(data_list)
+                parsed = parse_history(data_list)
 
-                if parsed_history:
+                if parsed:
+                    if have_full:
+                        # merge only genuinely-new tail rounds (ascending order)
+                        fresh = [r for r in parsed if r["issue"] not in seen_issues]
+                        for r in fresh:
+                            seen_issues.add(r["issue"])
+                            if not all_rows or r["issue_int"] > all_rows[-1]["issue_int"]:
+                                all_rows.append(r)
+                        if len(seen_issues) > 300000:
+                            seen_issues = set(r["issue"] for r in all_rows)
+                    else:
+                        all_rows = parsed
+                        seen_issues = set(r["issue"] for r in parsed)
+                        have_full = True
+                        print(f"[ENGINE] full snapshot: {len(all_rows)} rounds "
+                              f"(tail mode: {POLL_SEC}s · ?limit=500)", flush=True)
+                    if len(all_rows) > MAX_FULL_ROWS:
+                        all_rows = all_rows[-MAX_FULL_ROWS:]
+                    err_streak = 0
+                    parsed_history = all_rows
+
                     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     latest = parsed_history[-1]
                     if latest["issue"] != last_issue:
@@ -839,10 +865,16 @@ def engine_loop():
                         print(f"[{now}] Issue {latest['short_issue']} -> {latest['number']} "
                               f"({analysis['signal']} {analysis['score']:+.0f})", flush=True)
             else:
+                err_streak += 1
+                if have_full and err_streak >= 5:
+                    have_full = False   # tail fetch ထပ်ခါထပ်ခါ fail → full snapshot ပြန်ယူ
                 with LOCK:
                     STATE["connected"] = False
                     STATE["error"] = f"HTTP {res.status_code}"
         except Exception as e:
+            err_streak += 1
+            if have_full and err_streak >= 5:
+                have_full = False
             with LOCK:
                 STATE["connected"] = False
                 STATE["error"] = f"{type(e).__name__}: {e}"
@@ -929,6 +961,23 @@ def api_telegram_test():
         return jsonify({"ok": False, "error": str(e)[:100]})
 
 
+@app.route("/api/latest")
+def api_latest():
+    """Micro-endpoint (few hundred bytes) — frontend polls this every ~1.2s
+       so new candles appear almost instantly without heavy /api/state."""
+    with LOCK:
+        h = STATE.get("history") or []
+        r = h[-1] if h else None
+    if not r:
+        return jsonify({"round": None})
+    return jsonify({"round": {
+        "issue": r["issue"],
+        "number": r["number"],
+        "type": r["type"],
+        "block_time": r.get("block_time", ""),
+    }})
+
+
 @app.route("/api/backtest")
 def api_backtest():
     if request.args.get("refresh") == "1":
@@ -975,10 +1024,9 @@ if __name__ == "__main__":
     print(f"   Entry ≥ |{SCORE_TRADE}| | Risk: Flat {BET_SIZE:,} MMK | SL {-STOP_LOSS_UNITS}u / TP +{TAKE_PROFIT_UNITS}u", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
-    port = int(os.environ.get("PORT", 10000))
     app.run(
-        host="0.0.0.0",
-        port=port,
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
         threaded=True)
 
 
