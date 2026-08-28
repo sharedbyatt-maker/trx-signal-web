@@ -1,0 +1,186 @@
+﻿<!doctype html>
+<html lang="my">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#131722">
+<title>TRX Confluence Engine — Live Terminal</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=25">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">📈</span>
+    <div>
+      <h1>TRX CONFLUENCE ENGINE <span class="ver">TERMINAL</span></h1>
+      <p class="sub">EMA 5/15 · BB 20·2 · RSI 14 · MACD · Trendlines · S/R · Patterns · 10-Day History</p>
+    </div>
+  </div>
+  <div class="conn">
+    <button id="bell-btn" class="bell-btn" title="Signal alert sound + desktop notification ဖွင့်/ပိတ်">🔔</button>
+    <span id="dot" class="dot off"></span>
+    <span id="conn-txt">Connecting…</span>
+    <span id="clock" class="clock mono"></span>
+  </div>
+</header>
+
+<div class="ticker-wrap">
+  <div class="ticker">
+    <div class="tk-item"><span class="tk-label">NEXT ISSUE</span><span class="tk-val mono" id="tk-issue">—</span></div>
+    <div class="tk-sep"></div>
+    <div class="tk-item"><span class="tk-label">LAST</span><span class="tk-ball" id="tk-last">—</span></div>
+    <div class="tk-sep"></div>
+    <div class="tk-item"><span class="tk-label">BIG · 100</span><span class="tk-val mono red" id="tk-big">—</span></div>
+    <div class="tk-item"><span class="tk-label">SMALL · 100</span><span class="tk-val mono blue" id="tk-small">—</span></div>
+    <div class="tk-sep"></div>
+    <div class="tk-item"><span class="tk-label">STREAK</span><span class="tk-val mono" id="tk-streak">—</span></div>
+    <div class="tk-item"><span class="tk-label">STDEV 20</span><span class="tk-val mono" id="tk-vol">—</span></div>
+    <div class="tk-sep"></div>
+    <div class="tk-item"><span class="tk-label">SESSION P/L</span><span class="tk-val mono" id="tk-pl">—</span></div>
+  </div>
+</div>
+
+<main>
+  <!-- ================= CHART FIRST — FULL FOCUS ================= -->
+  <section class="card chart-card" id="chart-card">
+    <div class="card-title-row">
+      <div class="card-title">CHART</div>
+      <div class="chart-toolbar">
+        <button class="tf-btn fs-btn" id="fs-btn" title="Fullscreen (chart ကို တစ်မျက်နှာလုံး)">⛶ Full</button>
+        <span class="tb-sep"></span>
+        <span class="tb-label">TF</span>
+        <button class="tf-btn active" data-g="1">1m</button>
+        <button class="tf-btn" data-g="5">5m</button>
+        <button class="tf-btn" data-g="15">15m</button>
+        <button class="tf-btn" data-g="60">1h</button>
+        <button class="tf-btn fit" id="fit-btn" title="Chart အားလုံး ကျယ်ကျယ် မြင်ရန်">FIT</button>
+        <span class="tb-sep"></span>
+        <button class="tf-btn sr-find" id="sr-find-btn" title="Auto Support/Resistance ပြန်ရှာ">
+          <svg viewBox="0 0 24 24" class="btn-ico"><circle cx="10.5" cy="10.5" r="6"/><line x1="15" y1="15" x2="20" y2="20"/></svg>
+          Auto S/R
+        </button>
+        <button class="tf-btn active" id="sig-btn" title="Signal arrows ဖွင့်/ပိတ်">
+          <svg viewBox="0 0 24 24" class="btn-ico"><path d="M12 4l5 8h-3v7h-4v-7H7z" fill="currentColor" stroke="none"/></svg>
+          Signals
+        </button>
+        <span class="tb-sep"></span>
+        <span class="tb-label">INDICATORS</span>
+        <label class="chart-toggle"><input type="checkbox" id="ema-toggle" checked> EMA</label>
+        <label class="chart-toggle"><input type="checkbox" id="bb-toggle"> BB</label>
+        <label class="chart-toggle"><input type="checkbox" id="rsi-toggle" checked> RSI 14</label>
+        <label class="chart-toggle"><input type="checkbox" id="macd-toggle"> MACD</label>
+        <label class="chart-toggle"><input type="checkbox" id="stoch-toggle"> STOCH</label>
+        <span class="tb-sep"></span>
+        <span class="tb-label">OVERLAYS</span>
+        <label class="chart-toggle"><input type="checkbox" id="tl-toggle" checked> Trend</label>
+        <label class="chart-toggle"><input type="checkbox" id="sr-toggle" checked> S/R</label>
+        <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle" checked> Patterns</label>
+      </div>
+    </div>
+
+    <div class="draw-toolbar" id="draw-toolbar">
+      <span class="tb-label">TOOLS</span>
+      <button class="dt-btn active" data-tool="cursor" title="Cursor / Select (Esc)" aria-label="Cursor">
+        <svg viewBox="0 0 24 24"><path d="M6 3l12 10-5.2.9L15 19l-2.6 1-2.1-5.3L6 18z" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="dt-btn" data-tool="trend" title="Trend Line — click 2 points (T)" aria-label="Trend Line">
+        <svg viewBox="0 0 24 24"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="5" r="1.8"/></svg>
+      </button>
+      <button class="dt-btn" data-tool="ray" title="Ray — extend right (R)" aria-label="Ray">
+        <svg viewBox="0 0 24 24"><line x1="4" y1="18" x2="18.5" y2="7.5"/><polyline points="13.5,5.8 18.5,7.5 16.6,12.4"/><circle cx="4" cy="18" r="1.8"/></svg>
+      </button>
+      <button class="dt-btn" data-tool="hline" title="Horizontal S/R Line — click 1 point (H)" aria-label="Horizontal Line">
+        <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><circle cx="12" cy="12" r="1.8"/></svg>
+      </button>
+      <button class="dt-btn" data-tool="vline" title="Vertical Line (V)" aria-label="Vertical Line">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="3" x2="12" y2="21"/><circle cx="12" cy="12" r="1.8"/></svg>
+      </button>
+      <button class="dt-btn" data-tool="rect" title="Rectangle Zone (B)" aria-label="Rectangle">
+        <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+      </button>
+      <button class="dt-btn" data-tool="fib" title="Fibonacci Retracement (F)" aria-label="Fibonacci">
+        <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/><line x1="6" y1="7" x2="18" y2="7"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="7" y1="17" x2="17" y2="17"/></svg>
+      </button>
+      <span class="dt-sep"></span>
+      <span class="tb-label">COLOR</span>
+      <button class="dt-swatch active" data-color="#2962ff" style="--c:#2962ff" title="Blue"></button>
+      <button class="dt-swatch" data-color="#f23645" style="--c:#f23645" title="Red"></button>
+      <button class="dt-swatch" data-color="#089981" style="--c:#089981" title="Green"></button>
+      <button class="dt-swatch" data-color="#ff9800" style="--c:#ff9800" title="Orange"></button>
+      <button class="dt-swatch" data-color="#e0e3eb" style="--c:#e0e3eb" title="White"></button>
+      <span class="dt-sep"></span>
+      <button class="dt-btn txt" id="dt-del" title="Delete selected (Del)">Delete</button>
+      <button class="dt-btn txt" id="dt-undo" title="Undo last (or Z key)">Undo</button>
+      <button class="dt-btn txt" id="dt-clear" title="Clear all drawings">Clear All</button>
+    </div>
+
+    <div class="tv-wrap">
+      <div id="tv-chart"></div>
+      <div class="tv-legend mono">
+        <span class="lg-sym">TRX<span class="lg-dim">/ROUND</span></span>
+        <span class="lg-tf" id="lg-tf">1m</span>
+        <span class="lg-struct" id="lg-struct"></span>
+        <span class="lg-time" id="lg-time"></span>
+        <span class="lg-ohlc" id="lg-ohlc"></span>
+        <span class="lg-chg" id="lg-chg"></span>
+      </div>
+    </div>
+    <div id="rsi-pane">
+      <div id="rsi-chart"></div>
+      <div class="tv-rsi-legend mono"><span class="lg-dim">RSI 14</span><span id="lg-rsi"></span></div>
+    </div>
+    <div id="macd-pane">
+      <div id="macd-chart"></div>
+      <div class="tv-rsi-legend mono"><span class="lg-dim">MACD 12·26·9</span><span id="lg-macd"></span></div>
+    </div>
+    <div id="stoch-pane">
+      <div id="stoch-chart"></div>
+      <div class="tv-rsi-legend mono"><span class="lg-dim">STOCH 14·3·3</span><span id="lg-stoch"></span></div>
+    </div>
+    <div class="chart-time-bar mono" id="chart-time-bar">
+      <span class="ctb-item">🕒 LAST RESULT: <b id="ctb-last">—</b></span>
+      <span class="ctb-sep"></span>
+      <span class="ctb-item">⏱ LOCAL TIME: <b id="ctb-clock" class="green">—</b></span>
+      <span class="ctb-sep"></span>
+      <span class="ctb-item" id="ctb-delay"></span>
+      <span class="ctb-flex"></span>
+      <span class="ctb-item">📡 SERVER: <b id="ctb-srv">—</b></span>
+      <span class="ctb-sep"></span>
+      <span class="ctb-item ctb-dim" id="ctb-next">NEXT ISSUE ETA: —</span>
+    </div>
+    <div class="chart-strip">
+      <span class="strip-label" id="strip-label">RECENT HISTORY · 10 DAYS</span>
+      <div class="history" id="history"></div>
+      <div class="counts" id="counts">—</div>
+    </div>
+  </section>
+
+  <section class="card signal-card" id="signal-card">
+    <div class="sig-grid">
+      <div class="sig-main">
+        <div class="card-title">🎯 NEXT ROUND SIGNAL</div>
+        <div class="issue-line">Issue <b id="next-issue">—</b></div>
+        <div class="signal-big" id="signal-big" aria-live="polite">WAIT</div>
+        <div class="score-badge mono" id="score-badge">score 0</div>
+        <div class="bet-line" id="bet-line"></div>
+      </div>
+      <div class="sig-side">
+        <div class="gauges" id="gauges"></div>
+        <div class="reason" id="reason">Data စုဆောင်းနေဆဲ…</div>
+        <div class="meta-row mono"><span id="mtf-chip"></span><span id="mk-chip"></span><span id="fd-chip"></span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="last-fetch">—</span> · ⚠️ ဤစနစ်သည် ခန့်မှန်းချက်သာဖြစ်ပြီး စွန့်လွှတ်နိုင်သော ငွေဖြင့်သာ ရင်းနှီးပါ။
+</footer>
+
+<script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=25"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=25"></script>
+<script src="{{ url_for('static', filename='js/draw.js') }}?v=25"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=25"></script>
+</body>
+</html>
