@@ -494,7 +494,7 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
   padding-top: 10px;
 }
 .strip-label { font-size: 9px; color: var(--muted); letter-spacing: 1.2px; writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; line-height: 1; }
-.history { display: flex; gap: 5px; overflow-x: auto; flex: 1; padding-bottom: 3px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.history { display: flex; gap: 5px; overflow-x: auto; flex: 1; padding: 12px 0 3px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .history::-webkit-scrollbar { height: 5px; }
 .history::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .ball {
@@ -508,6 +508,32 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
 }
 .ball.big { background: linear-gradient(135deg, #f23645, #c12233); }
 .ball.small { background: linear-gradient(135deg, #2962ff, #00a2ff); }
+
+/* ---------- 🔥 Dragon Streak detector (4+ ဆက်) ---------- */
+@keyframes dragonPulse {
+  0%, 100% { box-shadow: 0 0 5px rgba(255,152,0,.45); }
+  50%      { box-shadow: 0 0 13px 3px rgba(255,152,0,.95); }
+}
+.ball.dragon {
+  border: 2px solid #ffb74d;
+  animation: dragonPulse 1.3s ease-in-out infinite;
+  position: relative;
+}
+.ball.dragon-head::after {
+  content: "🔥 ×" attr(data-streak);
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  color: #ffb74d;
+  text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.dragon-glow { text-shadow: 0 0 9px rgba(255,152,0,.95) !important; }
 .counts { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .counts b.b { color: var(--red); }
 .counts b.s { color: #4d8bff; }

@@ -35,6 +35,7 @@ async function fetchFullHistory(force) {
     }));
     if (inc.length) {
       fullRows = mergeRows(fullRows, inc);
+      if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
     } else if (!force && !inc.length && data.incremental) {
       /* server has nothing newer (or was restarted with a shorter buffer):
          force one full refetch on the next cycle */
@@ -194,8 +195,10 @@ function renderTicker(s) {
 
   const streakEl = $("tk-streak");
   if (streakEl && last && a.streak) {
-    streakEl.textContent = `${a.streak}${last.type === "BIG" ? "▲" : "▼"}`;
-    streakEl.className = "tk-val mono " + (last.type === "BIG" ? "red" : "blue");
+    const dragon = a.streak >= DRAGON_MIN;
+    streakEl.textContent = `${dragon ? "🔥 " : ""}${a.streak}${last.type === "BIG" ? "▲" : "▼"}`;
+    streakEl.className = "tk-val mono " + (last.type === "BIG" ? "red" : "blue") +
+      (dragon ? " dragon-glow" : "");
   } else if (streakEl) {
     streakEl.textContent = "—";
     streakEl.className = "tk-val mono";
@@ -211,6 +214,8 @@ function renderTicker(s) {
 }
 
 let lastHistSig = "";
+const DRAGON_MIN = 4;   // တူညီတဲ့ရလဒ် ဒီအရေအတွက် ဆက်ရင် 🔥 Dragon
+
 function renderHistory(s) {
   const wrap = $("history");
   const h = s.history || [];
@@ -218,9 +223,24 @@ function renderHistory(s) {
   const sig = h.length + ":" + (h.length ? h[h.length - 1].issue : "");
   if (sig !== lastHistSig) {
     lastHistSig = sig;
-    const items = h.slice(-500).reverse().map(x =>
-      `<div class="ball ${x.type.toLowerCase()}" title="Issue ${x.issue}${x.block_time ? " · 🕒 " + x.block_time : ""}">${x.number}</div>`
-    ).join("");
+    const tail = h.slice(-500);
+    /* streak length ending at each ball (chronological) */
+    const runs = [];
+    let r = 0;
+    tail.forEach((x, i) => {
+      r = (i > 0 && tail[i - 1].type === x.type) ? r + 1 : 1;
+      runs.push(r);
+    });
+    const items = tail.map((x, i) => {
+      const isDragon = runs[i] >= DRAGON_MIN;
+      const isHead = isDragon && (i === tail.length - 1 || tail[i + 1].type !== x.type);
+      const cls = `ball ${x.type.toLowerCase()}` +
+        (isDragon ? " dragon" : "") + (isHead ? " dragon-head" : "");
+      const title = `Issue ${x.issue}${x.block_time ? " · 🕒 " + x.block_time : ""}` +
+        (isDragon ? ` · 🔥 Dragon ×${runs[i]}` : "");
+      return `<div class="${cls}" title="${title}"` +
+        (isHead ? ` data-streak="${runs[i]}"` : "") + `>${x.number}</div>`;
+    }).reverse().join("");
     wrap.innerHTML = items || `<div class="empty">Waiting for data…</div>`;
   }
 
@@ -384,6 +404,7 @@ async function pollLatest() {
         block_time: rd.block_time || "",
         type: rd.number >= 5 ? "BIG" : "SMALL",
       });
+      if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
       if (rd.block_time) lastResultTime = rd.block_time;
       const merged = mergeRows(fullRows, lastState.history);
       safeRender(() => render(lastState, merged), lastState);

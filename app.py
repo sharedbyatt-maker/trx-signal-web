@@ -820,8 +820,15 @@ def engine_loop():
                         analysis = analyze_all_in_one(parsed_history)
 
                         # ---- Telegram: RSI reach alerts (armed/re-arm + hysteresis) ----
-                        # တကယ့် reach တိုင်း တစ်ခါစ ပို့ — oscillation spam မရှိ၊ 429 မကျ
-                        r_now = analysis.get("rsi")
+                        # ALERT SOURCE = chart RSI pane နှင့် တစ်တောင့်တည်းဖြစ်စေရန်
+                        # walk-closes ပေါ်မှာ တွက်တာ (digit-RSI မဟုတ်ဘူး!)
+                        c_walk = 100
+                        closes_walk = []
+                        for d in [1 if x["type"] == "BIG" else -1 for x in parsed_history]:
+                            c_walk += d
+                            closes_walk.append(c_walk)
+                        rsi_arr_chart = rsi_series(closes_walk)
+                        r_now = rsi_arr_chart[-1]
                         if r_now is not None:
                             cfg = load_tg_config()
                             up_lv = cfg[2] if cfg else TG_RSI_UP
@@ -836,13 +843,13 @@ def engine_loop():
                                 _tg_up_ts, _tg_down_ts, ts, remind_sec)
                             for kind, lv in msgs:
                                 if kind == "enter_up":
-                                    head, body = f"⬆️ RSI {lv:.0f} ကျော်သွားပါသည်", ""
+                                    head = f"⬆️ RSI {lv:.0f} ကျော်သွားပါသည်"
                                 elif kind == "remind_up":
-                                    head, body = f"🔁 RSI {lv:.0f} အပေါ် ရှိနေဆဲ", ""
+                                    head = f"🔁 RSI {lv:.0f} အပေါ် ရှိနေဆဲ"
                                 elif kind == "enter_down":
-                                    head, body = f"⬇️ RSI {lv:.0f} အောက် ဆင်းသွားပါသည်", ""
+                                    head = f"⬇️ RSI {lv:.0f} အောက် ဆင်းသွားပါသည်"
                                 else:
-                                    head, body = f"🔁 RSI {lv:.0f} အောက် ရှိနေဆဲ", ""
+                                    head = f"🔁 RSI {lv:.0f} အောက် ရှိနေဆဲ"
                                 tg_notify(
                                     f"{head}\nRSI လက်ရှိ: {r_now:.1f}\n"
                                     f"Issue …{latest['short_issue']} · {latest['block_time']}")
@@ -1094,10 +1101,9 @@ if __name__ == "__main__":
     print(f"   Entry ≥ |{SCORE_TRADE}| | Risk: Flat {BET_SIZE:,} MMK | SL {-STOP_LOSS_UNITS}u / TP +{TAKE_PROFIT_UNITS}u", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
-    port = int(os.environ.get("PORT", 10000))
     app.run(
-        host="0.0.0.0",
-        port=port,
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
         threaded=True)
 
 
