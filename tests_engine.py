@@ -72,10 +72,61 @@ def test_backtest():
           f"trade calls {tb['calls']}, wr {tb['wr']})")
 
 
+def test_rsi_alert_state():
+    A = {"armed_up": True, "armed_down": True, "up_ts": 0.0, "down_ts": 0.0}
+    F = lambda a: (a["armed_up"], a["armed_down"], a["up_ts"], a["down_ts"])
+
+    # 1) reach 60 → exactly one enter_up
+    m, *st = eng.rsi_alert_state(61.0, 60.0, 40.0, True, True, 0, 0, t0 := 100.0)
+    assert len(m) == 1 and m[0][0] == "enter_up", m
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+
+    # 2) oscillation around 60 (59.8/60.2/60.9) → NO more messages (armed off)
+    for r in (59.8, 60.2, 60.9, 59.9, 60.4):
+        m, *st = eng.rsi_alert_state(r, 60.0, 40.0, *F(A), t0 + 5)
+        assert not m, f"oscillation spam at rsi={r}: {m}"
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+
+    # 3) reminder only after remind_sec while staying above
+    m, *st = eng.rsi_alert_state(62.0, 60.0, 40.0, *F(A), t0 + 100)  # < 300s
+    assert not m
+    m, *st = eng.rsi_alert_state(62.0, 60.0, 40.0, *F(A), t0 + 401)
+    assert len(m) == 1 and m[0][0] == "remind_up"
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+
+    # 4) shallow dip (59.0, < 2pt hysteresis) → NOT re-armed → back to 61: no msg
+    m, *st = eng.rsi_alert_state(59.0, 60.0, 40.0, *F(A), t0 + 500)
+    assert not m
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+    m, *st = eng.rsi_alert_state(61.0, 60.0, 40.0, *F(A), t0 + 560)
+    assert not m, "shallow dip must not re-arm"
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+
+    # 5) REAL pullback (57.5 < 58) → re-armed → next reach 61 sends again
+    m, *st = eng.rsi_alert_state(57.5, 60.0, 40.0, *F(A), t0 + 600)
+    assert not m
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+    m, *st = eng.rsi_alert_state(61.0, 60.0, 40.0, *F(A), t0 + 660)
+    assert len(m) == 1 and m[0][0] == "enter_up", "fresh reach must notify"
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+
+    # 6) down side: reach 40 → enter_down; deep bounce (42.5) re-arms; 39.5 again → enter
+    m, *st = eng.rsi_alert_state(39.5, 60.0, 40.0, *F(A), t0 + 700)
+    assert len(m) == 1 and m[0][0] == "enter_down"
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+    m, *st = eng.rsi_alert_state(42.5, 60.0, 40.0, *F(A), t0 + 760)
+    assert not m
+    A.update(dict(zip(("armed_up", "armed_down", "up_ts", "down_ts"), st)))
+    m, *st = eng.rsi_alert_state(39.5, 60.0, 40.0, *F(A), t0 + 820)
+    assert len(m) == 1 and m[0][0] == "enter_down"
+    print("  rsi_alert_state ........ OK")
+
+
 if __name__ == "__main__":
     print("ENGINE SELFTEST")
     test_parse_history()
     test_ema_rsi_series()
     test_mtf_markov()
+    test_rsi_alert_state()
     test_backtest()
     print("ALL TESTS PASSED")

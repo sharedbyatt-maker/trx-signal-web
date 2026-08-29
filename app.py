@@ -70,8 +70,40 @@ LOCK = threading.Lock()
 TG_CONFIG_FILE = os.path.join(BASE_DIR, "telegram.json")
 TG_RSI_UP = 60.0        # chart RSI pane — 60 ကျော်ရင် Noti
 TG_RSI_DOWN = 40.0      # 40 အောက်ဆင်းရင် Noti
-TG_MIN_GAP_SEC = 60     # anti-spam: Noti ကြားခံ gap
+TG_MIN_GAP_SEC = 30     # anti-spam: message ကြားခံ အနည်းဆုံး gap
 TG_REMIND_SEC = 300     # zone ထဲ ဆက်ရှိနေရင် 5 မိနစ်တစ်ခါ reminder
+TG_HYST = 2.0           # hysteresis — re-arm ဖို့ level ကနေ ဒီအောက်မှာ ဆင်းရမယ်
+
+
+def rsi_alert_state(r_now, up_lv, dn_lv, armed_up, armed_down,
+                    up_ts, down_ts, now_ts, remind_sec=TG_REMIND_SEC):
+    """Pure zone/edge logic (unit-testable).
+       Every fresh reach of the level sends exactly once; re-arms only after a
+       real pullback of TG_HYST — kills oscillation spam & Telegram 429 drops."""
+    msgs = []
+    # ---- up side ----
+    if r_now >= up_lv:
+        if armed_up:
+            msgs.append(("enter_up", up_lv))
+            armed_up = False
+            up_ts = now_ts
+        elif now_ts - up_ts >= remind_sec:
+            msgs.append(("remind_up", up_lv))
+            up_ts = now_ts
+    elif r_now < up_lv - TG_HYST:
+        armed_up = True
+    # ---- down side ----
+    if r_now <= dn_lv:
+        if armed_down:
+            msgs.append(("enter_down", dn_lv))
+            armed_down = False
+            down_ts = now_ts
+        elif now_ts - down_ts >= remind_sec:
+            msgs.append(("remind_down", dn_lv))
+            down_ts = now_ts
+    elif r_now > dn_lv + TG_HYST:
+        armed_down = True
+    return msgs, armed_up, armed_down, up_ts, down_ts
 
 _tg_queue = queue.Queue()
 
@@ -112,13 +144,29 @@ def _tg_worker():
             result = "skip — config မဖြည့်ရသေးပါ"
         else:
             token, chat = cfg[0], cfg[1]
-            try:
-                r = requests.post(
-                    f"https://api.telegram.org/bot{token}/sendMessage",
-                    json={"chat_id": chat, "text": text}, timeout=10)
-                result = "sent" if r.status_code == 200 else f"HTTP {r.status_code}: {r.text[:80]}"
-            except requests.RequestException as e:
-                result = f"error: {e}"
+            result = None
+            for attempt in (1, 2):
+                try:
+                    r = requests.post(
+                        f"https://api.telegram.org/bot{token}/sendMessage",
+                        json={"chat_id": chat, "text": text}, timeout=10)
+                    if r.status_code == 200:
+                        result = "sent" if attempt == 1 else "sent (429 retry)"
+                        break
+                    if r.status_code == 429 and attempt == 1:
+                        # rate-limited: Telegram ပြောထားတဲ့ retry_after လိုက်နာပြီး ပြန်ပို့
+                        try:
+                            retry = float(r.json().get("parameters", {}).get("retry_after", 2))
+                        except (ValueError, AttributeError):
+                            retry = 3.0
+                        result = f"429 → retry {retry:.0f}s"
+                        time.sleep(min(retry, 20.0))
+                        continue
+                    result = f"HTTP {r.status_code}: {r.text[:80]}"
+                    break
+                except requests.RequestException as e:
+                    result = f"error: {e}"
+                    break
         print(f"[TG] {result}: {text.splitlines()[0]}", flush=True)
         with LOCK:
             STATE["tg_last"] = {
@@ -185,8 +233,10 @@ cooldown = 0
 signal_history = []   # preloaded from CSV below (after function definitions)
 unresolved_signal = None
 _bt_day = None
-tg_zone = None        # None | "up" | "down" — RSI zone tracking (restart-safe)
-_tg_last_ts = 0.0
+tg_armed_up = True    # RSI up-alert armed (re-arms after real pullback)
+tg_armed_down = True
+_tg_up_ts = 0.0
+_tg_down_ts = 0.0
 
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # no static caching — always fresh JS/CSS
@@ -706,7 +756,7 @@ def resolve_pending(latest):
 
 def engine_loop():
     global last_issue, pending, units, lose_streak, cooldown, unresolved_signal
-    global tg_zone, _tg_last_ts
+    global tg_armed_up, tg_armed_down, _tg_up_ts, _tg_down_ts
     # ---- tail-mode polling state (local to engine thread) ----
     all_rows = []          # persistent parsed rows (newest at end)
     seen_issues = set()
@@ -721,6 +771,10 @@ def engine_loop():
             if res.status_code == 200:
                 data = res.json()
                 data_list = data if isinstance(data, list) else data.get("data", [])
+                # boot full snapshot: upstream ships ~187k rows (~4.5MB) —
+                # parse only the newest MAX_FULL_ROWS slice (RAM safety on 512MB hosts)
+                if not have_full and len(data_list) > MAX_FULL_ROWS:
+                    data_list = data_list[-MAX_FULL_ROWS:]
                 parsed = parse_history(data_list)
 
                 if parsed:
@@ -765,9 +819,8 @@ def engine_loop():
 
                         analysis = analyze_all_in_one(parsed_history)
 
-                        # ---- Telegram: RSI zone alerts (enter + reminder) ----
-                        # zone-based → restart-safe: zone ထဲ ပြန်ရောက်ရင် ချက်ချင်း အသိပေးပြီး
-                        # zone ထဲ ဆက်နေရင် remind_sec တစ်ခါ reminder ပို့
+                        # ---- Telegram: RSI reach alerts (armed/re-arm + hysteresis) ----
+                        # တကယ့် reach တိုင်း တစ်ခါစ ပို့ — oscillation spam မရှိ၊ 429 မကျ
                         r_now = analysis.get("rsi")
                         if r_now is not None:
                             cfg = load_tg_config()
@@ -778,25 +831,22 @@ def engine_loop():
                             except (TypeError, ValueError):
                                 remind_sec = TG_REMIND_SEC
                             ts = time.time()
-                            zone = ("up" if r_now >= up_lv
-                                    else "down" if r_now <= dn_lv else None)
-                            if zone and zone != tg_zone:
-                                # zone ထဲ ရောက်ခါစ (cross + restart-baseline နှစ်မျိုးလုံး)
-                                arrow = "⬆️" if zone == "up" else "⬇️"
+                            msgs, tg_armed_up, tg_armed_down, _tg_up_ts, _tg_down_ts = rsi_alert_state(
+                                r_now, up_lv, dn_lv, tg_armed_up, tg_armed_down,
+                                _tg_up_ts, _tg_down_ts, ts, remind_sec)
+                            for kind, lv in msgs:
+                                if kind == "enter_up":
+                                    head, body = f"⬆️ RSI {lv:.0f} ကျော်သွားပါသည်", ""
+                                elif kind == "remind_up":
+                                    head, body = f"🔁 RSI {lv:.0f} အပေါ် ရှိနေဆဲ", ""
+                                elif kind == "enter_down":
+                                    head, body = f"⬇️ RSI {lv:.0f} အောက် ဆင်းသွားပါသည်", ""
+                                else:
+                                    head, body = f"🔁 RSI {lv:.0f} အောက် ရှိနေဆဲ", ""
                                 tg_notify(
-                                    f"{arrow} RSI {up_lv if zone == 'up' else dn_lv:.0f} "
-                                    f"{'ကျော်သွားပါသည်' if zone == 'up' else 'အောက် ဆင်းသွားပါသည်'}\n"
-                                    f"RSI လက်ရှိ: {r_now:.1f}\n"
+                                    f"{head}\nRSI လက်ရှိ: {r_now:.1f}\n"
                                     f"Issue …{latest['short_issue']} · {latest['block_time']}")
-                                _tg_last_ts = ts
-                            elif zone and zone == tg_zone and ts - _tg_last_ts >= remind_sec:
-                                # zone ထဲ ဆက်ရှိနေဆဲ — reminder
-                                tg_notify(
-                                    f"🔁 RSI {up_lv if zone == 'up' else dn_lv:.0f} "
-                                    f"{'အပေါ်' if zone == 'up' else 'အောက်'} ရှိနေဆဲ ({r_now:.1f})\n"
-                                    f"Issue …{latest['short_issue']}")
-                                _tg_last_ts = ts
-                            tg_zone = zone
+                                print(f"[TG-Q] {kind} rsi={r_now:.1f}", flush=True)
 
                         # ---- record this round's signal for next issue ----
                         new_entry = {
@@ -907,7 +957,11 @@ signal_history = load_signal_history()
 
 @app.after_request
 def compress_response(response):
-    """Gzip-compress large JSON payloads (10-day history ≈ 700KB → ~120KB)."""
+    """Gzip-compress large JSON payloads (10-day history ≈ 700KB → ~120KB)
+       + basic security headers."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
     if (response.mimetype == "application/json"
             and response.status_code == 200
             and "gzip" in request.headers.get("Accept-Encoding", "")):
@@ -925,7 +979,8 @@ def api_state():
     with LOCK:
         snap = {k: v for k, v in STATE.items() if k != "full_history"}
         snap["history"] = list(STATE["history"])
-        snap["log"] = list(reversed(STATE["log"]))[:50]
+        # TRADE LOG panel removed — ship a small tail for future use only
+        snap["log"] = list(reversed(STATE["log"]))[:20]
         snap["server_now"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return jsonify(snap)
 
@@ -1039,10 +1094,9 @@ if __name__ == "__main__":
     print(f"   Entry ≥ |{SCORE_TRADE}| | Risk: Flat {BET_SIZE:,} MMK | SL {-STOP_LOSS_UNITS}u / TP +{TAKE_PROFIT_UNITS}u", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
-    port = int(os.environ.get("PORT", 10000))
     app.run(
-        host="0.0.0.0",
-        port=port,
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
         threaded=True)
 
 
