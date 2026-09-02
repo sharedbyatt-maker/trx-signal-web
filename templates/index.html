@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#131722">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=30">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=41">
 </head>
 <body>
 <header>
@@ -37,51 +37,56 @@
     <div class="tk-sep"></div>
     <div class="tk-item"><span class="tk-label">STREAK</span><span class="tk-val mono" id="tk-streak">—</span></div>
     <div class="tk-item"><span class="tk-label">STDEV 20</span><span class="tk-val mono" id="tk-vol">—</span></div>
-    <div class="tk-sep"></div>
-    <div class="tk-item"><span class="tk-label">SESSION P/L</span><span class="tk-val mono" id="tk-pl">—</span></div>
   </div>
 </div>
 
 <main>
-  <!-- ================= CHART FIRST — FULL FOCUS ================= -->
+  <div class="layout-grid">
+  <!-- ================= CHART — PRIMARY ================= -->
   <section class="card chart-card" id="chart-card">
     <div class="card-title-row">
       <div class="card-title">CHART</div>
       <div class="chart-toolbar">
-        <button class="tf-btn fs-btn" id="fs-btn" title="Fullscreen (chart ကို တစ်မျက်နှာလုံး)">⛶ Full</button>
-        <span class="tb-sep"></span>
-        <span class="tb-label">TF</span>
+        <span class="tb-group-label">TF</span>
         <button class="tf-btn active" data-g="1">1m</button>
         <button class="tf-btn" data-g="5">5m</button>
         <button class="tf-btn" data-g="15">15m</button>
         <button class="tf-btn" data-g="60">1h</button>
         <button class="tf-btn fit" id="fit-btn" title="Chart အားလုံး ကျယ်ကျယ် မြင်ရန်">FIT</button>
+        <button class="tf-btn" id="zoom-in-btn" title="Zoom In (+)">＋</button>
+        <button class="tf-btn" id="zoom-out-btn" title="Zoom Out (−)">−</button>
+        <button class="tf-btn fit" id="zoom-reset-btn" title="Zoom Reset">⤢</button>
+        <button class="tf-btn fs-btn" id="fs-btn" title="Fullscreen (chart ကို တစ်မျက်နှာလုံး)">⛶</button>
         <span class="tb-sep"></span>
         <button class="tf-btn sr-find" id="sr-find-btn" title="Auto Support/Resistance ပြန်ရှာ">
           <svg viewBox="0 0 24 24" class="btn-ico"><circle cx="10.5" cy="10.5" r="6"/><line x1="15" y1="15" x2="20" y2="20"/></svg>
-          Auto S/R
+          S/R
         </button>
         <button class="tf-btn active" id="sig-btn" title="Signal arrows ဖွင့်/ပိတ်">
           <svg viewBox="0 0 24 24" class="btn-ico"><path d="M12 4l5 8h-3v7h-4v-7H7z" fill="currentColor" stroke="none"/></svg>
-          Signals
+          SIG
         </button>
-        <span class="tb-sep"></span>
-        <span class="tb-label">INDICATORS</span>
-        <label class="chart-toggle"><input type="checkbox" id="ema-toggle" checked> EMA</label>
-        <label class="chart-toggle"><input type="checkbox" id="bb-toggle"> BB</label>
-        <label class="chart-toggle"><input type="checkbox" id="rsi-toggle" checked> RSI 14</label>
-        <label class="chart-toggle"><input type="checkbox" id="macd-toggle"> MACD</label>
-        <label class="chart-toggle"><input type="checkbox" id="stoch-toggle"> STOCH</label>
-        <span class="tb-sep"></span>
-        <span class="tb-label">OVERLAYS</span>
-        <label class="chart-toggle"><input type="checkbox" id="tl-toggle" checked> Trend</label>
-        <label class="chart-toggle"><input type="checkbox" id="sr-toggle" checked> S/R</label>
-        <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle" checked> Patterns</label>
+        <button class="tf-btn" id="dt-toggle-btn" title="Drawing tools ဖွင့်/ပိတ်">🎨</button>
+        <button class="tf-btn" id="ind-toggle-btn" title="Indicators ဖွင့်/ပိတ်">⚙️</button>
       </div>
     </div>
 
-    <div class="draw-toolbar" id="draw-toolbar">
-      <span class="tb-label">TOOLS</span>
+    <div class="ind-bar collapsed" id="ind-bar">
+      <span class="tb-group-label">INDICATORS</span>
+      <label class="chart-toggle"><input type="checkbox" id="ema-toggle" checked> EMA</label>
+      <label class="chart-toggle"><input type="checkbox" id="bb-toggle"> BB</label>
+      <label class="chart-toggle"><input type="checkbox" id="rsi-toggle" checked> RSI 14</label>
+      <label class="chart-toggle"><input type="checkbox" id="macd-toggle"> MACD</label>
+      <label class="chart-toggle"><input type="checkbox" id="stoch-toggle"> STOCH</label>
+      <span class="tb-sep"></span>
+      <span class="tb-group-label">OVERLAYS</span>
+      <label class="chart-toggle"><input type="checkbox" id="tl-toggle" checked> Trend</label>
+      <label class="chart-toggle"><input type="checkbox" id="sr-toggle" checked> S/R</label>
+      <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle" checked> Patterns</label>
+    </div>
+
+    <div class="draw-tools collapsed" id="draw-tools">
+      <span class="tb-label">DRAW</span>
       <button class="dt-btn active" data-tool="cursor" title="Cursor / Select (Esc)" aria-label="Cursor">
         <svg viewBox="0 0 24 24"><path d="M6 3l12 10-5.2.9L15 19l-2.6 1-2.1-5.3L6 18z" fill="currentColor" stroke="none"/></svg>
       </button>
@@ -129,7 +134,11 @@
     </div>
     <div id="rsi-pane">
       <div id="rsi-chart"></div>
-      <div class="tv-rsi-legend mono"><span class="lg-dim">RSI 14</span><span id="lg-rsi"></span></div>
+      <div class="tv-rsi-legend mono">
+        <span class="lg-dim">RSI 14</span>
+        <span id="lg-rsi"></span>
+        <span id="lg-rsi-zone" class="lg-rsi-zone"></span>
+      </div>
     </div>
     <div id="macd-pane">
       <div id="macd-chart"></div>
@@ -143,8 +152,6 @@
       <span class="ctb-item">🕒 LAST RESULT: <b id="ctb-last">—</b></span>
       <span class="ctb-sep"></span>
       <span class="ctb-item">⏱ LOCAL TIME: <b id="ctb-clock" class="green">—</b></span>
-      <span class="ctb-sep"></span>
-      <span class="ctb-item" id="ctb-delay"></span>
       <span class="ctb-flex"></span>
       <span class="ctb-item">📡 SERVER: <b id="ctb-srv">—</b></span>
       <span class="ctb-sep"></span>
@@ -155,33 +162,55 @@
       <div class="history" id="history"></div>
       <div class="counts" id="counts">—</div>
     </div>
-  </section>
-
-  <section class="card signal-card" id="signal-card">
-    <div class="sig-grid">
-      <div class="sig-main">
-        <div class="card-title">🎯 NEXT ROUND SIGNAL</div>
-        <div class="issue-line">Issue <b id="next-issue">—</b></div>
-        <div class="signal-big" id="signal-big" aria-live="polite">WAIT</div>
-        <div class="score-badge mono" id="score-badge">score 0</div>
-        <div class="bet-line" id="bet-line"></div>
+    <div class="digit-panel mono">
+      <div class="digit-head">
+        <span class="dd-title">🔢 DIGIT DISTRIBUTION</span>
+        <span class="dd-sub" title="နောက်ဆုံး 500 rounds ထဲမှာ digit တစ်ခုစီ ထွက်ခဲ့တဲ့ ရာခိုင်နှုန်း">last 500 rounds · 10% = balanced</span>
+        <span class="dd-legend">
+          <span class="dd-dot big"></span>BIG 5–9
+          <span class="dd-dot small"></span>SMALL 0–4
+        </span>
       </div>
-      <div class="sig-side">
-        <div class="gauges" id="gauges"></div>
-        <div class="reason" id="reason">Data စုဆောင်းနေဆဲ…</div>
-        <div class="meta-row mono"><span id="mtf-chip"></span><span id="mk-chip"></span><span id="fd-chip"></span></div>
-      </div>
+      <div class="digit-dist" id="digit-dist"></div>
     </div>
   </section>
+
+  <aside class="side-col">
+    <section class="card ctx-card" id="context-card">
+      <div class="card-title">🧭 MARKET CONTEXT</div>
+      <div class="ctx-strip mono"><span class="ctx-k">TREND</span><span id="ctx-trend">—</span></div>
+      <div class="ctx-strip"><span class="ctx-label">MTF</span><span id="mtf-chip"></span></div>
+      <div class="ctx-strip"><span class="ctx-label">MARKOV</span><span id="mk-chip"></span></div>
+      <div class="ctx-strip"><span class="ctx-label">RSI 30D</span><span id="ctx-rsi30" title="နောက်ဆုံး 30 ရက်အတွင်း အမြင့်ဆုံး/အနိမ့်ဆုံး RSI (နှိပ်ပြီး ပြန်တွက်)">—</span></div>
+      <div class="ctx-strip"><span class="ctx-label">SCORE</span><span id="score-badge">score 0</span></div>
+      <div class="gauges" id="gauges"></div>
+      <div class="reason small" id="reason">Data စုဆောင်းနေဆဲ…</div>
+
+      <div class="stake-panel mono" id="stake-panel">
+        <div class="stake-title-row">
+          <span class="stake-title">🎰 12-STEP ENGINE</span>
+          <span class="stake-badge" id="st-tier">T1</span>
+          <span class="stake-badge" id="st-step">S1</span>
+        </div>
+        <div class="stake-strip"><span class="stake-k">SIGNAL</span><span id="st-pending">—</span></div>
+        <div class="stake-strip"><span class="stake-k">STAKE</span><span id="st-stake">—</span></div>
+        <div class="stake-strip"><span class="stake-k">LAST</span><span id="st-last">waiting…</span></div>
+        <div class="stake-strip"><span class="stake-k">BUSTS</span><span id="st-busts">0</span></div>
+      </div>
+
+      <div class="ctx-note">⚠️ Layers တွေဟာ သင်္ချာအရ ~50% coin-flip ပါ — လေ့လာမှု/visualization အတွက်သာ၊ trade အတည်ပြုချက်အဖြစ် မသုံးပါနဲ့။</div>
+    </section>
+  </aside>
+  </div>
 </main>
 
 <footer>
   <span id="last-fetch">—</span> · ⚠️ ဤစနစ်သည် ခန့်မှန်းချက်သာဖြစ်ပြီး စွန့်လွှတ်နိုင်သော ငွေဖြင့်သာ ရင်းနှီးပါ။
 </footer>
 
-<script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=30"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=30"></script>
-<script src="{{ url_for('static', filename='js/draw.js') }}?v=30"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=30"></script>
+<script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=41"></script>
+<script src="{{ url_for('static', filename='js/draw.js') }}?v=41"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=41"></script>
 </body>
 </html>

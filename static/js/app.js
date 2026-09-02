@@ -54,7 +54,7 @@ async function fetchFullHistory(force) {
 
 function setConn(ok, txt) {
   $("dot").className = "dot " + (ok ? "on" : "off");
-  $("conn-txt").textContent = txt && txt.length > 60 ? txt.slice(0, 57) + "…" : (txt || "");
+  $("conn-txt").textContent = ok ? "LIVE" : (txt && txt.length > 50 ? txt.slice(0, 47) + "…" : (txt || "OFFLINE"));
 }
 
 function signalClass(sig) {
@@ -67,39 +67,30 @@ function signalClass(sig) {
 
 let lastSigLabel = "";
 function renderSignal(s) {
-  const card = $("signal-card");
+  /* MARKET CONTEXT sidebar — trend + MTF + diagnostics (trade hero ဖြစ်နေတဲ့
+     အချိန်တွင် console.error မဖြစ်စေရန်လည်း လုံခြုံစွာ ဖယ်ရှားပြီး) */
+  const card = $("context-card");
+  if (!card) return;
   const a = s.analysis;
-  card.classList.remove("sig-big", "sig-small", "sig-watch", "sig-wait", "sig-skip");
-  $("next-issue").textContent = s.next_issue || "—";
 
-  if (!a) return;
-  const [cls, label] = signalClass(a.signal);
-  card.classList.add(cls);
-  $("signal-big").textContent = label;
-
-  /* pulse the card when an actionable signal appears/changes */
-  if ((cls === "sig-big" || cls === "sig-small") && label !== lastSigLabel) {
-    card.classList.remove("flash");
-    void card.offsetWidth;   // restart CSS animation
-    card.classList.add("flash");
-    if (soundOn) beep();
-    notifySignal(label, s.next_issue);
+  /* TREND strip: walk-based quick read */
+  const tr = $("ctx-trend");
+  if (tr) {
+    const mt = a.mtf;
+    if (mt && (mt.x5 || mt.x15)) {
+      const agree = mt.x5 === mt.x15 && mt.x5 !== 0;
+      tr.innerHTML = `×5 <b class="${mt.x5 > 0 ? "red" : "blue"}">${arrowOf(mt.x5)}</b>` +
+        ` · ×15 <b class="${mt.x15 > 0 ? "red" : "blue"}">${arrowOf(mt.x15)}</b>` +
+        (agree ? ` <b class="green">✓</b>` : ` <b class="orange">✗</b>`);
+    } else tr.textContent = "—";
   }
-  lastSigLabel = label;
 
+  /* score chip (theme colors reuse) */
   const badge = $("score-badge");
-  badge.textContent = "score " + (a.score > 0 ? "+" : "") + a.score.toFixed(1);
-  badge.className = "score-badge " +
-    (a.score > 0 ? "green" : a.score < 0 ? "red" : "");
-
-  $("reason").textContent = a.reason;
-
-  const bet = $("bet-line");
-  if (s.pending) {
-    bet.textContent = `💵 BET PLACED: ${s.pending.signal} — ${fmtInt(s.pending.stake || s.bet_size)} MMK (Issue ${s.pending.short_issue})`;
-    bet.classList.add("show");
-  } else {
-    bet.classList.remove("show");
+  if (badge) {
+    const sc = (a.score || 0);
+    badge.textContent = `score ${sc > 0 ? "+" : ""}${sc.toFixed(1)}`;
+    badge.className = "ctx-val mono " + (sc > 0 ? "red" : sc < 0 ? "blue" : "");
   }
 }
 
@@ -109,19 +100,26 @@ const arrowOf = (v) => (v > 0 ? "▲" : v < 0 ? "▼" : "•");
 function renderAnalytics(s) {
   const a = s.analysis || {};
 
+  /* gauge bars (context card) */
   const g = $("gauges");
   if (g) {
     const parts = a.parts || [];
-    if (!parts.length) { g.innerHTML = ""; return; }
-    const max = Math.max(30, ...parts.map((p) => Math.abs(p.value || 0)));
-    g.innerHTML = parts.map((p) => {
-      const pct = Math.min(100, (Math.abs(p.value) / max) * 50) * 2;
-      const cls = p.value > 0 ? "up" : p.value < 0 ? "down" : "";
-      return `<div class="gauge-row"><span class="g-name">${p.name}</span>` +
-        `<span class="g-bar"><i class="${cls}" style="width:${pct}%"></i></span>` +
-        `<span class="g-val ${p.value > 0 ? "red" : p.value < 0 ? "blue" : ""}">${p.value > 0 ? "+" : ""}${p.value}</span></div>`;
-    }).join("");
+    if (!parts.length) { g.innerHTML = ""; }
+    else {
+      const max = Math.max(30, ...parts.map((p) => Math.abs(p.value || 0)));
+      g.innerHTML = parts.map((p) => {
+        const pct = Math.min(100, (Math.abs(p.value) / max) * 50) * 2;
+        const cls = p.value > 0 ? "up" : p.value < 0 ? "down" : "";
+        return `<div class="gauge-row"><span class="g-name">${p.name}</span>` +
+          `<span class="g-bar"><i class="${cls}" style="width:${pct}%"></i></span>` +
+          `<span class="g-val ${p.value > 0 ? "red" : p.value < 0 ? "blue" : ""}">${p.value > 0 ? "+" : ""}${p.value}</span></div>`;
+      }).join("");
+    }
   }
+
+  /* reason text (context card) */
+  const rs = $("reason");
+  if (rs && a.reason) rs.textContent = a.reason;
 
   const mtfEl = $("mtf-chip");
   if (mtfEl) {
@@ -143,12 +141,8 @@ function renderAnalytics(s) {
     mkEl.className = mk && mk.p_big != null ? (mk.p_big >= 0.5 ? "red" : "blue") : "";
   }
 
-  const fdEl = $("fd-chip");
-  if (fdEl) {
-    const d = s.feed_delay;
-    fdEl.textContent = (d != null && d >= 120) ? `⏳ FEED +${Math.floor(d / 60)}m` : "";
-    fdEl.className = "orange";
-  }
+  /* feed delay — silent (auto-standby engine-side only, user-facing text removed) */
+  void s.feed_delay;
 
   /* 📡 button tooltip shows last Telegram event (sent/skip/error + time) */
   const tgB = $("tg-btn");
@@ -158,6 +152,67 @@ function renderAnalytics(s) {
       ? `Telegram နောက်ဆုံး event — ${t.time} · ${t.result}\n${t.msg}`
       : "Telegram ချိတ်ဆက်မှု စမ်းသပ် (နှိပ်) · နောက်ဆုံး event မရှိသေးဘူး";
   }
+
+  /* ---- 🎰 12-step staking panel ---- */
+  const st = s.strat || {};
+  {
+    const tierEl = $("st-tier"), stepEl = $("st-step");
+    if (tierEl) {
+      tierEl.textContent = "T" + ((st.tier || 0) + 1);
+      tierEl.className = "stake-badge" + ((st.tier || 0) > 0 ? " hot" : "");
+    }
+    if (stepEl) stepEl.textContent = "S" + ((st.step || 0) + 1);
+    const pend = s.strat_pending || st.pending;
+    const pEl = $("st-pending");
+    if (pEl) {
+      if (pend) {
+        pEl.innerHTML = `<b class="${pend.target === "BIG" ? "red" : "blue"}">${pend.target}</b> → issue …${String(pend.issue).slice(-6)}`;
+      } else pEl.textContent = "waiting for signal…";
+    }
+    const skEl = $("st-stake");
+    if (skEl) skEl.textContent = pend ? `${pend.stake.toLocaleString("en-US")} MMK` : "—";
+    const bEl = $("st-busts");
+    if (bEl) {
+      bEl.textContent = st.busts || 0;
+      bEl.className = (st.busts || 0) > 0 ? "red" : "";
+    }
+  }
+  const lastEl = $("st-last");
+  if (lastEl) {
+    const lt = s.strat_last;
+    if (lt) {
+      const cls = lt.outcome === "WIN" ? "green" : (lt.outcome === "12-STEP BUST" ? "red" : "orange");
+      lastEl.innerHTML = `<b class="${cls}">${lt.outcome}</b> T${lt.tier} · net ${lt.net >= 0 ? "+" : ""}${lt.net.toLocaleString("en-US")}`;
+    }
+  }
+}
+
+/* ---- RSI 30-day extremes (Market Context strip) ---- */
+async function fetchRsiExtremes() {
+  const el = $("ctx-rsi30");
+  if (!el) return;
+  try {
+    const r = await fetch("/api/rsi-extremes?days=30", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    el.innerHTML =
+      `L <b class="blue">${d.min.toFixed(1)}</b>` +
+      ` · H <b class="red">${d.max.toFixed(1)}</b>`;
+    el.title = `နောက်ဆုံး ${d.days} ရက် (${Math.round(d.rounds / 1440)} ရက်စာ ${d.rounds.toLocaleString("en-US")} rounds)\n` +
+      `အနိမ့်ဆုံး RSI ${d.min} — ${d.min_at} (Issue …${d.min_issue})\n` +
+      `အမြင့်ဆုံး RSI ${d.max} — ${d.max_at} (Issue …${d.max_issue})\n(နှိပ် = ပြန်တွက်)`;
+  } catch (e) {
+    el.textContent = "—";
+  }
+}
+const rsi30El = $("ctx-rsi30");
+if (rsi30El) {
+  rsi30El.style.cursor = "pointer";
+  rsi30El.addEventListener("click", () => {
+    rsi30El.textContent = "…";
+    fetchRsiExtremes();
+  });
 }
 
 /* ---- backtest panel removed from UI — /api/backtest endpoint still available ---- */
@@ -205,12 +260,35 @@ function renderTicker(s) {
   }
 
   setTxt("tk-vol", a.vol != null ? a.vol.toFixed(2) : "—");
+}
 
-  const pl = $("tk-pl");
-  if (pl) {
-    pl.textContent = `${s.units >= 0 ? "+" : ""}${s.units}u`;
-    pl.className = "tk-val mono " + (s.units > 0 ? "green" : s.units < 0 ? "red" : "");
+/* ---- digit distribution bars (0–9 % over last 500 rounds) ---- */
+let lastDistSig = "";
+function renderDigitDist(s) {
+  const wrap = $("digit-dist");
+  if (!wrap) return;
+  const h = s.history || [];
+  if (!h.length) { wrap.innerHTML = ""; return; }
+  const tail = h.slice(-500);
+  const sig = tail.length + ":" + (tail.length ? tail[tail.length - 1].issue : "");
+  if (sig === lastDistSig) return;
+  lastDistSig = sig;
+
+  const freq = new Array(10).fill(0);
+  tail.forEach((x) => freq[x.number]++);
+  const n = tail.length;
+  const maxP = Math.max(...freq.map((c) => (c / n) * 100), 12);  // bar scale floor
+  let out = "";
+  for (let d = 0; d <= 9; d++) {
+    const pct = (freq[d] / n) * 100;
+    const barCls = d >= 5 ? "big" : "small";
+    const w = Math.max(3, (pct / maxP) * 100);
+    out += `<div class="dd-row">` +
+      `<span class="dd-digit ${barCls}">${d}</span>` +
+      `<span class="dd-bar"><i class="${barCls}" style="width:${w}%"></i></span>` +
+      `<span class="dd-pct">${pct.toFixed(1)}%</span></div>`;
   }
+  wrap.innerHTML = out;
 }
 
 let lastHistSig = "";
@@ -266,6 +344,7 @@ function render(s, merged) {
   mergedCount = merged ? merged.length : 0;
   safeRender(renderTicker, s);
   safeRender(renderHistory, s);
+  safeRender(renderDigitDist, s);
   if (window.TRXChart) TRXChart.update({ ...s, history: merged || s.history });
   setTxt("last-fetch", "Last update: " + (s.last_update || "—"));
   tickServerUpdate(s.last_update);
@@ -357,6 +436,7 @@ document.addEventListener("fullscreenchange", () => {
 });
 
 /* Auto S/R toggle (find & show / hide) + signal arrows toggle */
+/* Auto S/R toggle (find & show / hide) + signal arrows toggle */
 const srBtn = $("sr-find-btn");
 if (srBtn) {
   srBtn.classList.add("active");   // S/R checkbox defaults to ON
@@ -367,11 +447,24 @@ if (srBtn) {
       clearTimeout(srBtn._t);
       if (r.on) {
         srBtn.textContent = `🔍 S/R ×${r.n}`;
-        srBtn._t = setTimeout(() => { srBtn.textContent = "🔍 Auto S/R"; }, 2500);
+        srBtn._t = setTimeout(() => { srBtn.textContent = "🔍 S/R"; }, 2500);
       } else {
-        srBtn.textContent = "🔍 Auto S/R";
+        srBtn.textContent = "🔍 S/R";
       }
     }
+  });
+}
+/* 🎨 toggle: DRAW tools + INDICATORS bars (hidden by default; click = open both, again = close both) */
+const dtToggle = $("dt-toggle-btn");
+const drawBar = $("draw-tools");
+const indBar = $("ind-bar");
+if (dtToggle) {
+  dtToggle.addEventListener("click", () => {
+    const anyOpen = (drawBar && !drawBar.classList.contains("collapsed")) ||
+                    (indBar && !indBar.classList.contains("collapsed"));
+    if (drawBar) drawBar.classList.toggle("collapsed", anyOpen);   // open→close, closed→open
+    if (indBar) indBar.classList.toggle("collapsed", anyOpen);
+    dtToggle.classList.toggle("active", !anyOpen);
   });
 }
 const sigBtn = $("sig-btn");
@@ -412,6 +505,8 @@ async function pollLatest() {
   } catch (e) { /* noop */ }
 }
 setInterval(pollLatest, 1200);
+fetchRsiExtremes();
+setInterval(fetchRsiExtremes, 3600000);   // 1h
 
 /* ================= alerts: sound + desktop notification ================= */
 let soundOn = localStorage.getItem("trx_sound") === "1";

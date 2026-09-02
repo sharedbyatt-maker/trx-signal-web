@@ -51,6 +51,19 @@ ROLLING_MIN_FOR_CONF = 10         # rolling win-rate ယုံကြည်မှ
 
 BET_SIZE = round(START_BANKROLL * RISK_PCT)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ================= 12-STEP STAKING ENGINE (3-Tier × 4-Step) =================
+# 90-day backtest နဲ့ အတည်ပြုခဲ့တဲ့ strategy (strategy_test.py)
+STAKE_TIERS = [
+    [200, 400, 600, 1200],              # Tier 1 (4 Steps)
+    [2500, 5000, 10000, 20000],         # Tier 2 (4 Steps)
+    [40000, 80000, 160000, 320000],     # Tier 3 (4 Steps)
+]
+STAKE_PAYOUT = 1.96
+RSI_STRAT_PERIOD = 14
+RSI_STRAT_OVERSOLD = 32.0     # prev RSI ≤32 & cur=BIG → next bet BIG
+RSI_STRAT_OVERBOUGHT = 68.0   # prev RSI ≥68 & cur=SMALL → next bet SMALL
+
 LOG_FILE = os.path.join(BASE_DIR, "signals_log.csv")
 HIST_FILE = os.path.join(BASE_DIR, "signals_history.csv")
 HISTORY_KEEP = 400
@@ -73,6 +86,15 @@ TG_RSI_DOWN = 40.0      # 40 အောက်ဆင်းရင် Noti
 TG_MIN_GAP_SEC = 30     # anti-spam: message ကြားခံ အနည်းဆုံး gap
 TG_REMIND_SEC = 300     # zone ထဲ ဆက်ရှိနေရင် 5 မိနစ်တစ်ခါ reminder
 TG_HYST = 2.0           # hysteresis — re-arm ဖို့ level ကနေ ဒီအောက်မှာ ဆင်းရမယ်
+
+# ---- ⚠️ PRE-SIGNAL RADAR (RSI 40/60 · hysteresis 45/55) ----
+# 33/67 trading signal မလာခင် ကြိုပြင်ဆင်ဖို့ radar — buffer zone logic:
+#   oversold : fire RSI<40 · reset RSI>45 (45 အထက် ပြန်တက်မှ ပြန်အလုပ်လုပ်)
+#   overbought: fire RSI>60 · reset RSI<55 (55 အောက် ပြန်ဆင်းမှ ပြန်အလုပ်လုပ်)
+RADAR_DOWN = 40.0
+RADAR_RESET_DOWN = 45.0
+RADAR_UP = 60.0
+RADAR_RESET_UP = 55.0
 
 
 def rsi_alert_state(r_now, up_lv, dn_lv, armed_up, armed_down,
@@ -201,6 +223,9 @@ STATE = {
     "feed_delay": None,
     "backtest": None,
     "tg_last": None,
+    "strat": None,
+    "strat_last": None,
+    "strat_log": [],
     "bet_size": BET_SIZE,
     "session_start": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     "config": {
@@ -237,6 +262,18 @@ tg_armed_up = True    # RSI up-alert armed (re-arms after real pullback)
 tg_armed_down = True
 _tg_up_ts = 0.0
 _tg_down_ts = 0.0
+radar_armed_up = True     # overbought radar (60 အထက် fire နိုင်သေး)
+radar_armed_down = True   # oversold radar (40 အောက် fire နိုင်သေး)
+# ---- 12-step staking engine state ----
+strat_state = {
+    "tier": 0,           # 0=T1, 1=T2, 2=T3
+    "step": 0,           # 0..3 within tier
+    "signals": 0,        # armed signal count
+    "busts": 0,          # 12-step bust count
+    "last_result": None,
+    "pending": None,
+}
+strat_pending = None   # {"issue","target","tier","step","stake",...}
 
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # no static caching — always fresh JS/CSS
@@ -757,11 +794,15 @@ def resolve_pending(latest):
 def engine_loop():
     global last_issue, pending, units, lose_streak, cooldown, unresolved_signal
     global tg_armed_up, tg_armed_down, _tg_up_ts, _tg_down_ts
+    global radar_armed_up, radar_armed_down
+    global strat_state, strat_pending
     # ---- tail-mode polling state (local to engine thread) ----
     all_rows = []          # persistent parsed rows (newest at end)
     seen_issues = set()
     have_full = False      # boot-time full snapshot done?
     err_streak = 0
+    arr_strat = []         # walk-RSI series for staking engine
+    types_strat = []       # parallel types (chronological)
     while True:
         try:
             url = URL_DATA if not have_full else URL_DATA + "?limit=500"
@@ -798,6 +839,15 @@ def engine_loop():
                     err_streak = 0
                     parsed_history = all_rows
 
+                    # ---- staking-engine series (walk + RSI, chronological) ----
+                    types_strat = [x["type"] for x in parsed_history]
+                    c_s = 100
+                    closes_s = []
+                    for x in parsed_history:
+                        c_s += 1 if x["type"] == "BIG" else -1
+                        closes_s.append(c_s)
+                    arr_strat = rsi_series(closes_s, RSI_STRAT_PERIOD)
+
                     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     latest = parsed_history[-1]
                     if latest["issue"] != last_issue:
@@ -819,9 +869,13 @@ def engine_loop():
 
                         analysis = analyze_all_in_one(parsed_history)
 
-                        # ---- Telegram: RSI reach alerts (armed/re-arm + hysteresis) ----
+                        # ---- ⚠️ PRE-SIGNAL RADAR (RSI 40/60 · hysteresis 45/55) ----
+                        # 33/67 trading signal မလာခင် ကြိုပြင်ဆင်ဖို့ radar။
                         # ALERT SOURCE = chart RSI pane နှင့် တစ်တောင့်တည်းဖြစ်စေရန်
                         # walk-closes ပေါ်မှာ တွက်တာ (digit-RSI မဟုတ်ဘူး!)
+                        # Buffer zone: 40 အောက် fire → 45 အထက် ပြန်တက်မှ reset
+                        #              60 အထက် fire → 55 အောက် ပြန်ဆင်းမှ reset
+                        # → ဇုန်စွန်းနား အတက်အဆင်းမှာ spam မဖြစ် · လွတ်မသွား
                         c_walk = 100
                         closes_walk = []
                         for d in [1 if x["type"] == "BIG" else -1 for x in parsed_history]:
@@ -830,30 +884,188 @@ def engine_loop():
                         rsi_arr_chart = rsi_series(closes_walk)
                         r_now = rsi_arr_chart[-1]
                         if r_now is not None:
-                            cfg = load_tg_config()
-                            up_lv = cfg[2] if cfg else TG_RSI_UP
-                            dn_lv = cfg[3] if cfg else TG_RSI_DOWN
-                            try:
-                                remind_sec = float(cfg[4]) if len(cfg) > 4 and cfg[4] else TG_REMIND_SEC
-                            except (TypeError, ValueError):
-                                remind_sec = TG_REMIND_SEC
-                            ts = time.time()
-                            msgs, tg_armed_up, tg_armed_down, _tg_up_ts, _tg_down_ts = rsi_alert_state(
-                                r_now, up_lv, dn_lv, tg_armed_up, tg_armed_down,
-                                _tg_up_ts, _tg_down_ts, ts, remind_sec)
-                            for kind, lv in msgs:
-                                if kind == "enter_up":
-                                    head = f"⬆️ RSI {lv:.0f} ကျော်သွားပါသည်"
-                                elif kind == "remind_up":
-                                    head = f"🔁 RSI {lv:.0f} အပေါ် ရှိနေဆဲ"
-                                elif kind == "enter_down":
-                                    head = f"⬇️ RSI {lv:.0f} အောက် ဆင်းသွားပါသည်"
-                                else:
-                                    head = f"🔁 RSI {lv:.0f} အောက် ရှိနေဆဲ"
+                            # ---- oversold radar: fire <40, reset >45 ----
+                            if r_now < RADAR_DOWN and radar_armed_down:
+                                radar_armed_down = False
                                 tg_notify(
-                                    f"{head}\nRSI လက်ရှိ: {r_now:.1f}\n"
-                                    f"Issue …{latest['short_issue']} · {latest['block_time']}")
-                                print(f"[TG-Q] {kind} rsi={r_now:.1f}", flush=True)
+                                    "⚠️ PRE-SIGNAL RADAR\n"
+                                    f"RSI လက်ရှိ: {r_now:.1f} — Oversold Zone (40 အောက်)\n"
+                                    f"Issue …{latest['short_issue']} · {latest['block_time']}\n"
+                                    "📌 Signal 32/68 မတိုင်မီ အဆင်သင့် ပြင်ဆင်ထားပါ")
+                                print(f"[RADAR] oversold rsi={r_now:.1f} → armed off", flush=True)
+                            elif r_now > RADAR_RESET_DOWN and not radar_armed_down:
+                                radar_armed_down = True
+                                print(f"[RADAR] oversold reset rsi={r_now:.1f} (>45)", flush=True)
+                            # ---- overbought radar: fire >60, reset <55 ----
+                            if r_now > RADAR_UP and radar_armed_up:
+                                radar_armed_up = False
+                                tg_notify(
+                                    "⚠️ PRE-SIGNAL RADAR\n"
+                                    f"RSI လက်ရှိ: {r_now:.1f} — Overbought Zone (60 အထက်)\n"
+                                    f"Issue …{latest['short_issue']} · {latest['block_time']}\n"
+                                    "📌 Signal 33/67 မတိုင်မီ အဆင်သင့် ပြင်ဆင်ထားပါ")
+                                print(f"[RADAR] overbought rsi={r_now:.1f} → armed off", flush=True)
+                            elif r_now < RADAR_RESET_UP and not radar_armed_up:
+                                radar_armed_up = True
+                                print(f"[RADAR] overbought reset rsi={r_now:.1f} (<55)", flush=True)
+
+                        # =====================================================
+                        # 12-STEP STAKING ENGINE — RSI 33/67 + Confirm-1
+                        # (strategy_test.py 90-day backtest နဲ့ အတည်ပြုထားသည်)
+                        # =====================================================
+                        # 1) signal detection: prev RSI ≤33 & cur=BIG → bet BIG
+                        #    prev RSI ≥67 & cur=SMALL → bet SMALL (next round)
+                        # 2) staking state: tier (0-2) + step (0-3)
+                        #    win → Tier1/Step1 reset · tier-loss → tier+1 (wait
+                        #    next signal, no forced bets) · tier3 loss → 12-step
+                        #    bust → Tier1 reset + alert
+                        # 3) live bet placement: လက်ရှိ armed signal ရှိရင်
+                        #    နောက်ပွဲ (next_issue) ကို လက်ရှိ tier/step stake
+                        #    နဲ့ ဆက်ထိုးမည်
+
+                        strat_signal = None
+                        if len(arr_strat) >= 2:
+                            rsi_prev_s = arr_strat[-2]
+                            t_prev_s = types_strat[-2]
+                            t_cur_s = types_strat[-1]
+                            if rsi_prev_s is not None:
+                                if rsi_prev_s <= RSI_STRAT_OVERSOLD and t_cur_s == "BIG":
+                                    strat_signal = "BIG"
+                                elif rsi_prev_s >= RSI_STRAT_OVERBOUGHT and t_cur_s == "SMALL":
+                                    strat_signal = "SMALL"
+
+                        # resolve pending strat bet with the fresh result
+                        # (ladder persistence: step-loss → pending stays armed
+                        #  for next_issue with advanced stake; only win/tier-
+                        #  loss clears it — matches strategy_test.py flow)
+                        if strat_pending is not None:
+                            sp = strat_pending
+                            won = (latest["type"] == sp["target"])
+                            sp["bets"] += 1
+                            stake_used = sp["stake"]
+                            sp["staked"] += stake_used
+                            ladder_continue = False
+                            if won:
+                                payout = int(round(stake_used * STAKE_PAYOUT))
+                                sp["returned"] += payout
+                                sp["net"] += payout - stake_used
+                                sp["win_step"] = sp["bets"]
+                                sp["resolved"] = True
+                                sp["outcome"] = "WIN"
+                                strat_state["tier"] = 0
+                                strat_state["step"] = 0
+                                strat_state["pending"] = None   # ladder done — clear UI state
+                                strat_state["last_result"] = f"WIN +{payout - stake_used:,} @ step {sp['bets']}"
+                                tg_notify(
+                                    f"✅ BET WON — {sp['target']}\n"
+                                    f"Tier {sp['tier']+1} · Step {sp['bets']} · "
+                                    f"stake {stake_used:,} MMK\n"
+                                    f"Episode net: {sp['net']:+,} MMK\n"
+                                    f"System: Tier 1 / Step 1 reset\n"
+                                    f"Issue …{latest['short_issue']}")
+                                print(f"[STAKE] ✅ WIN @ step {sp['bets']} ({stake_used:,}) — Tier1 reset", flush=True)
+                            else:
+                                sp["net"] -= stake_used
+                                if sp["bets"] >= 4:
+                                    # ---- tier failed (4 ပွဲလုံး) — pause ----
+                                    sp["resolved"] = True
+                                    sp["win_step"] = None
+                                    if sp["tier"] >= 2:
+                                        strat_state["busts"] += 1
+                                        sp["outcome"] = "12-STEP BUST"
+                                        strat_state["last_result"] = "💀 12-STEP BUST — Tier1 reset"
+                                        tg_notify(
+                                            f"💀 12-STEP BUST — Tier 3 ၄ပွဲလုံး ရှုံးပါသည်\n"
+                                            f"စုစုပေါင်း အရှုံး (ဤ cycle): {sp['net']:+,} MMK\n"
+                                            f"System: Tier 1 သို့ reset ပြန်စပါမည်\n"
+                                            f"Issue …{latest['short_issue']}")
+                                        print("[STAKE] 💀 12-STEP BUST — Tier1 reset", flush=True)
+                                    else:
+                                        sp["outcome"] = "TIER-FAILED"
+                                        nxt = sp["tier"] + 1
+                                        strat_state["last_result"] = f"Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}"
+                                        tg_notify(
+                                            f"🛑 TIER FAILED (PAUSED) — Tier {sp['tier']+1}\n"
+                                            f"၄ပွဲလုံး ရှုံး · episode net: {sp['net']:+,} MMK\n"
+                                            f"နောက် Signal အသစ် ထွက်လာမှ Tier {nxt+1} Step 1 "
+                                            f"({STAKE_TIERS[nxt][0]:,} MMK) ဖြင့် ဆယ်မည်\n"
+                                            f"Issue …{latest['short_issue']}")
+                                        print(f"[STAKE] Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}", flush=True)
+                                    strat_state["tier"] = min(sp["tier"] + 1, 2)
+                                    strat_state["step"] = 0
+                                    strat_state["pending"] = None   # tier paused — clear UI state
+                                else:
+                                    # ---- step lost, bets<4 — ladder continues ----
+                                    sp["outcome"] = "STEP-LOSS"
+                                    strat_state["step"] = sp["bets"]
+                                    next_stake = STAKE_TIERS[sp["tier"]][strat_state["step"]]
+                                    sp["step"] = strat_state["step"]
+                                    sp["stake"] = next_stake
+                                    sp["issue"] = next_issue
+                                    sp["short_issue"] = next_issue[-6:] if len(next_issue) >= 6 else next_issue
+                                    # keep strat_state["pending"] in sync with the
+                                    # advanced ladder (UI fallback path must stay fresh)
+                                    strat_state["pending"] = {
+                                        "target": sp["target"],
+                                        "tier": sp["tier"] + 1,
+                                        "step": strat_state["step"] + 1,
+                                        "stake": next_stake,
+                                        "issue": sp["issue"],
+                                    }
+                                    strat_state["last_result"] = (
+                                        f"Step {sp['bets']} lost → Step {sp['bets']+1} "
+                                        f"({next_stake:,} MMK) armed for …{sp['short_issue']}")
+                                    tg_notify(
+                                        f"⚠️ STEP LOST — ADVANCING TO STEP {sp['bets']+1}\n"
+                                        f"Target: {sp['target']} · Tier {sp['tier']+1}\n"
+                                        f"နောက်ပွဲ Stake: {next_stake:,} MMK\n"
+                                        f"Issue …{sp['short_issue']}")
+                                    print(f"[STAKE] step {sp['bets']} lost → advance step {sp['bets']+1} "
+                                          f"({next_stake:,}) @ …{sp['short_issue']}", flush=True)
+                                    ladder_continue = True
+                            with LOCK:
+                                STATE["strat_last"] = {
+                                    "issue": sp["issue"], "target": sp["target"],
+                                    "tier": sp["tier"] + 1, "outcome": sp["outcome"],
+                                    "net": sp["net"], "staked": sp["staked"],
+                                    "bets": sp["bets"],
+                                    "win_step": sp.get("win_step"),
+                                }
+                                STATE["strat"] = dict(strat_state)
+                                STATE["strat_log"].insert(0, dict(STATE["strat_last"]))
+                                del STATE["strat_log"][50:]
+                            if not ladder_continue:
+                                strat_pending = None
+
+                        # new signal → arm next round with current tier/step stake
+                        if strat_signal is not None and strat_pending is None:
+                            stake_amt = STAKE_TIERS[strat_state["tier"]][strat_state["step"]]
+                            strat_pending = {
+                                "issue": next_issue,
+                                "short_issue": next_issue[-6:] if len(next_issue) >= 6 else next_issue,
+                                "target": strat_signal,
+                                "tier": strat_state["tier"],
+                                "step": strat_state["step"],
+                                "stake": stake_amt,
+                                "bets": 0, "staked": 0, "returned": 0,
+                                "net": 0, "win_step": None, "resolved": False,
+                                "outcome": "PENDING",
+                            }
+                            strat_state["signals"] += 1
+                            strat_state["pending"] = {
+                                "target": strat_signal,
+                                "tier": strat_state["tier"] + 1,
+                                "step": strat_state["step"] + 1,
+                                "stake": stake_amt,
+                                "issue": strat_pending["issue"],
+                            }
+                            tg_notify(
+                                f"🎯 12-STEP SIGNAL — {strat_signal}\n"
+                                f"Tier {strat_state['tier']+1} · Step {strat_state['step']+1}\n"
+                                f"Stake: {stake_amt:,} MMK\n"
+                                f"Issue …{strat_pending['short_issue']}")
+                            print(f"[STAKE] signal {strat_signal} T{strat_state['tier']+1}"
+                                  f"S{strat_state['step']+1} stake={stake_amt:,}", flush=True)
 
                         # ---- record this round's signal for next issue ----
                         new_entry = {
@@ -923,6 +1135,8 @@ def engine_loop():
                                 "rolling": {"n": len(recent_results), "w": sum(recent_results)},
                                 "feed_delay": feed_delay,
                                 "markov": markov_prob(parsed_history),
+                                "strat": dict(strat_state),
+                                "strat_pending": dict(strat_pending) if strat_pending else None,
                             })
                         # ---- backtest: once on first data, then daily re-calibration ----
                         if STATE.get("backtest") is None or _bt_day != latest["day_int"]:
@@ -986,6 +1200,7 @@ def api_state():
     with LOCK:
         snap = {k: v for k, v in STATE.items() if k != "full_history"}
         snap["history"] = list(STATE["history"])
+        snap["strat_log"] = list(STATE.get("strat_log") or [])[:10]
         # TRADE LOG panel removed — ship a small tail for future use only
         snap["log"] = list(reversed(STATE["log"]))[:20]
         snap["server_now"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1054,6 +1269,74 @@ def api_latest():
     }})
 
 
+# ================= RSI EXTREMES (30-day high/low lookup) =================
+_rsi_ext_cache = {"ts": 0.0, "data": None}
+
+
+def compute_rsi_extremes(days=30):
+    """Upstream ကနေ 30 ရက်စာ rounds ဆွဲပြီး chart-identical walk-RSI min/max."""
+    try:
+        res = session.get(
+            URL_DATA + f"?limit={days * 1440 + 2000}",
+            timeout=40,
+            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+        if res.status_code != 200:
+            return None
+        rows = parse_history(res.json())
+        if not rows:
+            return None
+        last_day = rows[-1]["day_int"]
+        y, mo, d = last_day // 10000, (last_day // 100) % 100, last_day % 100
+        cutoff = int((datetime(y, mo, d) - timedelta(days=days - 1)).strftime("%Y%m%d"))
+        w = [r for r in rows if r["day_int"] >= cutoff]
+        if len(w) < 100:
+            return None
+        c = 100
+        closes = []
+        for x in w:
+            c += 1 if x["type"] == "BIG" else -1
+            closes.append(c)
+        arr = rsi_series(closes)
+        pairs = [(v, i) for i, v in enumerate(arr) if v is not None]
+        if not pairs:
+            return None
+        vmin, imin = min(pairs)
+        vmax, imax = max(pairs)
+        return {
+            "days": days,
+            "rounds": len(w),
+            "from": w[0]["issue"],
+            "to": w[-1]["issue"],
+            "min": round(vmin, 1),
+            "min_at": w[imin]["block_time"],
+            "min_issue": w[imin]["short_issue"],
+            "max": round(vmax, 1),
+            "max_at": w[imax]["block_time"],
+            "max_issue": w[imax]["short_issue"],
+        }
+    except (requests.RequestException, ValueError, KeyError) as e:
+        print(f"[RSI-EXT] error: {e}", flush=True)
+        return None
+
+
+@app.route("/api/rsi-extremes")
+def api_rsi_extremes():
+    """RSI အမြင့်ဆုံး/အနိမ့်ဆုံး (default 30d) — 1h cache။"""
+    global _rsi_ext_cache
+    days = request.args.get("days", default=30, type=int)
+    days = max(1, min(days, 90))
+    with LOCK:
+        cache = dict(_rsi_ext_cache)
+    if cache["data"] and cache["data"].get("days") == days and time.time() - cache["ts"] < 3600:
+        return jsonify(cache["data"])
+    data = compute_rsi_extremes(days)
+    if data:
+        with LOCK:
+            _rsi_ext_cache = {"ts": time.time(), "data": data}
+        return jsonify(data)
+    return jsonify({"error": "data မရနိုင်ပါ"}), 503
+
+
 @app.route("/api/backtest")
 def api_backtest():
     if request.args.get("refresh") == "1":
@@ -1101,10 +1384,9 @@ if __name__ == "__main__":
     print(f"   Entry ≥ |{SCORE_TRADE}| | Risk: Flat {BET_SIZE:,} MMK | SL {-STOP_LOSS_UNITS}u / TP +{TAKE_PROFIT_UNITS}u", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
-    port = int(os.environ.get("PORT", 10000))
     app.run(
-        host="0.0.0.0",
-        port=port,
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
         threaded=True)
 
 

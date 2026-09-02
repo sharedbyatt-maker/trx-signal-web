@@ -70,10 +70,25 @@ header {
   letter-spacing: 1px;
 }
 .sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
 .conn { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.6s infinite; }
 .dot.off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+@keyframes pulse { 50% { opacity: .45; } }
+.clock { margin-left: 10px; font-size: 13px; color: var(--text); }
+
+/* toolbar group labels */
+.tb-group-label {
+  font-size: 9px; color: #5b8cff; letter-spacing: 1.2px;
+  font-weight: 800; margin: 0 4px 0 6px;
+  background: rgba(41,98,255,.08);
+  padding: 2px 7px; border-radius: 4px;
+  flex: 0 0 auto;
+}
+/* draw tools + indicators bars (hidden by default) */
+.draw-tools, .ind-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 6px 10px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; min-height: 42px; }
+.draw-tools.collapsed, .ind-bar.collapsed { display: none; }
 @keyframes pulse { 50% { opacity: .45; } }
 .clock { margin-left: 10px; font-size: 13px; color: var(--text); }
 
@@ -108,6 +123,15 @@ header {
 
 /* ---------- layout ---------- */
 main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex; flex-direction: column; gap: 14px; }
+
+/* desktop: chart (left) + sticky signal sidebar (right) */
+.layout-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; align-items: start; }
+.side-col { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 122px; }
+@media (max-width: 1280px) {
+  .layout-grid { grid-template-columns: 1fr; }
+  .side-col { position: static; }
+}
+
 @media (max-width: 900px) {
   .ticker-wrap { top: 0; position: static; }
   #tv-chart { height: 400px; }
@@ -121,6 +145,48 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
   }
   .chart-toggle { margin-left: 6px; flex: 0 0 auto; }
   .tb-sep { flex: 0 0 auto; }
+}
+
+/* ================= 📱 PHONE (≤600px) ================= */
+@media (max-width: 600px) {
+  /* header: brand + conn စီ၊ sub စာ တို */
+  header { padding: 8px 10px; flex-wrap: wrap; gap: 6px; }
+  .brand h1 { font-size: 12.5px; letter-spacing: .6px; }
+  .logo { width: 32px; height: 32px; font-size: 18px; border-radius: 8px; }
+  .sub { font-size: 9px; }
+  .clock { font-size: 12px; }
+  .conn-txt { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ticker cards → wrap 2 rows ok, smaller */
+  .ticker { gap: 8px; padding: 6px 10px; }
+  .tk-item { padding: 3px 9px; }
+  .tk-ball { width: 21px; height: 21px; font-size: 10.5px; }
+  .tk-val { font-size: 12px; }
+
+  main { padding: 10px 8px 20px; gap: 10px; }
+  .card { padding: 11px 11px; border-radius: 10px; }
+
+  /* chart: taller for finger-friendly analysis */
+  #tv-chart { height: 360px; }
+  #rsi-chart, #macd-chart, #stoch-chart { height: 72px; }
+
+  /* context card: full width, no sticky */
+  .side-col { position: static; }
+  .ctx-label, .ctx-k { width: 56px; }
+
+  /* time-bar wraps nicely */
+  .chart-time-bar { gap: 8px; font-size: 10px; padding: 6px 8px; }
+  .ctb-item { letter-spacing: 0; font-size: 10px; }
+  .ctb-sep { display: none; }
+
+  /* history balls slightly smaller + digit panel 2-col */
+  .ball { width: 24px; height: 24px; font-size: 10.5px; }
+  .ball.dragon-head::after { font-size: 8px; top: -9px; }
+  .digit-dist { grid-template-columns: repeat(2, 1fr); gap: 3px 12px; }
+  .dd-pct { width: 40px; }
+
+  /* footer readable */
+  footer { font-size: 10px; line-height: 1.7; }
 }
 
 .card {
@@ -152,8 +218,46 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
 .signal-card.sig-big   { background: linear-gradient(120deg, rgba(242,54,69,.07), rgba(242,54,69,.015) 45%, transparent), var(--card); }
 .signal-card.sig-small { background: linear-gradient(120deg, rgba(41,98,255,.07), rgba(41,98,255,.015) 45%, transparent), var(--card); }
 
-.sig-grid { display: grid; grid-template-columns: minmax(230px, .9fr) 1.6fr; gap: 8px 26px; align-items: start; }
-@media (max-width: 900px) { .sig-grid { grid-template-columns: 1fr; } }
+/* sidebar context: stack + scale down the hero text */
+.side-col .sig-grid { grid-template-columns: 1fr; gap: 10px; }
+.side-col .signal-big { font-size: 34px; }
+.side-col .sig-watch .signal-big,
+.side-col .sig-wait .signal-big,
+.side-col .sig-skip .signal-big { font-size: 24px; }
+@media (max-width: 900px) {
+  .side-col .signal-big { font-size: 40px; }
+}
+
+/* ---------- 🧭 market context card ---------- */
+.ctx-strip { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid rgba(42,46,57,.6); font-size: 12px; }
+.ctx-strip:first-of-type { border-top: none; }
+.ctx-label, .ctx-k { font-size: 9.5px; color: var(--muted); letter-spacing: 1.2px; width: 62px; flex: 0 0 auto; font-weight: 700; }
+.ctx-strip .ctx-val, .ctx-strip span:last-child { font-size: 12px; font-weight: 700; }
+.ctx-note { margin-top: 10px; font-size: 10px; line-height: 1.7; color: var(--muted); opacity: .85; border-top: 1px dashed rgba(42,46,57,.7); padding-top: 8px; }
+.reason.small { font-size: 11px; line-height: 1.7; margin-top: 8px; }
+.ctx-card .gauges { margin: 10px 0 2px; }
+#ctx-trend { color: var(--text); }
+
+/* ---------- 🎰 12-step staking panel ---------- */
+.stake-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,.015);
+}
+.stake-title-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.stake-title { font-size: 9.5px; color: var(--orange); letter-spacing: 1.2px; font-weight: 800; }
+.stake-badge {
+  font-size: 9px; font-weight: 800; letter-spacing: .5px;
+  padding: 1px 7px; border-radius: 4px;
+  background: rgba(41,98,255,.15); color: #5b8cff;
+  border: 1px solid rgba(41,98,255,.35);
+}
+.stake-badge.hot { background: rgba(242,54,69,.15); color: var(--red); border-color: rgba(242,54,69,.4); }
+.stake-strip { display: flex; align-items: baseline; gap: 8px; padding: 2.5px 0; font-size: 11px; }
+.stake-k { font-size: 8.5px; color: var(--muted); letter-spacing: 1px; width: 52px; flex: 0 0 auto; font-weight: 700; }
+.stake-strip span:last-child { font-weight: 700; color: var(--text); }
 
 .issue-line { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
 .issue-line b { color: var(--text); font-size: 14px; }
@@ -291,7 +395,7 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
 .chart-toggle input { accent-color: var(--blue); cursor: pointer; }
 
 .tv-wrap { position: relative; }
-#tv-chart { width: 100%; height: 620px; }
+#tv-chart { width: 100%; height: max(560px, calc(100vh - 560px)); }
 #tv-chart.drawing-active { touch-action: none; -webkit-user-select: none; user-select: none; }
 
 /* ---------- fullscreen chart mode ---------- */
@@ -324,18 +428,6 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
 .tv-rsi-legend #lg-stoch.green { color: var(--green); }
 
 /* ---------- drawing tools ---------- */
-.draw-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  padding: 6px 10px;
-  margin-bottom: 8px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  min-height: 42px;
-}
 .dt-btn {
   background: transparent;
   border: 1px solid transparent;
@@ -410,14 +502,23 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
   text-overflow: ellipsis;
 }
 
-/* ---------- RSI sub-pane ---------- */
+/* ---------- RSI sub-pane (visual hierarchy: chart > RSI) ---------- */
 #rsi-pane {
   position: relative;
-  border-top: 1px solid var(--border);
-  background: rgba(255,255,255,.012);
+  border-top: 2px solid #363e50;
+  background: linear-gradient(180deg, rgba(179,157,219,.055), rgba(255,255,255,.008) 65%);
+  border-radius: 0 0 10px 10px;
 }
 #rsi-pane.off { display: none; }
+#rsi-pane:not(.off) { min-height: 116px; }
 #rsi-chart { width: 100%; height: 110px; }
+.lg-rsi-zone {
+  font-size: 8.5px; font-weight: 800; letter-spacing: 1px;
+  padding: 0 6px; border-radius: 8px;
+  background: rgba(120,123,134,.15); color: var(--muted);
+}
+.lg-rsi-zone.red { color: var(--red); background: rgba(242,54,69,.14); }
+.lg-rsi-zone.green { color: var(--green); background: rgba(8,153,129,.14); }
 .tv-rsi-legend {
   position: absolute;
   top: 5px; left: 10px;
@@ -509,8 +610,37 @@ main { max-width: 1560px; margin: 0 auto; padding: 14px 16px 28px; display: flex
 .ball.big { background: linear-gradient(135deg, #f23645, #c12233); }
 .ball.small { background: linear-gradient(135deg, #2962ff, #00a2ff); }
 
-/* ---------- 🔥 Dragon Streak detector (4+ ဆက်) ---------- */
-@keyframes dragonPulse {
+.dragon-glow { text-shadow: 0 0 9px rgba(255,152,0,.95) !important; }
+
+/* ---------- 🔢 Digit distribution bars ---------- */
+.digit-panel {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px 10px;
+  background: rgba(255,255,255,.012);
+}
+.digit-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 7px; }
+.dd-title { font-size: 9.5px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; }
+.dd-sub { font-size: 9.5px; color: var(--muted); opacity: .8; }
+.dd-legend { margin-left: auto; font-size: 9.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.dd-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 10px; }
+.dd-dot.big { background: var(--red); }
+.dd-dot.small { background: var(--blue); }
+.digit-dist { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px 18px; }
+@media (max-width: 700px) { .digit-dist { grid-template-columns: repeat(2, 1fr); } }
+.dd-row { display: flex; align-items: center; gap: 7px; font-size: 10.5px; }
+.dd-digit {
+  width: 17px; height: 18px;
+  border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 10px; color: #fff; flex: 0 0 auto;
+}
+.dd-digit.big { background: linear-gradient(135deg, #f23645, #c12233); }
+.dd-digit.small { background: linear-gradient(135deg, #2962ff, #00a2ff); }
+.dd-bar { flex: 1; height: 9px; background: var(--card2); border-radius: 4px; overflow: hidden; }
+.dd-bar i { display: block; height: 100%; border-radius: 3px; transition: width .4s; }
+.dd-bar i.big { background: linear-gradient(90deg, #b41f30, #f23645); }
+.dd-bar i.small { background: linear-gradient(90deg, #2962ff, #4d8bff); }
+.dd-pct { width: 44px; text-align: right; font-size: 10px; color: var(--muted); }@keyframes dragonPulse {
   0%, 100% { box-shadow: 0 0 5px rgba(255,152,0,.45); }
   50%      { box-shadow: 0 0 13px 3px rgba(255,152,0,.95); }
 }

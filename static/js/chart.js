@@ -524,10 +524,15 @@ window.TRXChart = (() => {
 
   function updateRsiLegend(val) {
     const el = $("lg-rsi");
+    const zEl = $("lg-rsi-zone");
     if (!el) return;
-    if (val == null) { el.textContent = ""; el.className = ""; return; }
+    if (val == null) { el.textContent = ""; el.className = ""; if (zEl) zEl.textContent = ""; return; }
     el.textContent = val.toFixed(1);
     el.className = val >= 70 ? "red" : val <= 30 ? "green" : "";
+    if (zEl) {
+      zEl.textContent = val >= 70 ? "OB" : val <= 30 ? "OS" : "NEUTRAL";
+      zEl.className = "lg-rsi-zone " + (val >= 70 ? "red" : val <= 30 ? "green" : "");
+    }
   }
 
   /* ================= chart creation ================= */
@@ -742,7 +747,7 @@ window.TRXChart = (() => {
       },
     });
     rsiSeries = rsiChart.addLineSeries({
-      color: "#b39ddb", lineWidth: 1.5,
+      color: "#b39ddb", lineWidth: 1.8,
       priceLineVisible: false, lastValueVisible: true,
     });
     [70, 30].forEach((lvl) => {
@@ -754,6 +759,15 @@ window.TRXChart = (() => {
         axisLabelVisible: true,
         title: String(lvl),
       });
+    });
+    /* 50 midline — subtle reference */
+    rsiSeries.createPriceLine({
+      price: 50,
+      color: "rgba(120,123,134,.3)",
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dotted,
+      axisLabelVisible: false,
+      title: "50",
     });
     rsiChart.subscribeCrosshairMove((param) => {
       if (!param.time) { updateRsiLegend(null); return; }
@@ -849,6 +863,30 @@ window.TRXChart = (() => {
     if (activeTf) { const tf = $("lg-tf"); if (tf) tf.textContent = activeTf.textContent; }
     const fitBtn = $("fit-btn");
     if (fitBtn) fitBtn.addEventListener("click", () => {
+      [chart, rsiChart, macdChart, stochChart].forEach((c) => {
+        if (c) c.timeScale().fitContent();
+      });
+    });
+    /* ---- zoom in / out / reset — visible logical range based, all panes synced ----
+       (wheel/pinch zoom already works; these buttons do discrete steps) */
+    const zoomStep = (mult) => {
+      [chart, rsiChart, macdChart, stochChart].forEach((c) => {
+        if (!c) return;
+        try {
+          const r = c.timeScale().getVisibleLogicalRange();
+          if (!r) return;
+          const mid = (r.from + r.to) / 2;
+          const half = Math.max(8, ((r.to - r.from) / 2) * mult);
+          c.timeScale().setVisibleLogicalRange({ from: mid - half, to: mid + half });
+        } catch (e) { /* noop */ }
+      });
+    };
+    const zinBtn = $("zoom-in-btn");
+    const zoutBtn = $("zoom-out-btn");
+    const zresetBtn = $("zoom-reset-btn");
+    if (zinBtn) zinBtn.addEventListener("click", () => zoomStep(0.75));
+    if (zoutBtn) zoutBtn.addEventListener("click", () => zoomStep(1.25));
+    if (zresetBtn) zresetBtn.addEventListener("click", () => {
       [chart, rsiChart, macdChart, stochChart].forEach((c) => {
         if (c) c.timeScale().fitContent();
       });
