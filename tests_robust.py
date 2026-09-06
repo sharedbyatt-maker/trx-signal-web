@@ -174,6 +174,26 @@ def test_pending_target_issue_safety():
             assert s3["pending"] is None
             assert s3["last_processed_issue"] == skipped_to
             assert "re-anchored without settlement" in (s3["last_error"] or "")
+
+            # If the observer cursor itself falls out of the shared history window,
+            # re-anchor without using unknown rounds to reset/mutate financial state.
+            p4 = Path(td) / "cursor_gap.json"
+            e4 = re.RobustEngine(p4)
+            h4 = make_history(110)
+            target4 = str(int(h4[-1]["issue"]) + 1)
+            e4.process_snapshot(h4, target4)
+            with e4.lock:
+                e4.state["paroli_step"] = 2
+                e4.state["current_stake"] = 4000
+                e4._atomic_save_locked()
+            before4 = _trade_financials(e4.snapshot())
+            shifted = make_history(110, start=20260907000000)
+            e4.process_snapshot(shifted, str(int(shifted[-1]["issue"]) + 1))
+            s4 = e4.snapshot()
+            assert _trade_financials(s4) == before4
+            assert s4["pending"] is None
+            assert s4["status"] == "NO TRADE"
+            assert "cursor gap" in (s4["last_error"] or "")
     finally:
         re.signal_for_next = original
 
