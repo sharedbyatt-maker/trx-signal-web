@@ -353,6 +353,31 @@ def _strat_daily_event(day, event_id, **updates):
     return True
 
 
+def _enrich_strat_daily_report(report):
+    """Add display-only performance metrics without changing 12-step accounting."""
+    r = dict(report or {})
+    n = int(r.get("settled_bets", 0))
+    wins = int(r.get("bet_wins", 0))
+    ew = int(r.get("episode_wins", 0))
+    er = int(r.get("episodes_resolved", 0))
+    signals = int(r.get("signals", 0))
+    staked = int(r.get("total_staked", 0))
+    net = int(r.get("net_pnl", 0))
+    break_even = 100.0 / STAKE_PAYOUT
+    bet_wr = (wins * 100.0 / n) if n else 0.0
+    r["bet_win_rate"] = round(bet_wr, 2)
+    r["episode_win_rate"] = round(ew * 100.0 / er, 2) if er else 0.0
+    r["roi_pct"] = round(net * 100.0 / staked, 2) if staked else 0.0
+    r["avg_stake"] = round(staked / n) if n else 0
+    r["avg_pnl_per_bet"] = round(net / n) if n else 0
+    r["avg_pnl_per_episode"] = round(net / er) if er else 0
+    r["open_episodes"] = max(0, signals - er)
+    r["break_even_win_rate"] = round(break_even, 2)
+    r["edge_vs_break_even"] = round(bet_wr - break_even, 2) if n else 0.0
+    r.pop("event_ids", None)
+    return r
+
+
 def _strat_daily_snapshot(day=None, days=7):
     today = day or datetime.now().strftime("%Y-%m-%d")
     with strat_daily_lock:
@@ -362,27 +387,32 @@ def _strat_daily_snapshot(day=None, days=7):
         else:
             current = dict(strat_daily_reports[today])
         history = [dict(strat_daily_reports[k]) for k in keys if k != today][:max(0, days-1)]
-    for r in [current] + history:
-        n = int(r.get("settled_bets", 0)); ew = int(r.get("episode_wins", 0)); er = int(r.get("episodes_resolved", 0))
-        r["bet_win_rate"] = round(int(r.get("bet_wins",0))*100/n, 2) if n else 0.0
-        r["episode_win_rate"] = round(ew*100/er, 2) if er else 0.0
-        r.pop("event_ids", None)
+    current = _enrich_strat_daily_report(current)
+    history = [_enrich_strat_daily_report(r) for r in history]
     return current, history
 
 
 def format_strat_daily_telegram(report):
+    report = _enrich_strat_daily_report(report)
     status = "🟢 PROFIT" if report.get("net_pnl",0) > 0 else ("🔴 LOSS" if report.get("net_pnl",0) < 0 else "⚪ FLAT")
+    edge = float(report.get("edge_vs_break_even", 0.0))
     return (
-        "[12-STEP ENGINE]\n📊 DAILY REPORT\n\n"
+        "[12-STEP ENGINE]\n📊 DAILY REPORT — FINAL\n\n"
         f"Date: {report.get('date')}\nStatus: {status}\n"
-        f"Signals: {report.get('signals',0)}\n"
+        f"Signals: {report.get('signals',0)} · Open Episodes: {report.get('open_episodes',0)}\n"
         f"Settled Bets: {report.get('settled_bets',0)} · W {report.get('bet_wins',0)} / L {report.get('bet_losses',0)} "
         f"({report.get('bet_win_rate',0):.1f}% WR)\n"
-        f"Resolved Episodes: {report.get('episodes_resolved',0)} · Wins {report.get('episode_wins',0)} · "
-        f"Tier Failed {report.get('tier_failed',0)} · Busts {report.get('busts',0)}\n\n"
+        f"Episode WR: {report.get('episode_win_rate',0):.1f}% · Resolved {report.get('episodes_resolved',0)} "
+        f"/ Wins {report.get('episode_wins',0)}\n"
+        f"Tier Failed: {report.get('tier_failed',0)} · 12-Step Busts: {report.get('busts',0)}\n\n"
         f"Total Staked: {int(report.get('total_staked',0)):,} MMK\n"
         f"Total Returned: {int(report.get('total_returned',0)):,} MMK\n"
         f"NET P/L: {int(report.get('net_pnl',0)):+,} MMK\n"
+        f"ROI on Staked: {report.get('roi_pct',0):+.1f}%\n"
+        f"Avg Stake / Bet: {int(report.get('avg_stake',0)):,} MMK\n"
+        f"Avg P/L / Episode: {int(report.get('avg_pnl_per_episode',0)):+,} MMK\n\n"
+        f"Break-even WR @ 1.96x: {report.get('break_even_win_rate',0):.1f}%\n"
+        f"Edge vs Break-even: {edge:+.1f} pp\n"
         f"Max Stake: {int(report.get('max_stake',0)):,} MMK\n"
         f"Deepest: Tier {report.get('max_tier',1)} / Step {report.get('max_step',1)}\n\n"
         "Report basis: actual 12-step live settlements only."
@@ -395,10 +425,7 @@ def _send_previous_strat_daily_if_needed(current_day):
         if not candidates: return
         day = candidates[-1]; r = strat_daily_reports[day]
         if r.get("telegram_sent"): return
-        snap = dict(r)
-        n=int(snap.get("settled_bets",0)); er=int(snap.get("episodes_resolved",0))
-        snap["bet_win_rate"] = round(int(snap.get("bet_wins",0))*100/n,2) if n else 0.0
-        snap["episode_win_rate"] = round(int(snap.get("episode_wins",0))*100/er,2) if er else 0.0
+        snap = _enrich_strat_daily_report(r)
         r["telegram_sent"] = True
         _save_strat_daily_reports_locked()
     tg_notify(format_strat_daily_telegram(snap))
@@ -1218,6 +1245,13 @@ def engine_loop():
                                         "step": strat_state["step"] + 1,
                                         "stake": next_stake,
                                         "issue": sp["issue"],
+                                        "trigger_rsi": sp.get("trigger_rsi"),
+                                        "trigger_rule": sp.get("trigger_rule"),
+                                        "confirm_type": sp.get("confirm_type"),
+                                        "source_issue": sp.get("source_issue"),
+                                        "source_short_issue": sp.get("source_short_issue"),
+                                        "source_time": sp.get("source_time"),
+                                        "armed_at": sp.get("armed_at"),
                                     }
                                     strat_state["last_result"] = (
                                         f"Step {sp['bets']} lost → Step {sp['bets']+1} "
@@ -1264,6 +1298,12 @@ def engine_loop():
                         # new signal → arm next round with current tier/step stake
                         if strat_signal is not None and strat_pending is None:
                             stake_amt = STAKE_TIERS[strat_state["tier"]][strat_state["step"]]
+                            trigger_rsi = round(float(rsi_prev_s), 1) if rsi_prev_s is not None else None
+                            trigger_rule = (
+                                f"Prev RSI ≤ {RSI_STRAT_OVERSOLD:g} + BIG confirm"
+                                if strat_signal == "BIG" else
+                                f"Prev RSI ≥ {RSI_STRAT_OVERBOUGHT:g} + SMALL confirm"
+                            )
                             strat_pending = {
                                 "issue": next_issue,
                                 "short_issue": next_issue[-6:] if len(next_issue) >= 6 else next_issue,
@@ -1274,6 +1314,14 @@ def engine_loop():
                                 "bets": 0, "staked": 0, "returned": 0,
                                 "net": 0, "win_step": None, "resolved": False,
                                 "outcome": "PENDING",
+                                # Display-only setup context; strategy logic above is unchanged.
+                                "trigger_rsi": trigger_rsi,
+                                "trigger_rule": trigger_rule,
+                                "confirm_type": t_cur_s,
+                                "source_issue": latest["issue"],
+                                "source_short_issue": latest["short_issue"],
+                                "source_time": latest.get("block_time", ""),
+                                "armed_at": now,
                             }
                             strat_state["signals"] += 1
                             signal_day = _strat_day_from_issue(next_issue)
@@ -1282,7 +1330,8 @@ def engine_loop():
                                 max_tier=strat_state["tier"]+1, max_step=strat_state["step"]+1,
                                 last_issue=latest["issue"],
                                 event={"issue": next_issue, "target": strat_signal, "tier": strat_state["tier"]+1,
-                                       "step": strat_state["step"]+1, "stake": stake_amt, "outcome": "SIGNAL"},
+                                       "step": strat_state["step"]+1, "stake": stake_amt, "outcome": "SIGNAL",
+                                       "trigger_rsi": trigger_rsi, "source_issue": latest["issue"]},
                             )
                             strat_state["pending"] = {
                                 "target": strat_signal,
@@ -1290,12 +1339,24 @@ def engine_loop():
                                 "step": strat_state["step"] + 1,
                                 "stake": stake_amt,
                                 "issue": strat_pending["issue"],
+                                "trigger_rsi": trigger_rsi,
+                                "trigger_rule": trigger_rule,
+                                "confirm_type": t_cur_s,
+                                "source_issue": latest["issue"],
+                                "source_short_issue": latest["short_issue"],
+                                "source_time": latest.get("block_time", ""),
+                                "armed_at": now,
                             }
                             tg_notify(
-                                f"🎯 12-STEP SIGNAL — {strat_signal}\n"
+                                f"🎯 12-STEP SIGNAL — {strat_signal}\n\n"
+                                f"Target Issue: …{strat_pending['short_issue']}\n"
                                 f"Tier {strat_state['tier']+1} · Step {strat_state['step']+1}\n"
                                 f"Stake: {stake_amt:,} MMK\n"
-                                f"Issue …{strat_pending['short_issue']}")
+                                f"Trigger RSI: {trigger_rsi:.1f}\n"
+                                f"Setup: {trigger_rule}\n"
+                                f"Confirmed By: …{latest['short_issue']} · {latest['type']}\n"
+                                f"Source Time: {latest.get('block_time','')}\n\n"
+                                "Status: 🟢 ARMED — waiting for target issue settlement")
                             print(f"[STAKE] signal {strat_signal} T{strat_state['tier']+1}"
                                   f"S{strat_state['step']+1} stake={stake_amt:,}", flush=True)
 
@@ -1492,9 +1553,22 @@ def api_strat_daily_report():
     with LOCK:
         st = dict(STATE.get("strat") or {})
         pend = dict(STATE.get("strat_pending") or {}) if STATE.get("strat_pending") else None
+    tier_idx = max(0, min(int(st.get("tier", 0)), len(STAKE_TIERS) - 1))
+    step_idx = max(0, min(int(st.get("step", 0)), len(STAKE_TIERS[tier_idx]) - 1))
     current["engine"] = {
-        "tier": int(st.get("tier",0))+1, "step": int(st.get("step",0))+1,
-        "pending": pend, "last_result": st.get("last_result"),
+        "tier": tier_idx + 1,
+        "step": step_idx + 1,
+        "pending": pend,
+        "last_result": st.get("last_result"),
+        "status": "ACTIVE" if pend else "WAITING",
+        "next_eligible_stake": int(STAKE_TIERS[tier_idx][step_idx]),
+        "signals_session": int(st.get("signals", 0)),
+        "busts_session": int(st.get("busts", 0)),
+        "rules": {
+            "rsi_low": RSI_STRAT_OVERSOLD,
+            "rsi_high": RSI_STRAT_OVERBOUGHT,
+            "payout": STAKE_PAYOUT,
+        },
     }
     return jsonify({"report": current, "history": history})
 

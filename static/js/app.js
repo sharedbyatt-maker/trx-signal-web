@@ -154,7 +154,7 @@ function renderAnalytics(s) {
       : "Telegram ချိတ်ဆက်မှု စမ်းသပ် (နှိပ်) · နောက်ဆုံး event မရှိသေးဘူး";
   }
 
-  /* ---- 🎰 12-step staking panel ---- */
+  /* ---- 🎰 12-step staking panel (display-only detail; strategy unchanged) ---- */
   const st = s.strat || {};
   {
     const tierEl = $("st-tier"), stepEl = $("st-step");
@@ -163,15 +163,44 @@ function renderAnalytics(s) {
       tierEl.className = "stake-badge" + ((st.tier || 0) > 0 ? " hot" : "");
     }
     if (stepEl) stepEl.textContent = "S" + ((st.step || 0) + 1);
+
     const pend = s.strat_pending || st.pending;
+    const modeEl = $("st-status");
     const pEl = $("st-pending");
-    if (pEl) {
-      if (pend) {
-        pEl.innerHTML = `<b class="${pend.target === "BIG" ? "red" : "blue"}">${pend.target}</b> → issue …${String(pend.issue).slice(-6)}`;
-      } else pEl.textContent = "waiting for signal…";
-    }
+    const issueEl = $("st-target-issue");
     const skEl = $("st-stake");
-    if (skEl) skEl.textContent = pend ? `${pend.stake.toLocaleString("en-US")} MMK` : "—";
+    const trigEl = $("st-trigger");
+    const srcEl = $("st-source");
+    const hero = $("st-signal-hero");
+
+    if (pend) {
+      if (modeEl) { modeEl.textContent = "ARMED"; modeEl.className = "stake-mode active"; }
+      if (pEl) {
+        pEl.textContent = pend.target || "—";
+        pEl.className = "stake-hero-dir " + (pend.target === "BIG" ? "red" : "blue");
+      }
+      if (issueEl) issueEl.textContent = `TARGET …${String(pend.issue || "").slice(-6)}`;
+      if (skEl) skEl.textContent = `${Number(pend.stake || 0).toLocaleString("en-US")} MMK`;
+      if (trigEl) {
+        const rv = pend.trigger_rsi != null ? Number(pend.trigger_rsi).toFixed(1) : "—";
+        trigEl.textContent = `${rv} · ${pend.trigger_rule || "RSI setup"}`;
+      }
+      if (srcEl) {
+        const src = pend.source_short_issue || String(pend.source_issue || "").slice(-6);
+        const tm = pend.source_time ? String(pend.source_time).slice(11,16) : "";
+        srcEl.textContent = src ? `…${src}${pend.confirm_type ? " · " + pend.confirm_type : ""}${tm ? " · " + tm : ""}` : "—";
+      }
+      if (hero) hero.className = "stake-signal-hero armed";
+    } else {
+      if (modeEl) { modeEl.textContent = "WAITING"; modeEl.className = "stake-mode waiting"; }
+      if (pEl) { pEl.textContent = "WAITING"; pEl.className = "stake-hero-dir"; }
+      if (issueEl) issueEl.textContent = "NO ACTIVE TARGET";
+      if (skEl) skEl.textContent = "—";
+      if (trigEl) trigEl.textContent = "Prev RSI ≤32 + BIG / ≥68 + SMALL";
+      if (srcEl) srcEl.textContent = "waiting for confirmation round…";
+      if (hero) hero.className = "stake-signal-hero";
+    }
+
     const bEl = $("st-busts");
     if (bEl) {
       bEl.textContent = st.busts || 0;
@@ -183,7 +212,9 @@ function renderAnalytics(s) {
     const lt = s.strat_last;
     if (lt) {
       const cls = lt.outcome === "WIN" ? "green" : (lt.outcome === "12-STEP BUST" ? "red" : "orange");
-      lastEl.innerHTML = `<b class="${cls}">${lt.outcome}</b> T${lt.tier} · net ${lt.net >= 0 ? "+" : ""}${lt.net.toLocaleString("en-US")}`;
+      lastEl.innerHTML = `<span class="${cls}">${lt.outcome}</span> · T${lt.tier} · ${lt.bets || 0} bet${(lt.bets || 0) === 1 ? "" : "s"} · net ${lt.net >= 0 ? "+" : ""}${Number(lt.net || 0).toLocaleString("en-US")}`;
+    } else {
+      lastEl.textContent = "No settled episode yet";
     }
   }
 }
