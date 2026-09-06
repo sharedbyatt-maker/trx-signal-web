@@ -18,6 +18,7 @@ os.environ["TRX_NO_ENGINE"] = "1"
 import app_core as core
 from app_core import *  # noqa: F401,F403 - preserve existing public module API
 from decision import decide_signal
+from robust_integration import install_robust_routes
 
 
 _legacy_analyze_all_in_one = core.analyze_all_in_one
@@ -216,19 +217,26 @@ app = core.app
 STATE = core.STATE
 start_engine = core.start_engine
 
-# Restore caller intent and start only after the decision paths are patched.
+# Additive Robust subsystem. It registers separate APIs/UI assets and observes
+# a thread-safe copy of legacy completed history without mutating legacy state.
+robust_service = install_robust_routes(core)
+
+# Restore caller intent and start only after all decision paths/routes are wired.
 if _engine_disabled_by_caller:
     os.environ["TRX_NO_ENGINE"] = "1"
 else:
     os.environ.pop("TRX_NO_ENGINE", None)
     core.start_engine()
+    robust_service.start()
 
 
 if __name__ == "__main__":
     core.start_engine()
+    robust_service.start()
     print("=" * 52, flush=True)
     print("📈 FOREX-STYLE CONFLUENCE ENGINE — SHARED DECISION POLICY", flush=True)
     print("   Live + Backtest → decision.decide_signal()", flush=True)
+    print("   Robust Engine → independent frozen causal strategy", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
     port = int(os.environ.get("PORT", 10000))
