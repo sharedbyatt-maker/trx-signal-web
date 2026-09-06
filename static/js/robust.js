@@ -175,13 +175,27 @@
 
   async function startAudit() {
     const btn = document.getElementById("rb-audit-btn");
+    const state = document.getElementById("rb-audit-state");
+    const token = window.prompt("Robust Risk Audit admin token:");
+    if (!token) {
+      if (state) state.textContent = "Audit cancelled.";
+      return;
+    }
+
     if (btn) btn.disabled = true;
     try {
-      const r = await fetch("/api/robust-engine/audit", { method: "POST" });
+      const r = await fetch("/api/robust-engine/audit", {
+        method: "POST",
+        headers: { "X-Robust-Audit-Token": token }
+      });
       const body = await r.json();
+      if (!r.ok) {
+        if (state) state.textContent = body.error || `Audit request denied (HTTP ${r.status})`;
+        if (btn) btn.disabled = false;
+        return;
+      }
       renderAudit(body);
     } catch (e) {
-      const state = document.getElementById("rb-audit-state");
       if (state) state.textContent = `Could not start audit: ${e.message}`;
       if (btn) btn.disabled = false;
     }
