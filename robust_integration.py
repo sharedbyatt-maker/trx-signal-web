@@ -22,6 +22,7 @@ class RobustService:
         self._stop = threading.Event()
         self._start_lock = threading.Lock()
         self._thread = None
+        self._last_legacy_marker = object()
 
         self._audit_lock = threading.Lock()
         self._audit_status_lock = threading.Lock()
@@ -56,8 +57,16 @@ class RobustService:
     def _worker(self):
         while not self._stop.is_set():
             try:
-                self.tick()
+                # The legacy engine changes last_update when it publishes a new
+                # completed-round snapshot. Skip duplicate observer work between
+                # updates so persistence is not rewritten every second.
+                with self.core.LOCK:
+                    marker = self.core.STATE.get("last_update")
+                if marker != self._last_legacy_marker:
+                    self.tick()
+                    self._last_legacy_marker = marker
             except Exception as exc:
+                # Robust failures are isolated: old engine thread keeps running.
                 with self.engine.lock:
                     self.engine.state["last_error"] = f"robust worker: {exc}"
                 print(f"[ROBUST] worker error: {exc}", flush=True)
@@ -218,6 +227,7 @@ def install_robust_routes(core):
                     )
                     response.set_data(html)
         except Exception as exc:
+            # UI injection failure must never break an existing response.
             print(f"[ROBUST] asset injection skipped: {exc}", flush=True)
         return response
 
