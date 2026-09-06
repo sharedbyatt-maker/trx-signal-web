@@ -7,8 +7,12 @@ then exposes the original Flask app/public API unchanged.
 """
 import os
 import statistics
+import threading
+import time
 from collections import Counter
 from datetime import datetime
+
+import requests
 
 # Prevent app_core from starting its background engine before we replace the
 # decision paths. Tests already set TRX_NO_ENGINE=1 and remain engine-free.
@@ -19,6 +23,65 @@ import app_core as core
 from app_core import *  # noqa: F401,F403 - preserve existing public module API
 from decision import decide_signal
 from robust_integration import install_robust_routes
+
+
+# ---------------------------------------------------------------------------
+# Upstream feed resilience
+# ---------------------------------------------------------------------------
+# trxchart.com occasionally stalls long enough to raise ReadTimeout. The legacy
+# loop treats any exception as OFFLINE immediately, which makes the dashboard
+# flicker even when the previous feed snapshot is still fresh. Keep the latest
+# successful tail response for a very short grace period and use it only for
+# transient timeout/connection failures. The next poll still hits the upstream,
+# so this never becomes a permanent cache and a real outage is still surfaced.
+_original_session_get = core.session.get
+_feed_cache_lock = threading.Lock()
+_feed_cache = {}
+try:
+    FEED_GRACE_SEC = max(3.0, min(float(os.environ.get("TRX_FEED_GRACE_SEC", "15")), 60.0))
+except (TypeError, ValueError):
+    FEED_GRACE_SEC = 15.0
+try:
+    FEED_TAIL_READ_TIMEOUT = max(1.0, min(float(os.environ.get("TRX_TAIL_READ_TIMEOUT", "3")), 10.0))
+except (TypeError, ValueError):
+    FEED_TAIL_READ_TIMEOUT = 3.0
+
+
+def _resilient_session_get(url, *args, **kwargs):
+    """Short-grace fallback for transient live-feed failures only."""
+    url_s = str(url)
+    is_feed = url_s.startswith(core.URL_DATA)
+    is_tail = is_feed and "?limit=" in url_s
+
+    # Tail polling is latency-sensitive. Use a short connect/read timeout rather
+    # than blocking the single engine thread for six seconds on a bad socket.
+    if is_tail:
+        kwargs["timeout"] = (2.5, FEED_TAIL_READ_TIMEOUT)
+
+    try:
+        response = _original_session_get(url, *args, **kwargs)
+        if is_feed and response.status_code == 200:
+            with _feed_cache_lock:
+                _feed_cache[url_s] = (time.monotonic(), response)
+        return response
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        if is_tail:
+            now = time.monotonic()
+            with _feed_cache_lock:
+                cached = _feed_cache.get(url_s)
+            if cached and now - cached[0] <= FEED_GRACE_SEC:
+                # Keep the last valid snapshot during a short network wobble.
+                # Duplicate rows are already ignored by app_core's seen_issues.
+                print(
+                    f"[FEED] transient {type(exc).__name__}; using "
+                    f"{now - cached[0]:.1f}s-old last-good tail snapshot",
+                    flush=True,
+                )
+                return cached[1]
+        raise
+
+
+core.session.get = _resilient_session_get
 
 
 _legacy_analyze_all_in_one = core.analyze_all_in_one
