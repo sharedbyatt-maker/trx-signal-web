@@ -7,12 +7,20 @@ Robust calculations outside the legacy lock. No legacy STATE fields are mutated.
 from __future__ import annotations
 
 import copy
+import hmac
+import os
 import threading
 import traceback
 from datetime import datetime
 
 from robust_audit import MC_RUNS, run_full_audit
 from robust_engine import RobustEngine
+
+def audit_token_valid(provided):
+    """Constant-time check for the optional admin audit token."""
+    expected = os.environ.get("ROBUST_AUDIT_TOKEN", "").strip()
+    supplied = str(provided or "").strip()
+    return bool(expected and supplied) and hmac.compare_digest(supplied, expected)
 
 
 class RobustService:
@@ -152,7 +160,7 @@ class RobustService:
 
 def install_robust_routes(core):
     """Register additive APIs on the existing Flask app."""
-    from flask import jsonify
+    from flask import jsonify, request
 
     service = RobustService(core)
     app = core.app
@@ -204,6 +212,19 @@ def install_robust_routes(core):
 
     @app.post("/api/robust-engine/audit")
     def robust_audit_start():
+        configured = os.environ.get("ROBUST_AUDIT_TOKEN", "").strip()
+        if not configured:
+            return jsonify({"error": "Robust audit admin token is not configured"}), 503
+
+        supplied = request.headers.get("X-Robust-Audit-Token", "").strip()
+        if not supplied:
+            auth = request.headers.get("Authorization", "").strip()
+            if auth.lower().startswith("bearer "):
+                supplied = auth[7:].strip()
+
+        if not audit_token_valid(supplied):
+            return jsonify({"error": "Unauthorized"}), 401
+
         started, status = service.start_audit()
         return jsonify(status), (202 if started else 409)
 
