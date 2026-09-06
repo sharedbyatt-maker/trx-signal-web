@@ -298,7 +298,6 @@ def log_signal(row):
     except OSError as e:
         print(f"Log write error: {e}", flush=True)
 
-
 def append_signal_history(entry):
     new_file = not os.path.exists(HIST_FILE)
     try:
@@ -991,7 +990,7 @@ def engine_loop():
                                             f"({STAKE_TIERS[nxt][0]:,} MMK) ဖြင့် ဆယ်မည်\n"
                                             f"Issue …{latest['short_issue']}")
                                         print(f"[STAKE] Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}", flush=True)
-                                    strat_state["tier"] = min(sp["tier"] + 1, 2)
+                                    strat_state["tier"] = 0 if sp["tier"] >= 2 else sp["tier"] + 1
                                     strat_state["step"] = 0
                                     strat_state["pending"] = None   # tier paused — clear UI state
                                 else:
