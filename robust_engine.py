@@ -327,6 +327,7 @@ def _default_state():
         "last_result": None,
         "last_update": None,
         "last_error": None,
+        "notification_event_ids": [],
     }
 
 
@@ -348,6 +349,7 @@ class RobustEngine:
         self.state_path = Path(state_path or os.environ.get("ROBUST_STATE_FILE") or (base / "robust_state.json"))
         self.lock = threading.RLock()
         self.state = _default_state()
+        self._notification_events = []
         self._load()
 
     def _load(self):
@@ -360,6 +362,7 @@ class RobustEngine:
                     clean.update(raw)
                     clean["version"] = STATE_VERSION
                     clean["processed_issues"] = list(clean.get("processed_issues") or [])[-500:]
+                    clean["notification_event_ids"] = list(clean.get("notification_event_ids") or [])[-2000:]
                     self.state = clean
             except FileNotFoundError:
                 pass
@@ -406,15 +409,59 @@ class RobustEngine:
             out["reference_capital"] = INITIAL_DEPOSIT
             return out
 
+    def drain_notification_events(self):
+        """Return newly-created Robust events; delivery is owned by integration."""
+        with self.lock:
+            events = copy.deepcopy(self._notification_events)
+            self._notification_events.clear()
+            return events
+
+    def _emit_event_locked(self, event_id, kind, **data):
+        """Persist event identity before exposing it for non-blocking delivery."""
+        if not event_id:
+            return False
+        ids = list(self.state.get("notification_event_ids") or [])
+        if event_id in ids:
+            return False
+        ids.append(event_id)
+        self.state["notification_event_ids"] = ids[-2000:]
+        self._notification_events.append({"id": event_id, "kind": kind, **copy.deepcopy(data)})
+        return True
+
+    def _emit_daily_stop_locked(self, reason):
+        day = str(self.state.get("daily_date") or "unknown")
+        kind = "daily_tp" if reason == "Daily TP" else "daily_risk_stop"
+        self._emit_event_locked(
+            f"daily_stop:{day}",
+            kind,
+            date=self.state.get("daily_date"),
+            reason=reason,
+            daily_profit=self.state["daily_profit"],
+            bankroll=self.state["bankroll"],
+        )
+
     def _ensure_day_locked(self, day):
         if not day:
             return
         if self.state["daily_date"] != day:
+            previous_date = self.state.get("daily_date")
+            previous_profit = self.state.get("daily_profit", 0)
             self.state["daily_date"] = day
             self.state["daily_profit"] = 0
             self.state["daily_stopped"] = False
             self.state["paroli_step"] = 0
             self.state["current_stake"] = BASE_STAKE
+            if previous_date:
+                self._emit_event_locked(
+                    f"daily_reset:{day}",
+                    "daily_reset",
+                    previous_date=previous_date,
+                    new_date=day,
+                    previous_day_profit=previous_profit,
+                    bankroll=self.state["bankroll"],
+                    paroli_step=0,
+                    base_stake=BASE_STAKE,
+                )
 
     def _settle_pending_locked(self, row):
         p = self.state.get("pending")
@@ -434,9 +481,11 @@ class RobustEngine:
         self.state["daily_profit"] += pnl
         self.state["total_trades"] += 1
 
+        completed_paroli_step = None
         if won:
             self.state["wins"] += 1
             step = int(p.get("paroli_step", self.state["paroli_step"])) + 1
+            completed_paroli_step = step
             self.state["paroli_step"] = 0 if step >= PAROLI_WINS else step
         else:
             self.state["losses"] += 1
@@ -457,8 +506,45 @@ class RobustEngine:
         }
         self.state["pending"] = None
         self.state["current_stake"] = BASE_STAKE * (2 ** self.state["paroli_step"])
-        if self.state["daily_profit"] >= DAILY_TP or self.state["daily_profit"] <= -DAILY_SL:
+        just_stopped = False
+        stop_reason = None
+        if self.state["daily_profit"] >= DAILY_TP:
+            just_stopped = not self.state["daily_stopped"]
             self.state["daily_stopped"] = True
+            stop_reason = "Daily TP"
+        elif self.state["daily_profit"] <= -DAILY_SL:
+            just_stopped = not self.state["daily_stopped"]
+            self.state["daily_stopped"] = True
+            stop_reason = "Daily SL / pre-trade hard risk guard"
+
+        next_stake = BASE_STAKE * (2 ** self.state["paroli_step"])
+        trading_active = not self.state["daily_stopped"] and self.state["bankroll"] >= next_stake
+        self._emit_event_locked(
+            f"settlement:{row['issue']}",
+            "settlement",
+            issue=row["issue"],
+            signal=p["signal"],
+            actual=row["type"],
+            outcome="WIN" if won else "LOSS",
+            stake=stake,
+            trade_pnl=pnl,
+            daily_profit=self.state["daily_profit"],
+            bankroll=self.state["bankroll"],
+            next_paroli_step=self.state["paroli_step"],
+            next_stake=next_stake,
+            trading_active=trading_active,
+        )
+        if won and completed_paroli_step is not None and completed_paroli_step >= PAROLI_WINS:
+            self._emit_event_locked(
+                f"paroli4:{row['issue']}",
+                "paroli4",
+                issue=row["issue"],
+                daily_profit=self.state["daily_profit"],
+                bankroll=self.state["bankroll"],
+                base_stake=BASE_STAKE,
+            )
+        if just_stopped and stop_reason:
+            self._emit_daily_stop_locked(stop_reason)
         return True
 
     def _arm_next_locked(self, history_prefix, next_issue=None):
@@ -484,8 +570,11 @@ class RobustEngine:
         self.state["current_stake"] = stake
 
         if self.state["daily_profit"] - stake < -DAILY_SL:
+            was_stopped = self.state["daily_stopped"]
             self.state["daily_stopped"] = True
             self.state["status"] = "DAILY STOP"
+            if not was_stopped:
+                self._emit_daily_stop_locked("Daily SL / pre-trade hard risk guard")
             return
 
         if self.state["bankroll"] < stake:
@@ -501,6 +590,18 @@ class RobustEngine:
             "day": target_day,
         }
         self.state["status"] = "ACTIVE"
+        target_issue = str(next_issue or "")
+        if target_issue:
+            self._emit_event_locked(
+                f"signal:{target_issue}",
+                "signal",
+                issue=target_issue,
+                target=result["signal"],
+                paroli_step=self.state["paroli_step"],
+                stake=stake,
+                daily_profit=self.state["daily_profit"],
+                bankroll=self.state["bankroll"],
+            )
 
     def process_snapshot(self, rows, next_issue=None):
         """Process completed rows once, then arm a causal signal for the next round."""
