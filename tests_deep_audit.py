@@ -120,6 +120,12 @@ def test_rsi_extremes_accepts_wrapped_payload():
         core.session.get = old_get
 
 
+def test_low_latency_defaults():
+    assert 0.25 <= core.POLL_SEC <= 1.0, core.POLL_SEC
+    assert 20 <= core.TAIL_LIMIT <= 100, core.TAIL_LIMIT
+
+
+
 def test_flask_routes_smoke():
     client = eng.app.test_client()
     for path in (
@@ -139,5 +145,6 @@ if __name__ == "__main__":
     test_strat_gap_is_inert()
     test_empty_csv_gets_header()
     test_rsi_extremes_accepts_wrapped_payload()
+    test_low_latency_defaults()
     test_flask_routes_smoke()
     print("DEEP AUDIT TESTS: ALL PASSED")

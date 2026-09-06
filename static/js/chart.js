@@ -1111,6 +1111,48 @@ window.TRXChart = (() => {
     return { on: true, n: levels.length };
   }
 
+  /* ---- ultra-fast 1m candle append ----
+     /api/latest uses this path so a fresh result does not rebuild 10 days of
+     candles/indicators just to paint one bar. The normal /api/state refresh
+     follows shortly and performs the authoritative full indicator rebuild. */
+  function appendLatest(row) {
+    if (!chart || group !== 1 || !row || !row.issue || !curBars.length) return false;
+    const issue = String(row.issue);
+    if (curLabelMap instanceof Map && curLabelMap.has(issue)) return true;
+
+    const dir = row.type === "BIG" ? 1 : -1;
+    const open = curBars[curBars.length - 1].c;
+    const close = open + dir;
+    const time = curBars.length + 1;
+    const raw = { time, open, high: Math.max(open, close), low: Math.min(open, close), close };
+
+    try {
+      candleSeries.update(raw);
+      areaSeries.update({ time, value: close });
+    } catch (e) {
+      return false;
+    }
+
+    curBars.push({ time, o: open, h: raw.high, l: raw.low, c: close });
+    curLabels.push(row.short_issue || issue.slice(-6));
+    curTimes.push(row.block_time || row.hm || "");
+    curFulls.push(issue);
+    if (!(curLabelMap instanceof Map)) curLabelMap = new Map();
+    curLabelMap.set(issue, time);
+    lastLen = curBars.length;
+    updateLegend(curBars[curBars.length - 1]);
+
+    if (window.TRXDraw && window.TRXDraw.onData) {
+      try {
+        window.TRXDraw.onData({
+          chart, series: candleSeries, labels: curLabels,
+          labelMap: curLabelMap, fulls: curFulls,
+        });
+      } catch (e) { /* drawing overlay can wait for full refresh */ }
+    }
+    return true;
+  }
+
   /* ---- public: signal arrows toggle ---- */
   function toggleSignals() {
     opts.sig = !opts.sig;
@@ -1121,7 +1163,7 @@ window.TRXChart = (() => {
   }
 
   return {
-    update, autoSR, toggleSignals,
+    update, appendLatest, autoSR, toggleSignals,
     _view: () => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
       catch (e) { return null; }

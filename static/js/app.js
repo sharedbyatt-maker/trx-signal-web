@@ -472,7 +472,7 @@ if (sigBtn) sigBtn.addEventListener("click", () => {
   if (window.TRXChart && TRXChart.toggleSignals) TRXChart.toggleSignals();
 });
 
-setInterval(refresh, 2000);
+setInterval(refresh, 1500);
 setInterval(() => fetchFullHistory(false), HIST_REFETCH_MS);
 setInterval(tickClock, 1000);
 tickClock();
@@ -480,7 +480,10 @@ fetchFullHistory(true).then(refresh);
 
 /* ================= instant candle: /api/latest micro-poll =================
    Candle တစ်တင်တာနဲ့ chart ချက်ချင်း update — /api/state ကို မစောင့်ရတော့ဘူး */
+let latestPolling = false;
 async function pollLatest() {
+  if (latestPolling) return;
+  latestPolling = true;
   try {
     const r = await fetch("/api/latest", { cache: "no-store" });
     const d = await r.json();
@@ -499,12 +502,19 @@ async function pollLatest() {
       });
       if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
       if (rd.block_time) lastResultTime = rd.block_time;
-      const merged = mergeRows(fullRows, lastState.history);
-      safeRender(() => render(lastState, merged), lastState);
+      const newest = fullRows[fullRows.length - 1];
+      const fast = window.TRXChart && TRXChart.appendLatest
+        ? TRXChart.appendLatest(newest)
+        : false;
+      if (!fast) {
+        const merged = mergeRows(fullRows, lastState.history);
+        safeRender(() => render(lastState, merged), lastState);
+      }
     }
   } catch (e) { /* noop */ }
+  finally { latestPolling = false; }
 }
-setInterval(pollLatest, 1200);
+setInterval(pollLatest, 400);
 fetchRsiExtremes();
 setInterval(fetchRsiExtremes, 3600000);   // 1h
 

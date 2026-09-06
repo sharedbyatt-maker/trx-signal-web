@@ -21,7 +21,16 @@ if sys_stdout := __import__("sys").stdout:
 # ================= DATA SOURCE =================
 URL_DATA = "https://trxchart.com/api/trx-data"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-POLL_SEC = 2        # tail-mode (?limit=500 ≈ 80KB) — fast candle updates
+# Low-latency tail polling. Keep these env-tunable so hosting can back off
+# without a code deploy if the upstream source ever rate-limits.
+try:
+    POLL_SEC = max(0.25, min(float(os.environ.get("TRX_POLL_SEC", "0.5")), 5.0))
+except (TypeError, ValueError):
+    POLL_SEC = 0.5
+try:
+    TAIL_LIMIT = max(20, min(int(os.environ.get("TRX_TAIL_LIMIT", "50")), 500))
+except (TypeError, ValueError):
+    TAIL_LIMIT = 50
 
 # ================= INDICATOR SETTINGS =================
 FAST_EMA = 5
@@ -867,9 +876,10 @@ def engine_loop():
     types_strat = []       # parallel types (chronological)
     while True:
         try:
-            url = URL_DATA if not have_full else URL_DATA + "?limit=500"
+            url = URL_DATA if not have_full else URL_DATA + f"?limit={TAIL_LIMIT}"
+            timeout_sec = 15 if not have_full else 6
             res = session.get(
-                url, timeout=15,
+                url, timeout=timeout_sec,
                 headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
             if res.status_code == 200:
                 data = res.json()
@@ -897,7 +907,7 @@ def engine_loop():
                         seen_issues = set(r["issue"] for r in parsed)
                         have_full = True
                         print(f"[ENGINE] full snapshot: {len(all_rows)} rounds "
-                              f"(tail mode: {POLL_SEC}s · ?limit=500)", flush=True)
+                              f"(tail mode: {POLL_SEC}s · ?limit={TAIL_LIMIT})", flush=True)
                     if len(all_rows) > MAX_FULL_ROWS:
                         all_rows = all_rows[-MAX_FULL_ROWS:]
                     err_streak = 0
