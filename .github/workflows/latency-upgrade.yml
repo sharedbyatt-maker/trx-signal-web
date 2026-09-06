@@ -1,0 +1,47 @@
+name: Latency Upgrade Validation
+on:
+  push:
+    branches: [latency-upgrade-20260906]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Apply latency patch
+        run: python latency_patch.py
+      - name: Python syntax
+        run: python -m compileall -q app.py app_core.py decision.py robust_engine.py robust_audit.py robust_integration.py tests_engine.py tests_robust.py tests_deep_audit.py
+      - name: Legacy tests
+        run: python tests_engine.py
+      - name: Robust tests
+        run: python tests_robust.py
+      - name: Deep audit tests
+        run: python tests_deep_audit.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/js/app.js
+          node --check static/js/chart.js
+          node --check static/js/draw.js
+          node --check static/js/robust.js
+      - name: Verify low latency wiring
+        run: |
+          grep -q 'TRX_POLL_SEC.*0.5' app_core.py
+          grep -q 'TRX_TAIL_LIMIT.*50' app_core.py
+          grep -q 'setInterval(pollLatest, 400)' static/js/app.js
+          grep -q 'function appendLatest(row)' static/js/chart.js
+      - name: Commit passing upgrade
+        run: |
+          git config user.name "sharedbyatt-maker"
+          git config user.email "sharedbyatt@gmail.com"
+          git add app_core.py static/js/app.js static/js/chart.js tests_deep_audit.py
+          git commit -m "Upgrade live candle latency and chart responsiveness"
+          git push origin HEAD:latency-upgrade-20260906
