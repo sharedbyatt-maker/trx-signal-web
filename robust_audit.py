@@ -49,7 +49,7 @@ def fetch_full_history():
             "date": bt[:10] if len(bt) >= 10 else "",
         })
     history = normalize_history(rows)
-    history.sort(key=lambda x: int(x["issue"]) if x["issue"].isdigit() else x["issue"])
+    history.sort(key=lambda x: (0, int(x["issue"])) if str(x["issue"]).isdigit() else (1, str(x["issue"])))
     return history
 
 

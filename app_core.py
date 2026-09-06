@@ -289,7 +289,7 @@ def log_signal(row):
                         lines = rf.readlines()
                     with open(LOG_FILE, "w", newline="", encoding="utf-8") as wf:
                         wf.writelines(lines[:1] + lines[-LOG_KEEP:])
-        new_file = not os.path.exists(LOG_FILE)
+        new_file = (not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0)
         with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             if new_file:
@@ -299,8 +299,8 @@ def log_signal(row):
         print(f"Log write error: {e}", flush=True)
 
 def append_signal_history(entry):
-    new_file = not os.path.exists(HIST_FILE)
     try:
+        new_file = (not os.path.exists(HIST_FILE) or os.path.getsize(HIST_FILE) == 0)
         rotate = False
         if not new_file and os.path.getsize(HIST_FILE) > 0:
             with open(HIST_FILE, "rb") as f:
@@ -388,9 +388,11 @@ def parse_history(data_list):
         raw_issue = str(item.get("issueNumber") or item.get("issue") or "")
         num_val = item.get("number") if item.get("number") is not None else item.get("result")
         block_time = str(item.get("blockTime") or item.get("time") or "")
-        if raw_issue and num_val is not None and raw_issue not in seen:
+        if raw_issue and raw_issue.isdigit() and num_val is not None and raw_issue not in seen:
             try:
                 num = int(num_val)
+                if num < 0 or num > 9:
+                    continue
                 seen.add(raw_issue)
                 day_digits = raw_issue[:8]
                 parsed.append({
@@ -407,6 +409,43 @@ def parse_history(data_list):
                 continue
     parsed.sort(key=lambda x: x["issue_int"])
     return parsed
+
+
+def newest_raw_slice(data_list, limit=MAX_FULL_ROWS):
+    """Keep the newest raw rounds regardless of upstream ascending/descending order."""
+    rows = list(data_list or [])
+    if len(rows) <= limit:
+        return rows
+
+    def issue_num(item):
+        if not isinstance(item, dict):
+            return None
+        raw = str(item.get("issueNumber") or item.get("issue") or "")
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    first = issue_num(rows[0])
+    last = issue_num(rows[-1])
+    if first is not None and last is not None and first > last:
+        return rows[:limit]
+    return rows[-limit:]
+
+
+def issue_relation(completed_issue, target_issue):
+    """Compare completed issue with target: exact / before / after / mismatch."""
+    current = str(completed_issue or "")
+    target = str(target_issue or "")
+    if current and target and current == target:
+        return "exact"
+    try:
+        a, b = int(current), int(target)
+        if a == b:
+            return "exact"
+        return "before" if a < b else "after"
+    except (TypeError, ValueError):
+        return "mismatch"
 
 
 def trim_full_history(rows, days=FULL_HISTORY_DAYS):
@@ -750,7 +789,8 @@ def risk_check():
 
 def resolve_pending(latest):
     global pending, units, lose_streak, cooldown
-    if pending and pending["issue"] == latest["issue"]:
+    relation = issue_relation(latest.get("issue"), (pending or {}).get("issue")) if pending else None
+    if pending and relation == "exact":
         win = latest["type"] == pending["signal"]
         if win:
             stats["w"] += 1
@@ -786,8 +826,31 @@ def resolve_pending(latest):
         print(f"\n💰 [{latest['short_issue']}] {'✅ WIN' if win else '❌ LOSS'} "
               f"({entry['signal']} vs actual {latest['type']})", flush=True)
         pending = None
+    elif pending and relation in ("after", "mismatch"):
+        missed = pending.get("issue")
+        print(f"[ENGINE] pending target {missed} missed; resynced without settlement", flush=True)
+        pending = None
+    elif pending and relation == "before":
+        return
     elif cooldown > 0:
         cooldown -= 1
+
+
+def reconcile_strat_pending_issue(latest):
+    """Allow 12-step settlement only on the exact armed issue; gaps are financially inert."""
+    global strat_pending
+    if strat_pending is None:
+        return False
+    relation = issue_relation(latest.get("issue"), strat_pending.get("issue"))
+    if relation == "exact":
+        return True
+    if relation in ("after", "mismatch"):
+        missed = strat_pending.get("issue")
+        strat_state["pending"] = None
+        strat_state["last_result"] = f"MISSED TARGET {missed} — resynced without settlement"
+        strat_pending = None
+        print(f"[STAKE] pending target {missed} missed; resynced without result", flush=True)
+    return False
 
 
 def engine_loop():
@@ -814,8 +877,10 @@ def engine_loop():
                 # boot full snapshot: upstream ships ~187k rows (~4.5MB) —
                 # parse only the newest MAX_FULL_ROWS slice (RAM safety on 512MB hosts)
                 if not have_full and len(data_list) > MAX_FULL_ROWS:
-                    data_list = data_list[-MAX_FULL_ROWS:]
+                    data_list = newest_raw_slice(data_list, MAX_FULL_ROWS)
                 parsed = parse_history(data_list)
+                if not have_full and len(parsed) > MAX_FULL_ROWS:
+                    parsed = parsed[-MAX_FULL_ROWS:]
 
                 if parsed:
                     if have_full:
@@ -853,7 +918,15 @@ def engine_loop():
                         resolve_pending(latest)
 
                         # ---- resolve previous signal entry with actual result ----
-                        if unresolved_signal and unresolved_signal["issue"] == latest["issue"]:
+                        if unresolved_signal:
+                            relation = issue_relation(latest["issue"], unresolved_signal.get("issue"))
+                            if relation in ("after", "mismatch"):
+                                unresolved_signal["result_number"] = None
+                                unresolved_signal["result_type"] = None
+                                unresolved_signal["outcome"] = "MISSED"
+                                append_signal_history(unresolved_signal)
+                                unresolved_signal = None
+                        if unresolved_signal and issue_relation(latest["issue"], unresolved_signal.get("issue")) == "exact":
                             traded = unresolved_signal["signal"] in ("BIG", "SMALL")
                             win = latest["type"] == unresolved_signal["signal"] if traded else None
                             unresolved_signal["result_number"] = latest["number"]
@@ -937,7 +1010,7 @@ def engine_loop():
                         # (ladder persistence: step-loss → pending stays armed
                         #  for next_issue with advanced stake; only win/tier-
                         #  loss clears it — matches strategy_test.py flow)
-                        if strat_pending is not None:
+                        if reconcile_strat_pending_issue(latest):
                             sp = strat_pending
                             won = (latest["type"] == sp["target"])
                             sp["bets"] += 1
@@ -1281,7 +1354,9 @@ def compute_rsi_extremes(days=30):
             headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
         if res.status_code != 200:
             return None
-        rows = parse_history(res.json())
+        payload = res.json()
+        raw = payload if isinstance(payload, list) else (payload.get("data", []) if isinstance(payload, dict) else [])
+        rows = parse_history(raw)
         if not rows:
             return None
         last_day = rows[-1]["day_int"]
