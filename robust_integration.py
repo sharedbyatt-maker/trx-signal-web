@@ -14,7 +14,15 @@ import traceback
 from datetime import datetime
 
 from robust_audit import MC_RUNS, run_full_audit
-from robust_engine import RobustEngine
+from robust_engine import (
+    BASE_STAKE,
+    DAILY_SL,
+    DAILY_TP,
+    PAROLI_WINS,
+    SCORE_THRESHOLD,
+    VOL_MIN,
+    RobustEngine,
+)
 
 def audit_token_valid(provided):
     """Constant-time check for the optional admin audit token."""
@@ -30,19 +38,33 @@ def _fmt_money(value, signed=False):
     return f"{n:,}"
 
 
+def _risk_lines(event):
+    """Compact daily-risk context derived only from the event's settled state."""
+    daily_profit = int(round(float(event.get("daily_profit") or 0)))
+    tp_left = max(0, DAILY_TP - daily_profit)
+    sl_room = max(0, daily_profit + DAILY_SL)
+    return (
+        f"Daily TP: +{DAILY_TP:,} MMK · Remaining: {_fmt_money(tp_left)} MMK\n"
+        f"Daily SL: -{DAILY_SL:,} MMK · Loss room: {_fmt_money(sl_room)} MMK"
+    )
+
+
 def format_robust_telegram_event(event):
     """Pure formatter; all Robust Telegram messages share one prefix."""
     kind = event.get("kind")
     if kind == "signal":
         return (
             "[ROBUST ENGINE]\n"
-            "📡 NEW SIGNAL\n\n"
+            "📡 NEW SIGNAL — TRADE ARMED\n\n"
             f"Issue: {event.get('issue')}\n"
             f"Target: {event.get('target')}\n"
-            f"Paroli: Step {int(event.get('paroli_step', 0)) + 1} / 4\n"
+            f"Paroli: Step {int(event.get('paroli_step', 0)) + 1} / {PAROLI_WINS}\n"
             f"Stake: {_fmt_money(event.get('stake'))} MMK\n"
             f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
-            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n\n"
+            "Engine: 🟢 ACTIVE — this issue is armed\n"
+            f"Entry filter: |Score| ≥ {SCORE_THRESHOLD:.0f} · Vol ≥ {VOL_MIN:.1f}\n"
+            f"{_risk_lines(event)}"
         )
 
     if kind == "settlement":
@@ -57,13 +79,39 @@ def format_robust_telegram_event(event):
             f"Stake: {_fmt_money(event.get('stake'))} MMK\n"
             f"Trade P/L: {_fmt_money(event.get('trade_pnl'), signed=True)} MMK\n"
             f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
-            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n\n"
+            f"{_risk_lines(event)}"
         )
         if event.get("trading_active"):
             text += (
                 "\n\n"
-                f"Next Paroli: Step {int(event.get('next_paroli_step', 0)) + 1} / 4\n"
-                f"Next Stake: {_fmt_money(event.get('next_stake'))} MMK"
+                "Engine: 🟢 RUNNING — no stop triggered\n"
+                "Next action: Waiting for the next VALID setup\n"
+                "Note: A new signal is NOT guaranteed on the next round.\n"
+                f"Next Paroli: Step {int(event.get('next_paroli_step', 0)) + 1} / {PAROLI_WINS}\n"
+                f"Next Eligible Stake: {_fmt_money(event.get('next_stake'))} MMK"
+            )
+        else:
+            daily_profit = int(round(float(event.get("daily_profit") or 0)))
+            bankroll = int(round(float(event.get("bankroll") or 0)))
+            next_stake = int(round(float(event.get("next_stake") or BASE_STAKE)))
+            if daily_profit >= DAILY_TP:
+                reason = "Daily TP reached"
+                reset = "No more Robust signals until the next daily reset."
+            elif daily_profit <= -DAILY_SL:
+                reason = "Daily SL / hard risk stop reached"
+                reset = "No more Robust signals until the next daily reset."
+            elif bankroll < next_stake:
+                reason = "Insufficient bankroll for the next eligible stake"
+                reset = "Trading stays blocked until bankroll/risk state is sufficient."
+            else:
+                reason = "Risk guard is blocking new trades"
+                reset = "Check the following stop notification/status for the exact guard."
+            text += (
+                "\n\n"
+                "Engine: 🔴 NOT TRADING\n"
+                f"Reason: {reason}\n"
+                f"{reset}"
             )
         return text
 
@@ -76,7 +124,8 @@ def format_robust_telegram_event(event):
             f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
             f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
             "Paroli Reset: Step 1 / 4\n"
-            f"Next Base Stake: {_fmt_money(event.get('base_stake'))} MMK"
+            f"Next Eligible Base Stake: {_fmt_money(event.get('base_stake'))} MMK\n\n"
+            "Engine status depends on the daily TP/SL guard shown in the following notification."
         )
 
     if kind == "daily_tp":
@@ -84,8 +133,11 @@ def format_robust_telegram_event(event):
             "[ROBUST ENGINE]\n"
             "🎯 DAILY TP HIT\n\n"
             f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
-            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
-            "Trading paused until next daily reset."
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n\n"
+            "Engine: 🔴 STOPPED FOR TODAY\n"
+            "Reason: Daily Take Profit reached\n"
+            "New Robust signals: DISABLED\n"
+            "Resume: Automatically at the next daily reset."
         )
 
     if kind == "daily_risk_stop":
@@ -94,8 +146,10 @@ def format_robust_telegram_event(event):
             "🛑 DAILY RISK STOP\n\n"
             f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
             f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
-            f"Reason: {event.get('reason') or 'Daily SL / pre-trade hard risk guard'}\n"
-            "Trading paused until next daily reset."
+            f"Reason: {event.get('reason') or 'Daily SL / pre-trade hard risk guard'}\n\n"
+            "Engine: 🔴 STOPPED FOR TODAY\n"
+            "New Robust signals: DISABLED\n"
+            "Resume: Automatically at the next daily reset."
         )
 
     if kind == "daily_reset":
@@ -107,8 +161,9 @@ def format_robust_telegram_event(event):
             f"Previous Day P/L: {_fmt_money(event.get('previous_day_profit'), signed=True)} MMK\n"
             f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
             "Paroli Reset: Step 1 / 4\n"
-            f"Base Stake: {_fmt_money(event.get('base_stake'))} MMK\n"
-            "Status: Ready"
+            f"Base Stake: {_fmt_money(event.get('base_stake'))} MMK\n\n"
+            "Engine: 🟢 RUNNING — ready for valid setups\n"
+            "New Robust signals: ENABLED"
         )
     return None
 
