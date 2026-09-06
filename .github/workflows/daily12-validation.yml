@@ -2,6 +2,8 @@ name: Daily12 Validation
 on:
   push:
     branches: [12step-daily-report-20260906]
+permissions:
+  contents: write
 jobs:
   validate:
     runs-on: ubuntu-latest
