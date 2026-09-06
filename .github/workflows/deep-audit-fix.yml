@@ -1,0 +1,243 @@
+name: Deep Audit Fix
+on:
+  push:
+    branches: [deep-audit-fix-20260906]
+permissions:
+  contents: write
+jobs:
+  audit-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Apply audited fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('app_core.py')
+          s = p.read_text(encoding='utf-8')
+
+          def rep(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit(f'patch anchor missing: {label}')
+              s = s.replace(old, new, 1)
+
+          rep(
+          '''        new_file = not os.path.exists(LOG_FILE)\n        with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:\n''',
+          '''        new_file = (not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0)\n        with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:\n''',
+          'empty trade log header')
+
+          rep(
+          '''def append_signal_history(entry):\n    new_file = not os.path.exists(HIST_FILE)\n    try:\n''',
+          '''def append_signal_history(entry):\n    try:\n        new_file = (not os.path.exists(HIST_FILE) or os.path.getsize(HIST_FILE) == 0)\n''',
+          'empty signal history header')
+
+          rep(
+          '''        if raw_issue and num_val is not None and raw_issue not in seen:\n            try:\n                num = int(num_val)\n                seen.add(raw_issue)\n''',
+          '''        if raw_issue and raw_issue.isdigit() and num_val is not None and raw_issue not in seen:\n            try:\n                num = int(num_val)\n                if num < 0 or num > 9:\n                    continue\n                seen.add(raw_issue)\n''',
+          'history validation')
+
+          anchor = '''def trim_full_history(rows, days=FULL_HISTORY_DAYS):\n'''
+          helper = '''def newest_raw_slice(data_list, limit=MAX_FULL_ROWS):\n    """Keep the newest raw rounds regardless of upstream ascending/descending order."""\n    rows = list(data_list or [])\n    if len(rows) <= limit:\n        return rows\n\n    def issue_num(item):\n        if not isinstance(item, dict):\n            return None\n        raw = str(item.get("issueNumber") or item.get("issue") or "")\n        try:\n            return int(raw)\n        except (TypeError, ValueError):\n            return None\n\n    first = issue_num(rows[0])\n    last = issue_num(rows[-1])\n    if first is not None and last is not None and first > last:\n        return rows[:limit]\n    return rows[-limit:]\n\n\ndef issue_relation(completed_issue, target_issue):\n    """Compare completed issue with target: exact / before / after / mismatch."""\n    current = str(completed_issue or "")\n    target = str(target_issue or "")\n    if current and target and current == target:\n        return "exact"\n    try:\n        a, b = int(current), int(target)\n        return "before" if a < b else "after"\n    except (TypeError, ValueError):\n        return "mismatch"\n\n\n''' + anchor
+          rep(anchor, helper, 'history helpers')
+
+          rep(
+          '''                if not have_full and len(data_list) > MAX_FULL_ROWS:\n                    data_list = data_list[-MAX_FULL_ROWS:]\n                parsed = parse_history(data_list)\n''',
+          '''                if not have_full and len(data_list) > MAX_FULL_ROWS:\n                    data_list = newest_raw_slice(data_list, MAX_FULL_ROWS)\n                parsed = parse_history(data_list)\n                if not have_full and len(parsed) > MAX_FULL_ROWS:\n                    parsed = parsed[-MAX_FULL_ROWS:]\n''',
+          'order-independent full snapshot')
+
+          old_resolve = '''def resolve_pending(latest):\n    global pending, units, lose_streak, cooldown\n    if pending and pending["issue"] == latest["issue"]:\n        win = latest["type"] == pending["signal"]\n'''
+          new_resolve = '''def resolve_pending(latest):\n    global pending, units, lose_streak, cooldown\n    relation = issue_relation(latest.get("issue"), (pending or {}).get("issue")) if pending else None\n    if pending and relation == "exact":\n        win = latest["type"] == pending["signal"]\n'''
+          rep(old_resolve, new_resolve, 'pending exact target relation')
+
+          rep(
+          '''        pending = None\n    elif cooldown > 0:\n        cooldown -= 1\n\n\ndef engine_loop():\n''',
+          '''        pending = None\n    elif pending and relation in ("after", "mismatch"):\n        missed = pending.get("issue")\n        print(f"[ENGINE] pending target {missed} missed; resynced without settlement", flush=True)\n        pending = None\n    elif pending and relation == "before":\n        return\n    elif cooldown > 0:\n        cooldown -= 1\n\n\ndef reconcile_strat_pending_issue(latest):\n    """Allow 12-step settlement only on the exact armed issue; gaps are financially inert."""\n    global strat_pending\n    if strat_pending is None:\n        return False\n    relation = issue_relation(latest.get("issue"), strat_pending.get("issue"))\n    if relation == "exact":\n        return True\n    if relation in ("after", "mismatch"):\n        missed = strat_pending.get("issue")\n        strat_state["pending"] = None\n        strat_state["last_result"] = f"MISSED TARGET {missed} — resynced without settlement"\n        strat_pending = None\n        print(f"[STAKE] pending target {missed} missed; resynced without result", flush=True)\n    return False\n\n\ndef engine_loop():\n''',
+          'pending gap and strat reconciler')
+
+          rep(
+          '''                        if unresolved_signal and unresolved_signal["issue"] == latest["issue"]:\n                            traded = unresolved_signal["signal"] in ("BIG", "SMALL")\n''',
+          '''                        if unresolved_signal:\n                            relation = issue_relation(latest["issue"], unresolved_signal.get("issue"))\n                            if relation in ("after", "mismatch"):\n                                unresolved_signal["result_number"] = None\n                                unresolved_signal["result_type"] = None\n                                unresolved_signal["outcome"] = "MISSED"\n                                append_signal_history(unresolved_signal)\n                                unresolved_signal = None\n                        if unresolved_signal and issue_relation(latest["issue"], unresolved_signal.get("issue")) == "exact":\n                            traded = unresolved_signal["signal"] in ("BIG", "SMALL")\n''',
+          'unresolved signal gap')
+
+          rep(
+          '''                        if strat_pending is not None:\n                            sp = strat_pending\n''',
+          '''                        if reconcile_strat_pending_issue(latest):\n                            sp = strat_pending\n''',
+          '12-step exact target settlement')
+
+          rep(
+          '''        rows = parse_history(res.json())\n        if not rows:\n''',
+          '''        payload = res.json()\n        raw = payload if isinstance(payload, list) else (payload.get("data", []) if isinstance(payload, dict) else [])\n        rows = parse_history(raw)\n        if not rows:\n''',
+          'rsi extremes wrapped response')
+
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('robust_audit.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''    history = normalize_history(rows)\n    history.sort(key=lambda x: int(x["issue"]) if x["issue"].isdigit() else x["issue"])\n    return history\n'''
+          new = '''    history = normalize_history(rows)\n    history.sort(key=lambda x: (0, int(x["issue"])) if str(x["issue"]).isdigit() else (1, str(x["issue"])))\n    return history\n'''
+          if old not in s:
+              raise SystemExit('patch anchor missing: robust audit sort')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          Path('tests_deep_audit.py').write_text(r'''# -*- coding: utf-8 -*-
+"""Regression tests for whole-site deep-audit safety fixes."""
+import csv
+import os
+import tempfile
+from pathlib import Path
+
+os.environ["TRX_NO_ENGINE"] = "1"
+
+import app as eng
+import app_core as core
+
+
+def test_newest_raw_slice_and_parse_validation():
+    desc = [{"issueNumber": str(i), "number": 5} for i in range(10, 0, -1)]
+    asc = list(reversed(desc))
+    assert [x["issueNumber"] for x in core.newest_raw_slice(desc, 3)] == ["10", "9", "8"]
+    assert [x["issueNumber"] for x in core.newest_raw_slice(asc, 3)] == ["8", "9", "10"]
+    rows = core.parse_history([
+        {"issueNumber": "2026090601", "number": 8, "blockTime": "2026-09-06 10:00:00"},
+        {"issueNumber": "bad", "number": 5, "blockTime": "2026-09-06 10:01:00"},
+        {"issueNumber": "2026090602", "number": 99, "blockTime": "2026-09-06 10:02:00"},
+        {"issueNumber": "2026090603", "number": -1, "blockTime": "2026-09-06 10:03:00"},
+    ])
+    assert len(rows) == 1 and rows[0]["issue"] == "2026090601"
+
+
+def test_issue_relation_and_pending_gap_is_inert():
+    assert core.issue_relation("102", "102") == "exact"
+    assert core.issue_relation("101", "102") == "before"
+    assert core.issue_relation("103", "102") == "after"
+    assert core.issue_relation("x", "102") == "mismatch"
+
+    saved = (core.pending, core.units, core.lose_streak, core.cooldown, dict(core.stats))
+    try:
+        core.pending = {"issue": "20260906102", "signal": "BIG", "score": 50}
+        core.units = 3
+        core.lose_streak = 1
+        core.cooldown = 0
+        core.stats.clear(); core.stats.update({"w": 4, "l": 2})
+        before = (core.units, core.lose_streak, dict(core.stats))
+        core.resolve_pending({"issue": "20260906103", "type": "SMALL", "short_issue": "061103", "number": 2})
+        assert core.pending is None
+        assert (core.units, core.lose_streak, dict(core.stats)) == before
+    finally:
+        core.pending, core.units, core.lose_streak, core.cooldown, st = saved
+        core.stats.clear(); core.stats.update(st)
+
+
+def test_strat_gap_is_inert():
+    saved_pending = core.strat_pending
+    saved_state = dict(core.strat_state)
+    try:
+        core.strat_state.update({"tier": 1, "step": 2, "signals": 7, "busts": 1, "pending": {"issue": "102"}})
+        core.strat_pending = {"issue": "102", "target": "BIG", "tier": 1, "step": 2, "stake": 10000}
+        financial = (core.strat_state["tier"], core.strat_state["step"], core.strat_state["signals"], core.strat_state["busts"])
+        assert core.reconcile_strat_pending_issue({"issue": "103"}) is False
+        assert core.strat_pending is None
+        assert core.strat_state["pending"] is None
+        assert (core.strat_state["tier"], core.strat_state["step"], core.strat_state["signals"], core.strat_state["busts"]) == financial
+    finally:
+        core.strat_pending = saved_pending
+        core.strat_state.clear(); core.strat_state.update(saved_state)
+
+
+def test_empty_csv_gets_header():
+    old_log, old_hist = core.LOG_FILE, core.HIST_FILE
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            core.LOG_FILE = str(Path(td) / "trade.csv")
+            core.HIST_FILE = str(Path(td) / "hist.csv")
+            Path(core.LOG_FILE).touch()
+            Path(core.HIST_FILE).touch()
+            core.log_signal(["2026-09-06 10:00:00", "1", "BIG", 50, "BIG", "WIN"])
+            core.append_signal_history({"time": "10:00:00", "issue": "1", "signal": "BIG", "score": 50,
+                                        "result_number": 8, "result_type": "BIG", "outcome": "WIN"})
+            with open(core.LOG_FILE, newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+                assert len(rows) == 1 and rows[0]["issue"] == "1"
+            with open(core.HIST_FILE, newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+                assert len(rows) == 1 and rows[0]["issue"] == "1"
+    finally:
+        core.LOG_FILE, core.HIST_FILE = old_log, old_hist
+
+
+def test_rsi_extremes_accepts_wrapped_payload():
+    old_get = core.session.get
+    class Resp:
+        status_code = 200
+        def json(self):
+            base = 20260906000000000
+            return {"data": [
+                {"issueNumber": str(base + i), "number": i % 10,
+                 "blockTime": f"2026-09-06 10:{i % 60:02d}:00"}
+                for i in range(200)
+            ]}
+    try:
+        core.session.get = lambda *a, **k: Resp()
+        data = core.compute_rsi_extremes(30)
+        assert data is not None and data["rounds"] == 200
+        assert 0 <= data["min"] <= 100 and 0 <= data["max"] <= 100
+    finally:
+        core.session.get = old_get
+
+
+def test_flask_routes_smoke():
+    c = eng.app.test_client()
+    for path in ("/", "/api/state", "/api/history", "/api/latest", "/api/backtest",
+                 "/api/robust-engine/status", "/api/robust-engine/signal",
+                 "/api/robust-engine/stats", "/api/robust-engine/audit"):
+        r = c.get(path)
+        assert r.status_code == 200, (path, r.status_code)
+    r = c.post("/api/robust-engine/audit")
+    assert r.status_code in (401, 503)
+
+
+if __name__ == "__main__":
+    test_newest_raw_slice_and_parse_validation()
+    test_issue_relation_and_pending_gap_is_inert()
+    test_strat_gap_is_inert()
+    test_empty_csv_gets_header()
+    test_rsi_extremes_accepts_wrapped_payload()
+    test_flask_routes_smoke()
+    print("DEEP AUDIT TESTS: ALL PASSED")
+''', encoding='utf-8')
+          PY
+      - name: Python syntax
+        run: python -m compileall -q app.py app_core.py decision.py robust_engine.py robust_audit.py robust_integration.py tests_engine.py tests_robust.py tests_deep_audit.py
+      - name: Legacy engine tests
+        run: python tests_engine.py
+      - name: Robust engine tests
+        run: python tests_robust.py
+      - name: Deep audit regression tests
+        run: python tests_deep_audit.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/js/app.js
+          node --check static/js/chart.js
+          node --check static/js/draw.js
+          node --check static/js/robust.js
+      - name: Commit passing fixes and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/deep-audit-fix.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "sharedbyatt-maker"
+          git config user.email "sharedbyatt@gmail.com"
+          git add -A
+          git commit -m "Deep audit: harden runtime and data safety"
+          git push origin HEAD:deep-audit-fix-20260906
