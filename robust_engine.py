@@ -419,7 +419,14 @@ class RobustEngine:
     def _settle_pending_locked(self, row):
         p = self.state.get("pending")
         if not p:
-            return
+            return False
+
+        # A pending live bet may only be resolved by its exact target issue.
+        # Empty target_issue is retained for backward-compatible restored state.
+        target_issue = str(p.get("target_issue") or "")
+        if target_issue and str(row.get("issue") or "") != target_issue:
+            return False
+
         won = row["type"] == p["signal"]
         stake = int(p["stake"])
         pnl = (int(round(stake * PAYOUT)) - stake) if won else -stake
@@ -452,6 +459,7 @@ class RobustEngine:
         self.state["current_stake"] = BASE_STAKE * (2 ** self.state["paroli_step"])
         if self.state["daily_profit"] >= DAILY_TP or self.state["daily_profit"] <= -DAILY_SL:
             self.state["daily_stopped"] = True
+        return True
 
     def _arm_next_locked(self, history_prefix, next_issue=None):
         result = signal_for_next(history_prefix)
@@ -537,12 +545,56 @@ class RobustEngine:
                 if row["issue"] in processed:
                     continue
 
-                # Target-day state reset happens before this target round settles.
+                pending = self.state.get("pending")
+                target_issue = str((pending or {}).get("target_issue") or "")
+                row_issue = str(row["issue"])
+
+                if pending and target_issue and row_issue != target_issue:
+                    # If the target is still ahead in this snapshot (or the numeric
+                    # issue is still before it), keep waiting without touching trade
+                    # accounting. A row beyond a missing target is an unknown gap:
+                    # discard the pending bet and re-anchor without a fake outcome.
+                    target_later = any(
+                        str(history[j]["issue"]) == target_issue
+                        for j in range(i + 1, len(history))
+                    )
+                    row_before_target = False
+                    try:
+                        row_before_target = int(row_issue) < int(target_issue)
+                    except (TypeError, ValueError):
+                        pass
+
+                    if target_later or row_before_target:
+                        self.state["last_processed_issue"] = row_issue
+                        processed.add(row_issue)
+                        changed = True
+                        continue
+
+                    # Missing/skipped target: no bankroll/W-L/Paroli/DD mutation.
+                    latest = history[-1]
+                    self.state["pending"] = None
+                    self.state["signal"] = "NO TRADE"
+                    self.state["status"] = "NO TRADE"
+                    self.state["last_processed_issue"] = latest["issue"]
+                    for skipped in history[start:]:
+                        processed.add(skipped["issue"])
+                    self.state["processed_issues"] = list(processed)[-500:]
+                    self.state["last_error"] = (
+                        f"pending target {target_issue} missing before {row_issue}; "
+                        "re-anchored without settlement"
+                    )
+                    self.state["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self._atomic_save_locked()
+                    return self.snapshot()
+
+                # Exact target (or backward-compatible targetless pending) settles.
+                # Target-day reset is intentionally after target verification so a
+                # wrong/unknown row cannot alter Paroli or daily risk state.
                 self._ensure_day_locked(row.get("date"))
                 self._settle_pending_locked(row)
 
-                self.state["last_processed_issue"] = row["issue"]
-                processed.add(row["issue"])
+                self.state["last_processed_issue"] = row_issue
+                processed.add(row_issue)
                 changed = True
 
                 # For an observed backlog, the immediate next known row is the target.
