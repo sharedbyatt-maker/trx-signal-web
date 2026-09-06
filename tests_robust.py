@@ -114,7 +114,6 @@ def test_pending_target_issue_safety():
     original = force_signal("BIG")
     try:
         with tempfile.TemporaryDirectory() as td:
-            # Exact target issue settles exactly once.
             p1 = Path(td) / "exact.json"
             e1 = re.RobustEngine(p1)
             h1 = make_history(110)
@@ -128,12 +127,10 @@ def test_pending_target_issue_safety():
             assert after1["wins"] == before1["wins"] + 1
             assert after1["bankroll"] == before1["bankroll"] + 960
 
-            # Duplicate delivery of the already-settled target cannot settle twice.
             exact_once = _trade_financials(after1)
             e1.process_snapshot(h1, str(int(target1) + 1))
             assert _trade_financials(e1.snapshot()) == exact_once
 
-            # A completed row before the declared target is not the bet result.
             p2 = Path(td) / "wrong.json"
             e2 = re.RobustEngine(p2)
             h2 = make_history(110)
@@ -141,7 +138,7 @@ def test_pending_target_issue_safety():
             target2 = str(int(h2[-1]["issue"]) + 2)
             e2.process_snapshot(h2, target2)
             before2 = _trade_financials(e2.snapshot())
-            add_result(h2, "SMALL")  # wrong_issue, target is still one issue ahead
+            add_result(h2, "SMALL")
             assert h2[-1]["issue"] == wrong_issue
             e2.process_snapshot(h2, target2)
             s2 = e2.snapshot()
@@ -149,14 +146,11 @@ def test_pending_target_issue_safety():
             assert s2["pending"] is not None
             assert s2["pending"]["target_issue"] == target2
 
-            # Once the exact target arrives, that target settles normally.
             add_result(h2, "BIG")
             assert h2[-1]["issue"] == target2
             e2.process_snapshot(h2, str(int(target2) + 1))
             assert e2.snapshot()["total_trades"] == before2["total_trades"] + 1
 
-            # If the target itself is missing and history jumps beyond it, discard
-            # the pending trade and resync without inventing W/L/P&L/DD/Paroli.
             p3 = Path(td) / "gap.json"
             e3 = re.RobustEngine(p3)
             h3 = make_history(110)
@@ -175,8 +169,6 @@ def test_pending_target_issue_safety():
             assert s3["last_processed_issue"] == skipped_to
             assert "re-anchored without settlement" in (s3["last_error"] or "")
 
-            # If the observer cursor itself falls out of the shared history window,
-            # re-anchor without using unknown rounds to reset/mutate financial state.
             p4 = Path(td) / "cursor_gap.json"
             e4 = re.RobustEngine(p4)
             h4 = make_history(110)
@@ -198,6 +190,156 @@ def test_pending_target_issue_safety():
         re.signal_for_next = original
 
 
+def test_robust_telegram_events_and_dedupe():
+    original = force_signal("BIG")
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "tg.json"
+            e = re.RobustEngine(p)
+            h = make_history(110)
+            target = str(int(h[-1]["issue"]) + 1)
+            e.process_snapshot(h, target)
+            ev = e.drain_notification_events()
+            signals = [x for x in ev if x["kind"] == "signal"]
+            assert len(signals) == 1 and signals[0]["id"] == f"signal:{target}"
+
+            e.process_snapshot(h, target)
+            assert e.drain_notification_events() == []
+
+            add_result(h, "BIG")
+            e.process_snapshot(h, str(int(target) + 1))
+            ev = e.drain_notification_events()
+            settlements = [x for x in ev if x["kind"] == "settlement"]
+            assert len(settlements) == 1 and settlements[0]["id"] == f"settlement:{target}"
+
+            e.process_snapshot(h, str(int(target) + 1))
+            assert not [x for x in e.drain_notification_events() if x["kind"] == "settlement"]
+
+            p2 = Path(td) / "paroli.json"
+            e2 = re.RobustEngine(p2)
+            h2 = make_history(110)
+            e2.process_snapshot(h2, str(int(h2[-1]["issue"]) + 1))
+            e2.drain_notification_events()
+            fourth_issue = None
+            for _ in range(4):
+                add_result(h2, "BIG")
+                fourth_issue = h2[-1]["issue"]
+                e2.process_snapshot(h2, str(int(fourth_issue) + 1))
+                current = e2.drain_notification_events()
+            assert len([x for x in current if x["kind"] == "paroli4"]) == 1
+            assert len([x for x in current if x["kind"] == "daily_tp"]) == 1
+            assert [x for x in current if x["kind"] == "paroli4"][0]["id"] == f"paroli4:{fourth_issue}"
+            e2.process_snapshot(h2, str(int(fourth_issue) + 1))
+            assert not [x for x in e2.drain_notification_events() if x["kind"] in ("paroli4", "daily_tp")]
+
+            p3 = Path(td) / "sl.json"
+            e3 = re.RobustEngine(p3)
+            h3 = make_history(110)
+            e3.process_snapshot(h3, str(int(h3[-1]["issue"]) + 1))
+            e3.drain_notification_events()
+            with e3.lock:
+                e3.state["pending"] = None
+                e3.state["daily_profit"] = -7500
+                e3.state["daily_stopped"] = False
+                next3 = str(int(h3[-1]["issue"]) + 1)
+                e3._arm_next_locked(re.normalize_history(h3), next3)
+                e3._atomic_save_locked()
+            ev3 = e3.drain_notification_events()
+            stops = [x for x in ev3 if x["kind"] == "daily_risk_stop"]
+            assert len(stops) == 1
+            with e3.lock:
+                e3._arm_next_locked(re.normalize_history(h3), next3)
+                e3._atomic_save_locked()
+            assert not [x for x in e3.drain_notification_events() if x["kind"] == "daily_risk_stop"]
+
+            p4 = Path(td) / "reset.json"
+            e4 = re.RobustEngine(p4)
+            h4 = make_history(110)
+            e4.process_snapshot(h4, str(int(h4[-1]["issue"]) + 1))
+            e4.drain_notification_events()
+            with e4.lock:
+                e4.state["pending"] = None
+                e4.state["daily_profit"] = 4320
+                e4._atomic_save_locked()
+            new_issue = "20260907000000"
+            h4.append({"issue": new_issue, "number": 8, "type": "BIG",
+                       "date": "2026-09-07", "block_time": "2026-09-07 00:00:01"})
+            e4.process_snapshot(h4, str(int(new_issue) + 1))
+            reset_events = [x for x in e4.drain_notification_events() if x["kind"] == "daily_reset"]
+            assert len(reset_events) == 1
+            assert reset_events[0]["previous_date"] == "2026-09-06"
+            assert reset_events[0]["new_date"] == "2026-09-07"
+            assert reset_events[0]["previous_day_profit"] == 4320
+
+            restored = re.RobustEngine(p)
+            restored.process_snapshot(h, str(int(target) + 1))
+            assert restored.drain_notification_events() == []
+            assert f"signal:{target}" in restored.snapshot()["notification_event_ids"]
+            assert f"settlement:{target}" in restored.snapshot()["notification_event_ids"]
+
+            p5 = Path(td) / "wrong_target_tg.json"
+            e5 = re.RobustEngine(p5)
+            h5 = make_history(110)
+            target5 = str(int(h5[-1]["issue"]) + 1)
+            e5.process_snapshot(h5, target5)
+            e5.drain_notification_events()
+            skipped = str(int(target5) + 1)
+            h5.append({"issue": skipped, "number": 1, "type": "SMALL",
+                       "date": "2026-09-06", "block_time": "2026-09-06 10:00:00"})
+            e5.process_snapshot(h5, str(int(skipped) + 1))
+            assert not [x for x in e5.drain_notification_events() if x["kind"] == "settlement"]
+
+            sample_events = [signals[0], settlements[0],
+                             [x for x in current if x["kind"] == "paroli4"][0],
+                             [x for x in current if x["kind"] == "daily_tp"][0],
+                             stops[0], reset_events[0]]
+            for item in sample_events:
+                msg = ri.format_robust_telegram_event(item)
+                assert msg.startswith("[ROBUST ENGINE]\n")
+    finally:
+        re.signal_for_next = original
+
+
+def test_telegram_bridge_reuses_core_sender_and_isolation():
+    original = force_signal("BIG")
+    import os
+    old_path = os.environ.get("ROBUST_STATE_FILE")
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            h = make_history(110)
+            target = str(int(h[-1]["issue"]) + 1)
+            os.environ["ROBUST_STATE_FILE"] = str(Path(td) / "bridge.json")
+            core = FakeCore(h, target)
+            svc = ri.RobustService(core)
+            svc.tick()
+            assert len(core.tg_messages) == 1
+            assert "📡 NEW SIGNAL" in core.tg_messages[0]
+            svc.tick()
+            assert len(core.tg_messages) == 1
+
+            os.environ["ROBUST_STATE_FILE"] = str(Path(td) / "bridge_fail.json")
+            h2 = make_history(110)
+            target2 = str(int(h2[-1]["issue"]) + 1)
+            core2 = FakeCore(h2, target2, tg_raises=True)
+            svc2 = ri.RobustService(core2)
+            svc2.tick()
+            add_result(h2, "BIG")
+            core2.STATE["next_issue"] = str(int(target2) + 1)
+            before = _trade_financials(svc2.engine.snapshot())
+            svc2.tick()
+            after = svc2.engine.snapshot()
+            assert after["total_trades"] == before["total_trades"] + 1
+            assert after["wins"] == before["wins"] + 1
+            assert after["bankroll"] == before["bankroll"] + 960
+            assert f"settlement:{target2}" in after["notification_event_ids"]
+    finally:
+        re.signal_for_next = original
+        if old_path is None:
+            os.environ.pop("ROBUST_STATE_FILE", None)
+        else:
+            os.environ["ROBUST_STATE_FILE"] = old_path
+
+
 def test_audit_admin_token_check():
     import os
     old = os.environ.get("ROBUST_AUDIT_TOKEN")
@@ -216,11 +358,22 @@ def test_audit_admin_token_check():
 
 
 class FakeCore:
-    def __init__(self):
+    def __init__(self, history=None, next_issue=None, tg_raises=False):
         import threading
         self.LOCK = threading.Lock()
-        self.STATE = {"full_history": make_history(5), "history": [], "next_issue": None}
+        self.STATE = {
+            "full_history": history if history is not None else make_history(5),
+            "history": [],
+            "next_issue": next_issue,
+        }
         self.app = None
+        self.tg_messages = []
+        self.tg_raises = tg_raises
+
+    def tg_notify(self, text):
+        if self.tg_raises:
+            raise RuntimeError("telegram queue unavailable")
+        self.tg_messages.append(text)
 
 
 def test_snapshot_copy_and_single_audit_job():
@@ -260,6 +413,8 @@ if __name__ == "__main__":
     test_signal_batch_parity()
     test_paroli_loss_risk_dd_and_persistence()
     test_pending_target_issue_safety()
+    test_robust_telegram_events_and_dedupe()
+    test_telegram_bridge_reuses_core_sender_and_isolation()
     test_audit_admin_token_check()
     test_snapshot_copy_and_single_audit_job()
     print("ROBUST TESTS: ALL PASSED")
