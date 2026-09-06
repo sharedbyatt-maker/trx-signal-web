@@ -5,3 +5,7 @@ __pycache__/
 # Robust Engine runtime state (persisted on host, never committed)
 robust_state.json
 .robust_state.json.tmp.*
+
+# 12-step daily live report state
+strat_daily_reports.json
+.strat_daily_reports.json.tmp.*
