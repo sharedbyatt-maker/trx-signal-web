@@ -1,0 +1,41 @@
+name: Daily12 Validation
+on:
+  push:
+    branches: [12step-daily-report-20260906]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Apply daily report patch
+        run: |
+          python daily_report_patch.py
+          printf '\n@import url("daily12.css");\n' >> static/css/style.css
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Python syntax
+        run: python -m py_compile app.py app_core.py decision.py robust_engine.py robust_audit.py robust_integration.py tests_engine.py tests_robust.py tests_deep_audit.py tests_daily12.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/js/app.js
+          node --check static/js/chart.js
+          node --check static/js/draw.js
+          node --check static/js/robust.js
+          node --check static/js/daily12.js
+      - name: Legacy tests
+        run: python tests_engine.py
+      - name: Robust tests
+        run: python tests_robust.py
+      - name: Deep audit tests
+        run: python tests_deep_audit.py
+      - name: Daily report tests
+        run: python tests_daily12.py
+      - name: Commit passing patch
+        run: |
+          git config user.name "sharedbyatt-maker"
+          git config user.email "sharedbyatt@gmail.com"
+          git add app_core.py templates/index.html static/css/style.css .gitignore
+          git commit -m "Add 12-step daily reporting" || true
+          git push
