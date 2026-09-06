@@ -100,6 +100,101 @@ def test_paroli_loss_risk_dd_and_persistence():
         re.signal_for_next = original
 
 
+def _trade_financials(snapshot):
+    return {
+        key: snapshot[key]
+        for key in (
+            "bankroll", "wins", "losses", "total_trades", "paroli_step",
+            "peak_equity", "current_drawdown", "max_drawdown", "daily_profit",
+        )
+    }
+
+
+def test_pending_target_issue_safety():
+    original = force_signal("BIG")
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            # Exact target issue settles exactly once.
+            p1 = Path(td) / "exact.json"
+            e1 = re.RobustEngine(p1)
+            h1 = make_history(110)
+            target1 = str(int(h1[-1]["issue"]) + 1)
+            e1.process_snapshot(h1, target1)
+            before1 = _trade_financials(e1.snapshot())
+            add_result(h1, "BIG")
+            e1.process_snapshot(h1, str(int(target1) + 1))
+            after1 = e1.snapshot()
+            assert after1["total_trades"] == before1["total_trades"] + 1
+            assert after1["wins"] == before1["wins"] + 1
+            assert after1["bankroll"] == before1["bankroll"] + 960
+
+            # Duplicate delivery of the already-settled target cannot settle twice.
+            exact_once = _trade_financials(after1)
+            e1.process_snapshot(h1, str(int(target1) + 1))
+            assert _trade_financials(e1.snapshot()) == exact_once
+
+            # A completed row before the declared target is not the bet result.
+            p2 = Path(td) / "wrong.json"
+            e2 = re.RobustEngine(p2)
+            h2 = make_history(110)
+            wrong_issue = str(int(h2[-1]["issue"]) + 1)
+            target2 = str(int(h2[-1]["issue"]) + 2)
+            e2.process_snapshot(h2, target2)
+            before2 = _trade_financials(e2.snapshot())
+            add_result(h2, "SMALL")  # wrong_issue, target is still one issue ahead
+            assert h2[-1]["issue"] == wrong_issue
+            e2.process_snapshot(h2, target2)
+            s2 = e2.snapshot()
+            assert _trade_financials(s2) == before2
+            assert s2["pending"] is not None
+            assert s2["pending"]["target_issue"] == target2
+
+            # Once the exact target arrives, that target settles normally.
+            add_result(h2, "BIG")
+            assert h2[-1]["issue"] == target2
+            e2.process_snapshot(h2, str(int(target2) + 1))
+            assert e2.snapshot()["total_trades"] == before2["total_trades"] + 1
+
+            # If the target itself is missing and history jumps beyond it, discard
+            # the pending trade and resync without inventing W/L/P&L/DD/Paroli.
+            p3 = Path(td) / "gap.json"
+            e3 = re.RobustEngine(p3)
+            h3 = make_history(110)
+            target3 = str(int(h3[-1]["issue"]) + 1)
+            e3.process_snapshot(h3, target3)
+            before3 = _trade_financials(e3.snapshot())
+            skipped_to = str(int(target3) + 1)
+            h3.append({
+                "issue": skipped_to, "number": 8, "type": "BIG",
+                "date": "2026-09-06", "block_time": "2026-09-06 10:00:00",
+            })
+            e3.process_snapshot(h3, str(int(skipped_to) + 1))
+            s3 = e3.snapshot()
+            assert _trade_financials(s3) == before3
+            assert s3["pending"] is None
+            assert s3["last_processed_issue"] == skipped_to
+            assert "re-anchored without settlement" in (s3["last_error"] or "")
+    finally:
+        re.signal_for_next = original
+
+
+def test_audit_admin_token_check():
+    import os
+    old = os.environ.get("ROBUST_AUDIT_TOKEN")
+    try:
+        os.environ.pop("ROBUST_AUDIT_TOKEN", None)
+        assert ri.audit_token_valid("anything") is False
+        os.environ["ROBUST_AUDIT_TOKEN"] = "secret-admin-token"
+        assert ri.audit_token_valid("") is False
+        assert ri.audit_token_valid("wrong") is False
+        assert ri.audit_token_valid("secret-admin-token") is True
+    finally:
+        if old is None:
+            os.environ.pop("ROBUST_AUDIT_TOKEN", None)
+        else:
+            os.environ["ROBUST_AUDIT_TOKEN"] = old
+
+
 class FakeCore:
     def __init__(self):
         import threading
@@ -144,5 +239,7 @@ def test_snapshot_copy_and_single_audit_job():
 if __name__ == "__main__":
     test_signal_batch_parity()
     test_paroli_loss_risk_dd_and_persistence()
+    test_pending_target_issue_safety()
+    test_audit_admin_token_check()
     test_snapshot_copy_and_single_audit_job()
     print("ROBUST TESTS: ALL PASSED")
