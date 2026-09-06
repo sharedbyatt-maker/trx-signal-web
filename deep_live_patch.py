@@ -105,7 +105,7 @@ def _resilient_session_get(url, *args, **kwargs):
         kwargs["timeout"] = (2.5, FEED_TAIL_READ_TIMEOUT)
         # Avoid intermediary/CDN stale-200 responses on an otherwise healthy socket.
         sep = "&" if "?" in url_s else "?"
-        actual_url = f"{url_s}{sep}_trx_nonce={int(time.time() * 1000)}"
+        actual_url = f"{url_s}{sep}_trx_nonce={time.time_ns()}"
 
     try:
         response = _original_session_get(actual_url, *args, **kwargs)
@@ -169,7 +169,6 @@ new = '''function render(s, merged) {
 if old not in s:
     raise SystemExit('app.js render target not found')
 s = s.replace(old, new)
-# setConn previously discards txt whenever ok=true; preserve degraded text.
 old2 = '''function setConn(ok, txt) {
   $("dot").className = "dot " + (ok ? "on" : "off");
   $("conn-txt").textContent = ok ? "LIVE" : (txt && txt.length > 50 ? txt.slice(0, 47) + "…" : (txt || "OFFLINE"));
