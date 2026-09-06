@@ -45,6 +45,32 @@ def test_mtf_markov():
     print("  mtf/markov ............. OK")
 
 
+def test_shared_decision_policy():
+    # score-qualified normal BIG trade
+    d = eng.decide_signal(60, 0.10, 1, {"x5": 1, "x15": 1}, 40, 22)
+    assert d["signal"] == "BIG" and d["kind"] == "trade"
+
+    # reversal guard blocks a score-qualified trade
+    d = eng.decide_signal(60, -0.10, 1, {"x5": 1, "x15": 1}, 40, 22)
+    assert d["signal"] == "SKIP (REVERSAL GUARD)"
+    assert d["kind"] == "reversal_guard"
+
+    # MTF disagreement inside the +15 buffer is WATCH, not a trade
+    d = eng.decide_signal(50, 0.10, 1, {"x5": -1, "x15": 1}, 40, 22)
+    assert d["signal"] == "SKIP (WATCH)" and d["kind"] == "mtf_guard"
+
+    # Very strong score is allowed through the MTF buffer, matching live policy
+    d = eng.decide_signal(56, 0.10, 1, {"x5": -1, "x15": -1}, 40, 22)
+    assert d["signal"] == "BIG" and d["kind"] == "trade"
+
+    # Watch and no-signal zones
+    d = eng.decide_signal(30, 0.0, 1, {"x5": 0, "x15": 0}, 40, 22)
+    assert d["signal"] == "SKIP (WATCH)" and d["kind"] == "watch"
+    d = eng.decide_signal(10, 0.0, 1, {"x5": 0, "x15": 0}, 40, 22)
+    assert d["signal"] == "SKIP" and d["kind"] == "skip"
+    print("  shared decision ........ OK")
+
+
 def test_backtest():
     random.seed(42)
     parsed = []
@@ -62,6 +88,7 @@ def test_backtest():
     res = eng.run_backtest(parsed)
     assert res is not None and res["rounds_tested"] > 200
     assert len(res["components"]) == 6
+    assert "guards" in res and set(res["guards"]) == {"reversal", "mtf"}
     for c in res["components"]:
         if c["calls"]:
             assert 0.0 <= c["wr"] <= 1.0
@@ -69,7 +96,7 @@ def test_backtest():
     if tb["calls"]:
         assert 0.0 <= tb["wr"] <= 1.0
     print(f"  backtest ............... OK ({res['rounds_tested']} rounds, "
-          f"trade calls {tb['calls']}, wr {tb['wr']})")
+          f"trade calls {tb['calls']}, wr {tb['wr']}, guards {res['guards']})")
 
 
 def test_rsi_alert_state():
@@ -127,6 +154,7 @@ if __name__ == "__main__":
     test_parse_history()
     test_ema_rsi_series()
     test_mtf_markov()
+    test_shared_decision_policy()
     test_rsi_alert_state()
     test_backtest()
     print("ALL TESTS PASSED")
