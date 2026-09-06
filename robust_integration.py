@@ -23,6 +23,96 @@ def audit_token_valid(provided):
     return bool(expected and supplied) and hmac.compare_digest(supplied, expected)
 
 
+def _fmt_money(value, signed=False):
+    n = int(round(float(value or 0)))
+    if signed:
+        return f"{n:+,}"
+    return f"{n:,}"
+
+
+def format_robust_telegram_event(event):
+    """Pure formatter; all Robust Telegram messages share one prefix."""
+    kind = event.get("kind")
+    if kind == "signal":
+        return (
+            "[ROBUST ENGINE]\n"
+            "📡 NEW SIGNAL\n\n"
+            f"Issue: {event.get('issue')}\n"
+            f"Target: {event.get('target')}\n"
+            f"Paroli: Step {int(event.get('paroli_step', 0)) + 1} / 4\n"
+            f"Stake: {_fmt_money(event.get('stake'))} MMK\n"
+            f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK"
+        )
+
+    if kind == "settlement":
+        outcome = event.get("outcome") or ""
+        icon = "✅" if outcome == "WIN" else "❌"
+        text = (
+            "[ROBUST ENGINE]\n"
+            f"{icon} SETTLEMENT — {outcome}\n\n"
+            f"Issue: {event.get('issue')}\n"
+            f"Signal: {event.get('signal')}\n"
+            f"Actual: {event.get('actual')}\n"
+            f"Stake: {_fmt_money(event.get('stake'))} MMK\n"
+            f"Trade P/L: {_fmt_money(event.get('trade_pnl'), signed=True)} MMK\n"
+            f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK"
+        )
+        if event.get("trading_active"):
+            text += (
+                "\n\n"
+                f"Next Paroli: Step {int(event.get('next_paroli_step', 0)) + 1} / 4\n"
+                f"Next Stake: {_fmt_money(event.get('next_stake'))} MMK"
+            )
+        return text
+
+    if kind == "paroli4":
+        return (
+            "[ROBUST ENGINE]\n"
+            "🔥 4-WIN PAROLI HIT\n\n"
+            f"Issue: {event.get('issue')}\n"
+            "4-win cycle completed.\n"
+            f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
+            "Paroli Reset: Step 1 / 4\n"
+            f"Next Base Stake: {_fmt_money(event.get('base_stake'))} MMK"
+        )
+
+    if kind == "daily_tp":
+        return (
+            "[ROBUST ENGINE]\n"
+            "🎯 DAILY TP HIT\n\n"
+            f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
+            "Trading paused until next daily reset."
+        )
+
+    if kind == "daily_risk_stop":
+        return (
+            "[ROBUST ENGINE]\n"
+            "🛑 DAILY RISK STOP\n\n"
+            f"Daily P/L: {_fmt_money(event.get('daily_profit'), signed=True)} MMK\n"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
+            f"Reason: {event.get('reason') or 'Daily SL / pre-trade hard risk guard'}\n"
+            "Trading paused until next daily reset."
+        )
+
+    if kind == "daily_reset":
+        return (
+            "[ROBUST ENGINE]\n"
+            "🌅 NEW DAY RESET\n\n"
+            f"Previous Date: {event.get('previous_date')}\n"
+            f"New Date: {event.get('new_date')}\n"
+            f"Previous Day P/L: {_fmt_money(event.get('previous_day_profit'), signed=True)} MMK\n"
+            f"Bankroll: {_fmt_money(event.get('bankroll'))} MMK\n"
+            "Paroli Reset: Step 1 / 4\n"
+            f"Base Stake: {_fmt_money(event.get('base_stake'))} MMK\n"
+            "Status: Ready"
+        )
+    return None
+
+
 class RobustService:
     def __init__(self, core):
         self.core = core
@@ -56,11 +146,28 @@ class RobustService:
             next_issue = self.core.STATE.get("next_issue")
         return history, next_issue
 
+    def _forward_robust_events(self):
+        for event in self.engine.drain_notification_events():
+            message = format_robust_telegram_event(event)
+            if not message:
+                continue
+            try:
+                # Reuse the legacy sender/queue/credentials/retry worker exactly as-is.
+                self.core.tg_notify(message)
+            except Exception as exc:
+                # Telegram enqueue failure must never alter Robust financial state or
+                # escape into the legacy polling loop. Event identity is already
+                # persisted by RobustEngine, so retries/restarts cannot duplicate it.
+                print(f"[ROBUST-TG] enqueue failed for {event.get('id')}: {exc}", flush=True)
+
     def tick(self):
         history, next_issue = self._snapshot_legacy_history()
         if history:
-            return self.engine.process_snapshot(history, next_issue)
-        return self.engine.snapshot()
+            snapshot = self.engine.process_snapshot(history, next_issue)
+        else:
+            snapshot = self.engine.snapshot()
+        self._forward_robust_events()
+        return snapshot
 
     def _worker(self):
         while not self._stop.is_set():
