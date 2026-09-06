@@ -54,7 +54,8 @@ async function fetchFullHistory(force) {
 
 function setConn(ok, txt) {
   $("dot").className = "dot " + (ok ? "on" : "off");
-  $("conn-txt").textContent = ok ? "LIVE" : (txt && txt.length > 50 ? txt.slice(0, 47) + "…" : (txt || "OFFLINE"));
+  const label = txt || (ok ? "LIVE" : "OFFLINE");
+  $("conn-txt").textContent = label.length > 70 ? label.slice(0, 67) + "…" : label;
 }
 
 function signalClass(sig) {
@@ -338,7 +339,17 @@ function safeRender(fn, s) {
 }
 
 function render(s, merged) {
-  setConn(!!s.connected, s.connected ? "LIVE" : (s.error ? "OFFLINE: " + s.error : "OFFLINE"));
+  const fh = s.feed_health || {};
+  const fstat = fh.status || (s.connected ? "LIVE" : "OFFLINE");
+  if (!s.connected || fstat === "OFFLINE") {
+    setConn(false, s.error ? "OFFLINE: " + s.error : "OFFLINE");
+  } else if (fstat === "STALE") {
+    setConn(false, `STALE FEED${fh.seconds_since_advance != null ? " · " + Math.round(fh.seconds_since_advance) + "s" : ""}`);
+  } else if (fstat === "DEGRADED") {
+    setConn(true, "DEGRADED · retrying feed");
+  } else {
+    setConn(true, "LIVE");
+  }
   safeRender(renderSignal, s);
   safeRender(renderAnalytics, s);
   mergedCount = merged ? merged.length : 0;
