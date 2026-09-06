@@ -525,15 +525,16 @@ class RobustEngine:
 
             idx_by_issue = {row["issue"]: i for i, row in enumerate(history)}
             if last not in idx_by_issue:
-                # The shared in-memory window moved past our cursor. Avoid guessing
-                # outcomes across an unknown gap; re-anchor safely at the latest row.
+                # The shared in-memory window moved past our cursor. The missing
+                # rounds are unknowable, so discard any pending bet and re-anchor
+                # without changing bankroll/W-L/Paroli/DD or daily accounting.
                 latest = history[-1]
                 self.state["pending"] = None
+                self.state["signal"] = "NO TRADE"
+                self.state["status"] = "NO TRADE"
                 self.state["last_processed_issue"] = latest["issue"]
                 self.state["processed_issues"] = (self.state.get("processed_issues") or [])[-499:] + [latest["issue"]]
-                self.state["last_error"] = "history cursor gap; re-anchored without replay"
-                self._ensure_day_locked(latest.get("date"))
-                self._arm_next_locked(history, next_issue)
+                self.state["last_error"] = "history cursor gap; re-anchored without settlement"
                 self.state["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 self._atomic_save_locked()
                 return self.snapshot()
