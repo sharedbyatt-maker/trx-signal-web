@@ -1,3 +1,7 @@
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+
 # Robust Engine runtime state (persisted on host, never committed)
 robust_state.json
 .robust_state.json.tmp.*
