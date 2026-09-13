@@ -2,7 +2,7 @@ name: Browser E2E QA
 
 on:
   push:
-    branches: [main]
+    branches: [main, browser-e2e-qa-20260913]
   pull_request:
     branches: [main]
   workflow_dispatch:
