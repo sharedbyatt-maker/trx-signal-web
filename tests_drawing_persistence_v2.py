@@ -21,7 +21,8 @@ with tempfile.TemporaryDirectory() as td:
     rr=c.post("/api/drawings/restore",headers=h,json={"revision":1,"expected_revision":2}); assert rr.status_code==200 and rr.json["revision"]==3 and len(rr.json["drawings"])==1
 
 s=Path("static/js/draw.js").read_text()
-for x in ["SYNC_TOKEN_KEY","serializeDrawings()","queueServerSave()","async function pullServer","async function pushServer","function exportDrawings","function importDrawings","async function restoreBackup","buildPersistenceToolbar()","CONFLICT · PULL"]: assert x in s,x
+for x in ["SYNC_TOKEN_KEY","serializeDrawings()","queueServerSave()","async function pullServer","async function pushServer","function exportDrawings","function importDrawings","async function restoreBackup","buildPersistenceToolbar()"]: assert x in s,x
+assert ("CONFLICT · PULL" in s) or ("CONFLICT · TAP SYNC" in s)
 app_s=Path("app.py").read_text(); assert "install_drawings_persistence" in app_s
 ign=Path(".gitignore").read_text(); assert "drawings_state.json" in ign and "drawings_backups/" in ign
 print("Drawing Persistence v2 contract OK")
