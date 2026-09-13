@@ -10,8 +10,12 @@ robust_state.json
 strat_daily_reports.json
 .strat_daily_reports.json.tmp.*
 
-
 # Manual Drawing Persistence v2 runtime state
 drawings_state.json
 .drawings_state.*.tmp
 drawings_backups/
+
+# Browser E2E QA artifacts
+node_modules/
+playwright-report/
+test-results/
