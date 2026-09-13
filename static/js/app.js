@@ -529,6 +529,14 @@ fetchFullHistory(true).then(refresh);
 /* ================= instant candle: /api/latest micro-poll =================
    Candle တစ်တင်တာနဲ့ chart ချက်ချင်း update — /api/state ကို မစောင့်ရတော့ဘူး */
 let latestPolling = false;
+let latestPollTimer = 0;
+const LATEST_POLL_VISIBLE_MS = 250;
+const LATEST_POLL_HIDDEN_MS = 1200;
+function scheduleLatestPoll(delay) {
+  clearTimeout(latestPollTimer);
+  const ms = delay != null ? delay : (document.hidden ? LATEST_POLL_HIDDEN_MS : LATEST_POLL_VISIBLE_MS);
+  latestPollTimer = setTimeout(pollLatest, ms);
+}
 async function pollLatest() {
   if (latestPolling) return;
   latestPolling = true;
@@ -572,9 +580,13 @@ async function pollLatest() {
       }
     }
   } catch (e) { /* noop */ }
-  finally { latestPolling = false; }
+  finally {
+    latestPolling = false;
+    scheduleLatestPoll();
+  }
 }
-setInterval(pollLatest, 400);
+document.addEventListener("visibilitychange", () => scheduleLatestPoll(0));
+scheduleLatestPoll(0);
 fetchRsiExtremes();
 setInterval(fetchRsiExtremes, 3600000);   // 1h
 

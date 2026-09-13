@@ -1065,6 +1065,7 @@ def engine_loop():
     arr_strat = []         # walk-RSI series for staking engine
     types_strat = []       # parallel types (chronological)
     while True:
+        poll_started = time.monotonic()
         try:
             url = URL_DATA if not have_full else URL_DATA + f"?limit={TAIL_LIMIT}"
             timeout_sec = 15 if not have_full else 6
@@ -1103,18 +1104,20 @@ def engine_loop():
                     err_streak = 0
                     parsed_history = all_rows
 
-                    # ---- staking-engine series (walk + RSI, chronological) ----
-                    types_strat = [x["type"] for x in parsed_history]
-                    c_s = 100
-                    closes_s = []
-                    for x in parsed_history:
-                        c_s += 1 if x["type"] == "BIG" else -1
-                        closes_s.append(c_s)
-                    arr_strat = rsi_series(closes_s, RSI_STRAT_PERIOD)
-
                     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     latest = parsed_history[-1]
                     if latest["issue"] != last_issue:
+                        # Build the staking walk/RSI only for a fresh completed round.
+                        # Recomputing up to 30k points on every 0.5s no-change poll
+                        # adds CPU time directly to feed-detection latency.
+                        types_strat = [x["type"] for x in parsed_history]
+                        c_s = 100
+                        closes_s = []
+                        for x in parsed_history:
+                            c_s += 1 if x["type"] == "BIG" else -1
+                            closes_s.append(c_s)
+                        arr_strat = rsi_series(closes_s, RSI_STRAT_PERIOD)
+
                         current_strat_day = _strat_day_from_issue(latest["issue"])
                         _send_previous_strat_daily_if_needed(current_strat_day)
                         resolve_pending(latest)
@@ -1511,7 +1514,11 @@ def engine_loop():
                 STATE["connected"] = False
                 STATE["error"] = f"{type(e).__name__}: {e}"
             print(f"Connection Exception (Auto-Retrying): {e}", flush=True)
-        time.sleep(POLL_SEC)
+        # Keep poll *start-to-start* cadence close to POLL_SEC. Previously we
+        # slept POLL_SEC after network/parse/CPU work, so a nominal 0.5s poll
+        # could become 0.7-1.0s. A small floor prevents hot-looping on slow/error paths.
+        elapsed = time.monotonic() - poll_started
+        time.sleep(max(0.05, POLL_SEC - elapsed))
 
 
 @app.route("/")
@@ -1629,8 +1636,8 @@ def api_strat_daily_report():
 
 @app.route("/api/latest")
 def api_latest():
-    """Micro-endpoint (few hundred bytes) — frontend polls this every ~1.2s
-       so new candles appear almost instantly without heavy /api/state."""
+    """Micro-endpoint (few hundred bytes) — visible tabs poll adaptively at ~250ms
+       so new candles appear quickly without waiting for heavy /api/state."""
     with LOCK:
         h = STATE.get("history") or []
         r = h[-1] if h else None

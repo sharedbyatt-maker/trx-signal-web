@@ -261,6 +261,19 @@ window.TRXChart = (() => {
     if (liveInd.ema15 != null) emaSlowSeries.update({time,value:liveInd.ema15});
     if (liveInd.ema100 != null) emaLongSeries.update({time,value:liveInd.ema100});
 
+    // Bollinger Bands use SMA20 ± 2σ. Keep them in the same instant path as
+    // the candle; O(20) work is tiny and avoids up to ~1.5s visual lag.
+    if (closes.length >= 20) {
+      const tail20 = closes.slice(-20);
+      const mean20 = tail20.reduce((a,b)=>a+b,0) / 20;
+      let var20 = 0;
+      for (const v of tail20) var20 += (v - mean20) ** 2;
+      const sd20 = Math.sqrt(var20 / 20);
+      bbUpperSeries.update({time,value:mean20 + 2 * sd20});
+      bbMidSeries.update({time,value:mean20});
+      bbLowerSeries.update({time,value:mean20 - 2 * sd20});
+    }
+
     let rsiVal=null;
     if (before >= 14 && liveInd.rsiAg != null && liveInd.rsiAl != null) {
       const d=close-prevClose;
@@ -1042,7 +1055,7 @@ window.TRXChart = (() => {
         rightOffset: 3,
         barSpacing: 7,
         minBarSpacing: 0.5,
-        shiftVisibleRangeOnNewBar: false,
+        shiftVisibleRangeOnNewBar: true,
         ticksVisible: true,
         secondsVisible: false,
         tickMarkMaxCharacterLength: 5,
