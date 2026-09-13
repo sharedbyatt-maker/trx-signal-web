@@ -69,6 +69,10 @@ window.TRXChart = (() => {
   let lastKey = "";
   let lastState = null;
   let rangeLock = false;
+  let crosshairLock = false;
+  let curRsiValues = [];
+  let curMacdValues = [];
+  let curStochValues = [];
 
   const $ = (id) => document.getElementById(id);
 
@@ -702,6 +706,85 @@ window.TRXChart = (() => {
     }
   }
 
+  function updateMacdLegend(val) {
+    const el = $("lg-macd");
+    if (!el) return;
+    if (val == null || !Number.isFinite(val)) { el.textContent = ""; el.className = ""; return; }
+    el.textContent = val.toFixed(2);
+    el.className = val >= 0 ? "green" : "red";
+  }
+
+  function updateStochLegend(val) {
+    const el = $("lg-stoch");
+    if (!el) return;
+    if (val == null || !Number.isFinite(val)) { el.textContent = ""; el.className = ""; return; }
+    el.textContent = val.toFixed(1);
+    el.className = val >= 80 ? "red" : val <= 20 ? "green" : "";
+  }
+
+  function valueAt(arr, time) {
+    const i = Number(time) - 1;
+    return Number.isInteger(i) && i >= 0 && i < arr.length ? arr[i] : null;
+  }
+
+  function updateAllLegendsAtTime(time) {
+    const i = Number(time) - 1;
+    updateLegend(Number.isInteger(i) && i >= 0 ? curBars[i] : null);
+    updateRsiLegend(valueAt(curRsiValues, time));
+    updateMacdLegend(valueAt(curMacdValues, time));
+    updateStochLegend(valueAt(curStochValues, time));
+  }
+
+  function restoreLatestLegends() {
+    const t = curBars.length;
+    if (t > 0) updateAllLegendsAtTime(t);
+    else {
+      updateLegend(null); updateRsiLegend(null); updateMacdLegend(null); updateStochLegend(null);
+    }
+  }
+
+  function paneCrosshairTargets() {
+    return [
+      { chart, series: candleSeries, values: curBars.map((b) => b.c), enabled: true },
+      { chart: rsiChart, series: rsiSeries, values: curRsiValues, enabled: opts.rsi },
+      { chart: macdChart, series: macdLineSeries, values: curMacdValues, enabled: opts.macd },
+      { chart: stochChart, series: stochKSeries, values: curStochValues, enabled: opts.stoch },
+    ];
+  }
+
+  function syncCrosshairs() {
+    // Phase 6 — one logical time across main + RSI + MACD + STOCH.
+    // Guard programmatic moves because setCrosshairPosition can emit another move event.
+    paneCrosshairTargets().filter((p) => p.chart).forEach((src) => {
+      src.chart.subscribeCrosshairMove((param) => {
+        if (crosshairLock) return;
+        crosshairLock = true;
+        try {
+          const time = param && param.time;
+          if (time == null) {
+            paneCrosshairTargets().forEach((dst) => {
+              if (dst.chart && dst.chart !== src.chart && typeof dst.chart.clearCrosshairPosition === "function") {
+                try { dst.chart.clearCrosshairPosition(); } catch (e) { /* noop */ }
+              }
+            });
+            restoreLatestLegends();
+            return;
+          }
+
+          updateAllLegendsAtTime(time);
+          paneCrosshairTargets().forEach((dst) => {
+            if (!dst.chart || dst.chart === src.chart || !dst.series || !dst.enabled) return;
+            const v = valueAt(dst.values, time);
+            if (v == null || !Number.isFinite(v) || typeof dst.chart.setCrosshairPosition !== "function") return;
+            try { dst.chart.setCrosshairPosition(v, time, dst.series); } catch (e) { /* noop */ }
+          });
+        } finally {
+          crosshairLock = false;
+        }
+      });
+    });
+  }
+
   /* ================= chart creation ================= */
   function baseChartOptions(el, height) {
     return {
@@ -822,10 +905,6 @@ window.TRXChart = (() => {
       visible: opts.tl, priceFormat: fmt,
     });
 
-    chart.subscribeCrosshairMove((param) => {
-      if (!param.time) { updateLegend(curBars[curBars.length - 1]); return; }
-      updateLegend(curBars[param.time - 1]);
-    });
 
     new ResizeObserver(() => {
       if (!chart || !containerEl) return;
@@ -839,6 +918,7 @@ window.TRXChart = (() => {
     initMacdPane();
     initStochPane();
     syncRanges();
+    syncCrosshairs();
     bindToolbar();
     updateLegend(null);
   }
@@ -864,15 +944,6 @@ window.TRXChart = (() => {
         lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
         axisLabelVisible: true, title: String(lvl),
       });
-    });
-    stochChart.subscribeCrosshairMove((param) => {
-      const el = $("lg-stoch");
-      if (!param.time) { if (el) { el.textContent = ""; el.className = ""; } return; }
-      const d = param.seriesData.get(stochKSeries);
-      if (el && d) {
-        el.textContent = d.value.toFixed(1);
-        el.className = d.value >= 80 ? "red" : d.value <= 20 ? "green" : "";
-      }
     });
     applyStochVisibility();
   }
@@ -936,11 +1007,6 @@ window.TRXChart = (() => {
       axisLabelVisible: false,
       title: "50",
     });
-    rsiChart.subscribeCrosshairMove((param) => {
-      if (!param.time) { updateRsiLegend(null); return; }
-      const d = param.seriesData.get(rsiSeries);
-      updateRsiLegend(d ? d.value : null);
-    });
 
     applyRsiVisibility();
   }
@@ -967,15 +1033,6 @@ window.TRXChart = (() => {
       color: "#ff6d00", lineWidth: 1,
       priceLineVisible: false, lastValueVisible: false,
       crosshairMarkerVisible: false,
-    });
-    macdChart.subscribeCrosshairMove((param) => {
-      const el = $("lg-macd");
-      if (!param.time) { if (el) { el.textContent = ""; el.className = ""; } return; }
-      const d = param.seriesData.get(macdLineSeries);
-      if (el && d) {
-        el.textContent = d.value.toFixed(2);
-        el.className = d.value >= 0 ? "green" : "red";
-      }
     });
     applyMacdVisibility();
   }
@@ -1190,6 +1247,7 @@ window.TRXChart = (() => {
     // ---- RSI sub-pane ----
     if (rsiSeries) {
       const rsiArr = calcRsi(closes, 14);
+      curRsiValues = rsiArr.slice();
       rsiSeries.setData(linePoints(rsiArr));
       const lastRsi = [...rsiArr].reverse().find((v) => v != null);
       updateRsiLegend(lastRsi);
@@ -1198,6 +1256,7 @@ window.TRXChart = (() => {
     // ---- MACD sub-pane ----
     if (macdLineSeries) {
       const m = calcMacd(closes, 12, 26, 9);
+      curMacdValues = m.macd.slice();
       macdLineSeries.setData(linePoints(m.macd));
       macdSigSeries.setData(linePoints(m.signal));
       macdHistSeries.setData(m.hist.map((v, i) => v == null ? null : ({
@@ -1213,6 +1272,7 @@ window.TRXChart = (() => {
     // ---- Stochastic sub-pane ----
     if (stochKSeries) {
       const st = calcStoch(closes, 14, 3, 3);
+      curStochValues = st.k.slice();
       stochKSeries.setData(linePoints(st.k));
       stochDSeries.setData(linePoints(st.d));
       stochKSeries.applyOptions({ visible: opts.stoch });
