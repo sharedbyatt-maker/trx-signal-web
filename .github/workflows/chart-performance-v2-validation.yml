@@ -1,0 +1,75 @@
+name: Chart Performance v2 Validation
+on:
+  push:
+    branches: [chart-performance-v2-20260913]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply Phase 11 patch
+        run: python phase11_chart_performance_patch.py
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Python syntax
+        run: python -m py_compile app.py app_core.py decision.py robust_engine.py robust_audit.py robust_integration.py drawings_persistence.py tests_engine.py tests_robust.py tests_deep_audit.py tests_daily12.py tests_feed_resilience.py tests_live_feed_deep.py tests_feed_recovery.py tests_robust_telegram_detail.py tests_12step_ui_detail.py tests_streak_alert.py tests_drawing_v2.py tests_fibonacci_v2.py tests_trendline_v2.py tests_sr_v2.py tests_timeframe_v2.py tests_crosshair_sync_v2.py tests_fast_live_indicators_v2.py tests_drawing_persistence_v2.py tests_chart_correctness_v2.py tests_multi_tf_normalization.py tests_chart_performance_v2.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/js/chart.js
+          node --check static/js/draw.js
+          node --check static/js/app.js
+          node --check static/js/robust.js
+      - name: Legacy tests
+        run: python tests_engine.py
+      - name: Robust tests
+        run: python tests_robust.py
+      - name: Deep audit tests
+        run: python tests_deep_audit.py
+      - name: Daily12 tests
+        run: python tests_daily12.py
+      - name: Feed resilience tests
+        run: python tests_feed_resilience.py
+      - name: Live feed tests
+        run: python tests_live_feed_deep.py
+      - name: Feed recovery tests
+        run: python tests_feed_recovery.py
+      - name: Robust Telegram tests
+        run: python tests_robust_telegram_detail.py
+      - name: 12-Step UI tests
+        run: python tests_12step_ui_detail.py
+      - name: Streak alert tests
+        run: python tests_streak_alert.py
+      - name: Drawing v2 tests
+        run: python tests_drawing_v2.py
+      - name: Fibonacci v2 tests
+        run: python tests_fibonacci_v2.py
+      - name: Auto Trend Line v2 tests
+        run: python tests_trendline_v2.py
+      - name: Auto S/R v2 tests
+        run: python tests_sr_v2.py
+      - name: True Timeframe tests
+        run: python tests_timeframe_v2.py
+      - name: Crosshair Sync v2 tests
+        run: python tests_crosshair_sync_v2.py
+      - name: Fast Live Indicator tests
+        run: python tests_fast_live_indicators_v2.py
+      - name: Drawing Persistence v2 tests
+        run: python tests_drawing_persistence_v2.py
+      - name: Chart Correctness tests
+        run: python tests_chart_correctness_v2.py
+      - name: Multi-TF Normalization tests
+        run: python tests_multi_tf_normalization.py
+      - name: Chart Performance v2 tests
+        run: python tests_chart_performance_v2.py
+      - name: Commit passing Phase 11 patch
+        run: |
+          git config user.name "sharedbyatt-maker"
+          git config user.email "sharedbyatt@gmail.com"
+          git add static/js/chart.js tests_chart_performance_v2.py
+          git commit -m "Optimize chart hot paths and indicator refresh" || true
+          git push origin HEAD:chart-performance-v2-20260913
