@@ -1,11 +1,29 @@
-/* Manual Drawing Tools v2 — isolated overlay for Lightweight Charts v4
-   Phase 1 scope only: precise endpoint editing, OHLC magnet snap, mobile handles,
-   per-object lock/hide/duplicate/style/extension settings. Chart/strategy logic unchanged. */
+/* Manual Drawing Tools v2 + Fibonacci v2 — isolated overlay for Lightweight Charts v4
+   Phase 2 adds per-object Fib levels/extensions/reverse/labels/fill/right-extension.
+   Chart, signals, strategy, feed and indicator calculations remain unchanged. */
 window.TRXDraw = (() => {
   const STORE_KEY = "trx_drawings_v3"; // keep existing drawings backward-compatible
   const PREF_KEY = "trx_draw_v2_prefs";
   const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-  const FIB_COLORS = ["#787b86", "#f23645", "#ff9800", "#089981", "#2962ff", "#ff9800", "#f23645"];
+  const FIB_EXT_LEVELS = [1.272, 1.414, 1.618, 2.0];
+  const FIB_COLORS = ["#787b86", "#f23645", "#ff9800", "#089981", "#2962ff", "#ff9800", "#f23645", "#00bcd4", "#9c27b0", "#e91e63", "#607d8b"];
+  const DEFAULT_FIB_LEVELS = [...FIB_LEVELS, ...FIB_EXT_LEVELS];
+
+  function normalizeFibLevels(levels) {
+    const src = Array.isArray(levels) && levels.length ? levels : FIB_LEVELS;
+    const seen = new Set();
+    return src.map((x) => typeof x === "number" ? { value: x, enabled: true } : x)
+      .filter((x) => x && Number.isFinite(Number(x.value)))
+      .map((x) => ({ value: Number(x.value), enabled: x.enabled !== false }))
+      .filter((x) => { const k = x.value.toFixed(6); if (seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => a.value - b.value);
+  }
+  function activeFibLevels(d) { return normalizeFibLevels(d.fibLevels).filter((x) => x.enabled); }
+  function fibPrice(d, lv) {
+    const p0 = d.points[0].p, p1 = d.points[1].p;
+    const a = d.fibReverse ? p1 : p0, b = d.fibReverse ? p0 : p1;
+    return a + (b - a) * lv;
+  }
   const HIT_PX = 9;
   const HANDLE_PX = 7;
   const HANDLE_TOUCH_PX = 13;
@@ -40,6 +58,11 @@ window.TRXDraw = (() => {
       hidden: !!d.hidden,
       extendLeft: !!d.extendLeft,
       extendRight: d.type === "ray" ? d.extendRight !== false : !!d.extendRight,
+      fibLevels: d.type === "fib" ? normalizeFibLevels(d.fibLevels) : d.fibLevels,
+      fibReverse: d.type === "fib" ? !!d.fibReverse : false,
+      fibLabelSide: d.type === "fib" && d.fibLabelSide === "right" ? "right" : "left",
+      fibFill: d.type === "fib" ? Math.max(0, Math.min(0.25, Number(d.fibFill ?? 0.06))) : 0,
+      fibExtendRight: d.type === "fib" ? !!d.fibExtendRight : false,
     };
   }
 
@@ -60,6 +83,11 @@ window.TRXDraw = (() => {
         id: d.id, type: d.type, color: d.color, width: d.width, style: d.style,
         locked: !!d.locked, hidden: !!d.hidden, extendLeft: !!d.extendLeft,
         extendRight: !!d.extendRight,
+        fibLevels: d.type === "fib" ? normalizeFibLevels(d.fibLevels) : undefined,
+        fibReverse: d.type === "fib" ? !!d.fibReverse : undefined,
+        fibLabelSide: d.type === "fib" ? d.fibLabelSide : undefined,
+        fibFill: d.type === "fib" ? d.fibFill : undefined,
+        fibExtendRight: d.type === "fib" ? !!d.fibExtendRight : undefined,
         points: d.points.map((p) => ({ p: p.p, lb: p.lb || labelOf(p.t), t: p.t })),
       }));
       localStorage.setItem(STORE_KEY, JSON.stringify(rows));
@@ -198,7 +226,10 @@ window.TRXDraw = (() => {
       } else if (d.type === "fib") {
         if (!b) continue;
         if (distSeg(px,py,a,b)<=HIT_PX) return d.id;
-        for (const lv of FIB_LEVELS) if (Math.abs(py-(a.y+(b.y-a.y)*lv))<=5) return d.id;
+        for (const it of activeFibLevels(d)) {
+          const yy = api.series.priceToCoordinate(fibPrice(d, it.value));
+          if (yy != null && Math.abs(py - yy) <= 5) return d.id;
+        }
       } else if (b) {
         const ee = extendedEnds(d,a,b);
         if (distSeg(px,py,ee.a,ee.b)<=HIT_PX) return d.id;
@@ -242,8 +273,30 @@ window.TRXDraw = (() => {
         ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.setLineDash(dash); ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(b.x-a.x),Math.abs(b.y-a.y)); ctx.setLineDash([]);
         ctx.globalAlpha=.08; ctx.fillStyle=c; ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(b.x-a.x),Math.abs(b.y-a.y)); ctx.globalAlpha=d.locked?.72:1;
       } else if (d.type==="fib") {
-        const x1=Math.min(a.x,b.x),x2=Math.max(a.x,b.x);
-        FIB_LEVELS.forEach((lv,i)=>{ const yy=a.y+(b.y-a.y)*lv,cc=FIB_COLORS[i]||c; drawLine({x:x1,y:yy},{x:x2+60,y:yy},cc,1,[5,4]); ctx.font="10px Consolas, monospace"; ctx.fillStyle=cc; ctx.textBaseline="bottom"; ctx.fillText(lv.toFixed(3)+"  "+(d.points[0].p+(d.points[1].p-d.points[0].p)*lv).toFixed(1),x1+4,Math.max(10,yy-2)); });
+        const x1=Math.min(a.x,b.x), x2=Math.max(a.x,b.x);
+        const right = d.fibExtendRight ? w : Math.min(w, x2 + 60);
+        const levels = activeFibLevels(d);
+        const rendered = levels.map((it,i) => ({
+          value: it.value, price: fibPrice(d,it.value), color: FIB_COLORS[i % FIB_COLORS.length] || c
+        })).map((it) => ({ ...it, y: api.series.priceToCoordinate(it.price) })).filter((it) => it.y != null);
+        if (d.fibFill > 0 && rendered.length > 1) {
+          const sorted = [...rendered].sort((u,v)=>u.y-v.y);
+          ctx.save(); ctx.globalAlpha = d.fibFill;
+          for (let i=0;i<sorted.length-1;i++) {
+            ctx.fillStyle = sorted[i].color;
+            ctx.fillRect(x1, sorted[i].y, Math.max(1,right-x1), Math.max(0,sorted[i+1].y-sorted[i].y));
+          }
+          ctx.restore();
+        }
+        rendered.forEach((it)=>{
+          drawLine({x:x1,y:it.y},{x:right,y:it.y},it.color,1,[5,4]);
+          const levelTxt = Number.isInteger(it.value) ? it.value.toFixed(1) : it.value.toFixed(3).replace(/0+$/,"").replace(/\.$/,"");
+          const txt = levelTxt + "  " + it.price.toFixed(1);
+          ctx.font="10px Consolas, monospace"; ctx.fillStyle=it.color; ctx.textBaseline="bottom";
+          if (d.fibLabelSide === "right") {
+            const tw=ctx.measureText(txt).width; ctx.fillText(txt,Math.max(x1+2,right-tw-4),Math.max(10,it.y-2));
+          } else ctx.fillText(txt,x1+4,Math.max(10,it.y-2));
+        });
         drawLine(a,b,"rgba(209,212,220,.55)",1,[]);
       } else { const ee=extendedEnds(d,a,b); drawLine(ee.a,ee.b,c,lw,dash); }
     }
@@ -257,7 +310,7 @@ window.TRXDraw = (() => {
   }
 
   function commit(type,pts,c) {
-    const d=defaults({id:uid(),type,color:c,points:pts,width:2,style:"solid",locked:false,hidden:false,extendLeft:false,extendRight:type==="ray"});
+    const d=defaults({id:uid(),type,color:c,points:pts,width:2,style:"solid",locked:false,hidden:false,extendLeft:false,extendRight:type==="ray",fibLevels:type==="fib"?FIB_LEVELS.map(value=>({value,enabled:true})):undefined});
     d.points.forEach(p=>{p.lb=labelOf(p.t)||p.lb;}); drawings.push(d); selectedId=d.id; save(); updatePanel();
   }
   function undo(){ if(placing){placing=null;redraw();return;} drawings.pop(); selectedId=null; save(); updatePanel(); redraw(); }
@@ -269,21 +322,69 @@ window.TRXDraw = (() => {
   function showAll(){ drawings.forEach(d=>d.hidden=false); save(); updatePanel(); redraw(); }
   function setSelectedStyle(key,value){ const d=selected(); if(!d)return; if(key==="width") d.width=Math.max(1,Math.min(4,Number(value)||2)); else if(key==="style"&&["solid","dashed","dotted"].includes(value)) d.style=value; else if(key==="extendLeft") d.extendLeft=!!value; else if(key==="extendRight") d.extendRight=!!value; save(); updatePanel(); redraw(); }
 
+  function ensureFibLevel(d,value,enabled=true){
+    if(!d||d.type!=="fib"||!Number.isFinite(Number(value)))return;
+    const v=Number(value); d.fibLevels=normalizeFibLevels(d.fibLevels);
+    const found=d.fibLevels.find(x=>Math.abs(x.value-v)<1e-9);
+    if(found) found.enabled=enabled; else d.fibLevels.push({value:v,enabled});
+    d.fibLevels=normalizeFibLevels(d.fibLevels);
+  }
+  function setFibLevelEnabled(value,enabled){const d=selected();if(!d||d.type!=="fib")return;ensureFibLevel(d,value,enabled);save();updateFibPanel();redraw();}
+  function removeCustomFibLevel(value){const d=selected();if(!d||d.type!=="fib")return;const fixed=new Set(DEFAULT_FIB_LEVELS.map(v=>v.toFixed(6)));d.fibLevels=normalizeFibLevels(d.fibLevels).filter(x=>fixed.has(x.value.toFixed(6))||Math.abs(x.value-value)>1e-9);save();updateFibPanel();redraw();}
+  function setFibOption(key,value){const d=selected();if(!d||d.type!=="fib")return;
+    if(key==="reverse")d.fibReverse=!!value;
+    else if(key==="label")d.fibLabelSide=value==="right"?"right":"left";
+    else if(key==="fill")d.fibFill=Math.max(0,Math.min(.25,Number(value)||0));
+    else if(key==="extendRight")d.fibExtendRight=!!value;
+    save();updateFibPanel();redraw();
+  }
+  let fibPanelEl=null;
+  function fibMiniButton(text,title){const b=document.createElement("button");b.type="button";b.textContent=text;b.title=title||text;b.style.cssText="height:25px;padding:0 7px;border:1px solid #363a45;border-radius:4px;background:#1e222d;color:#d1d4dc;font:10px Consolas,monospace;cursor:pointer";return b;}
+  function buildFibPanel(){
+    fibPanelEl=document.createElement("div");fibPanelEl.id="fib-v2-panel";
+    fibPanelEl.style.cssText="position:absolute;z-index:26;right:8px;top:72px;display:none;min-width:280px;max-width:min(96%,520px);padding:8px;background:rgba(19,23,34,.98);border:1px solid #434651;border-radius:7px;box-shadow:0 6px 22px rgba(0,0,0,.32);color:#d1d4dc;font:11px Consolas,monospace";
+    wrapEl.appendChild(fibPanelEl);
+  }
+  function updateFibPanel(){
+    if(!fibPanelEl)return;const d=selected();if(!d||d.type!=="fib"){fibPanelEl.style.display="none";fibPanelEl.innerHTML="";return;}
+    fibPanelEl.style.display="block";fibPanelEl.innerHTML="";
+    const title=document.createElement("div");title.textContent="FIBONACCI v2";title.style.cssText="font-weight:700;margin-bottom:7px;color:#fff";fibPanelEl.appendChild(title);
+    const levelWrap=document.createElement("div");levelWrap.style.cssText="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px";
+    const levels=normalizeFibLevels(d.fibLevels);const fixed=[...DEFAULT_FIB_LEVELS];
+    fixed.forEach((lv)=>{const found=levels.find(x=>Math.abs(x.value-lv)<1e-9);const lab=document.createElement("label");lab.style.cssText="display:flex;align-items:center;gap:3px;padding:2px 4px;border:1px solid #363a45;border-radius:4px";const cb=document.createElement("input");cb.type="checkbox";cb.checked=!!(found&&found.enabled);cb.addEventListener("change",()=>setFibLevelEnabled(lv,cb.checked));lab.append(cb,document.createTextNode(String(lv)));levelWrap.appendChild(lab);});
+    fibPanelEl.appendChild(levelWrap);
+    const customTitle=document.createElement("div");customTitle.textContent="CUSTOM LEVELS";customTitle.style.cssText="margin:4px 0;color:#9aa0aa";fibPanelEl.appendChild(customTitle);
+    const customs=levels.filter(x=>!fixed.some(v=>Math.abs(v-x.value)<1e-9));
+    const customRow=document.createElement("div");customRow.style.cssText="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px";
+    customs.forEach((it)=>{const chip=fibMiniButton(`${it.enabled?"✓":"○"} ${it.value} ×`,`Toggle / remove custom level`);chip.addEventListener("click",(ev)=>{if(ev.shiftKey)removeCustomFibLevel(it.value);else setFibLevelEnabled(it.value,!it.enabled);});customRow.appendChild(chip);});fibPanelEl.appendChild(customRow);
+    const addRow=document.createElement("div");addRow.style.cssText="display:flex;gap:5px;margin-bottom:8px";const inp=document.createElement("input");inp.type="number";inp.step="0.001";inp.placeholder="custom e.g. 2.618";inp.style.cssText="width:145px;height:25px;background:#11151d;color:#fff;border:1px solid #363a45;border-radius:4px;padding:0 5px";const add=fibMiniButton("+ ADD","Add custom Fib level");add.addEventListener("click",()=>{const v=Number(inp.value);if(Number.isFinite(v)){ensureFibLevel(d,v,true);save();updateFibPanel();redraw();}});addRow.append(inp,add);fibPanelEl.appendChild(addRow);
+    const opts=document.createElement("div");opts.style.cssText="display:flex;flex-wrap:wrap;gap:5px;align-items:center";
+    const rev=fibMiniButton(d.fibReverse?"REVERSE ✓":"REVERSE","Reverse Fib anchors");rev.addEventListener("click",()=>setFibOption("reverse",!d.fibReverse));
+    const side=fibMiniButton(`LABEL ${d.fibLabelSide==="right"?"RIGHT":"LEFT"}`,"Toggle label side");side.addEventListener("click",()=>setFibOption("label",d.fibLabelSide==="right"?"left":"right"));
+    const ext=fibMiniButton(d.fibExtendRight?"EXT RIGHT ✓":"EXT RIGHT","Extend Fib levels to right edge");ext.addEventListener("click",()=>setFibOption("extendRight",!d.fibExtendRight));
+    const fill=document.createElement("input");fill.type="range";fill.min="0";fill.max="0.25";fill.step="0.01";fill.value=String(d.fibFill??.06);fill.title="Background opacity";fill.addEventListener("input",()=>setFibOption("fill",fill.value));
+    const fillLab=document.createElement("span");fillLab.textContent=`FILL ${Math.round((d.fibFill||0)*100)}%`;
+    const close=fibMiniButton("DONE","Close Fib settings");close.addEventListener("click",()=>{fibPanelEl.style.display="none";});
+    opts.append(rev,side,ext,fillLab,fill,close);fibPanelEl.appendChild(opts);
+  }
+
   function panelButton(text,id,title){ const b=document.createElement("button"); b.type="button"; b.id=id; b.textContent=text; b.title=title||text; b.style.cssText="height:26px;padding:0 7px;border:1px solid #363a45;border-radius:4px;background:#1e222d;color:#d1d4dc;font:11px Consolas,monospace;cursor:pointer"; return b; }
   function buildPanel(){
     panelEl=document.createElement("div"); panelEl.id="draw-v2-panel"; panelEl.style.cssText="position:absolute;z-index:25;right:8px;top:36px;display:none;align-items:center;gap:5px;flex-wrap:wrap;max-width:min(96%,620px);padding:5px 6px;background:rgba(19,23,34,.96);border:1px solid #363a45;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25)";
     const width=document.createElement("select"); width.id="dt-v2-width"; width.title="Line width"; width.style.cssText="height:26px;background:#1e222d;color:#d1d4dc;border:1px solid #363a45;border-radius:4px;font:11px Consolas"; [1,2,3,4].forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=`${v}px`;width.appendChild(o);});
     const style=document.createElement("select"); style.id="dt-v2-style"; style.title="Line style"; style.style.cssText=width.style.cssText; [["solid","Solid"],["dashed","Dash"],["dotted","Dot"]].forEach(([v,t])=>{const o=document.createElement("option");o.value=v;o.textContent=t;style.appendChild(o);});
-    const left=panelButton("← EXT","dt-v2-left","Extend left"), right=panelButton("EXT →","dt-v2-right","Extend right"), lock=panelButton("🔒","dt-v2-lock","Lock / unlock"), hide=panelButton("👁−","dt-v2-hide","Hide selected"), dup=panelButton("⧉","dt-v2-dup","Duplicate selected"), show=panelButton("SHOW HIDDEN","dt-v2-show","Show all hidden drawings"), mag=panelButton("MAGNET","dt-v2-mag","Snap endpoints to candle OHLC");
-    panelEl.append(width,style,left,right,lock,hide,dup,show,mag); wrapEl.appendChild(panelEl);
+    const left=panelButton("← EXT","dt-v2-left","Extend left"), right=panelButton("EXT →","dt-v2-right","Extend right"), lock=panelButton("🔒","dt-v2-lock","Lock / unlock"), hide=panelButton("👁−","dt-v2-hide","Hide selected"), dup=panelButton("⧉","dt-v2-dup","Duplicate selected"), fib=panelButton("FIB ⚙","dt-v2-fib","Fibonacci v2 settings"), show=panelButton("SHOW HIDDEN","dt-v2-show","Show all hidden drawings"), mag=panelButton("MAGNET","dt-v2-mag","Snap endpoints to candle OHLC");
+    panelEl.append(width,style,left,right,lock,hide,dup,fib,show,mag); wrapEl.appendChild(panelEl);
     width.addEventListener("change",()=>setSelectedStyle("width",width.value)); style.addEventListener("change",()=>setSelectedStyle("style",style.value));
-    left.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendLeft",!d.extendLeft);}); right.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendRight",!d.extendRight);}); lock.addEventListener("click",toggleLock); hide.addEventListener("click",toggleHide); dup.addEventListener("click",duplicateSelected); show.addEventListener("click",showAll); mag.addEventListener("click",()=>{magnet=!magnet;savePrefs();updatePanel();});
+    left.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendLeft",!d.extendLeft);}); right.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendRight",!d.extendRight);}); lock.addEventListener("click",toggleLock); hide.addEventListener("click",toggleHide); dup.addEventListener("click",duplicateSelected); fib.addEventListener("click",()=>{const d=selected();if(d&&d.type==="fib"){updateFibPanel();fibPanelEl.style.display="block";}}); show.addEventListener("click",showAll); mag.addEventListener("click",()=>{magnet=!magnet;savePrefs();updatePanel();});
   }
   function updatePanel(){
     if(!panelEl)return; const d=selected(), hidden=drawings.some(x=>x.hidden); panelEl.style.display=(d||hidden)?"flex":"none";
     const q=(id)=>document.getElementById(id), active=(el,on)=>{if(!el)return;el.style.background=on?"#2962ff":"#1e222d";el.style.color=on?"#fff":"#d1d4dc";};
     const w=q("dt-v2-width"),s=q("dt-v2-style"); if(w)w.disabled=!d;if(s)s.disabled=!d;if(d&&w)w.value=String(d.width||2);if(d&&s)s.value=d.style||"solid";
     ["dt-v2-left","dt-v2-right","dt-v2-lock","dt-v2-hide","dt-v2-dup"].forEach(id=>{const e=q(id);if(e)e.disabled=!d;});
+    const fibBtn=q("dt-v2-fib");if(fibBtn){fibBtn.disabled=!(d&&d.type==="fib");fibBtn.style.display=(d&&d.type==="fib")?"inline-block":"none";}
+    if(!(d&&d.type==="fib")&&fibPanelEl)fibPanelEl.style.display="none";
     active(q("dt-v2-left"),!!(d&&d.extendLeft)); active(q("dt-v2-right"),!!(d&&(d.type==="ray"||d.extendRight))); active(q("dt-v2-lock"),!!(d&&d.locked)); active(q("dt-v2-mag"),magnet); const sh=q("dt-v2-show");if(sh)sh.style.display=hidden?"inline-block":"none";
     if(d)setHint(`${d.type.toUpperCase()} selected${d.locked?" · LOCKED":""} · drag handles to edit endpoints · Magnet ${magnet?"ON":"OFF"}`); else setHint(HINTS[tool]||HINTS.cursor);
   }
