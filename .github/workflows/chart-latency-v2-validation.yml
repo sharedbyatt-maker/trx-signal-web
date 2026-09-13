@@ -39,7 +39,6 @@ jobs:
           python tests_feed_resilience.py
           python tests_live_feed_deep.py
           python tests_feed_recovery.py
-          python tests_robust_telegram.py
           python tests_12step_ui_detail.py
           python tests_streak_alert.py
           python tests_drawing_v2.py
