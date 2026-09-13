@@ -498,15 +498,21 @@ if (srBtn) {
 }
 /* 🎨 toggle: DRAW tools + INDICATORS bars (hidden by default; click = open both, again = close both) */
 const dtToggle = $("dt-toggle-btn");
+const indToggle = $("ind-toggle-btn");
 const drawBar = $("draw-tools");
 const indBar = $("ind-bar");
 if (dtToggle) {
   dtToggle.addEventListener("click", () => {
-    const anyOpen = (drawBar && !drawBar.classList.contains("collapsed")) ||
-                    (indBar && !indBar.classList.contains("collapsed"));
-    if (drawBar) drawBar.classList.toggle("collapsed", anyOpen);   // open→close, closed→open
-    if (indBar) indBar.classList.toggle("collapsed", anyOpen);
-    dtToggle.classList.toggle("active", !anyOpen);
+    const open = drawBar && drawBar.classList.contains("collapsed");
+    if (drawBar) drawBar.classList.toggle("collapsed", !open);
+    dtToggle.classList.toggle("active", !!open);
+  });
+}
+if (indToggle) {
+  indToggle.addEventListener("click", () => {
+    const open = indBar && indBar.classList.contains("collapsed");
+    if (indBar) indBar.classList.toggle("collapsed", !open);
+    indToggle.classList.toggle("active", !!open);
   });
 }
 const sigBtn = $("sig-btn");
@@ -532,8 +538,20 @@ async function pollLatest() {
     const rd = d.round;
     if (!rd || !rd.issue || rd.issue === lastKnownIssue) return;
     const first = lastKnownIssue === "";
+    const previousIssue = lastKnownIssue;
     lastKnownIssue = rd.issue;
     if (first || !lastState) return;
+
+    // Never synthesize across missing rounds. Browser sleep/network gaps can jump
+    // several sequential issues; catch history up first so the ±1 walk stays exact.
+    try {
+      if (/^\d+$/.test(String(previousIssue)) && /^\d+$/.test(String(rd.issue))
+          && BigInt(String(rd.issue)) > BigInt(String(previousIssue)) + 1n) {
+        await fetchFullHistory(true);
+        await refresh();
+        return;
+      }
+    } catch (_e) { /* non-standard issue format: fall back to normal path */ }
     if (!fullRows.some((x) => x.issue === rd.issue)) {
       fullRows.push({
         issue: String(rd.issue),

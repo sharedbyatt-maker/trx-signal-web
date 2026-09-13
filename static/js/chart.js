@@ -48,12 +48,21 @@ window.TRXChart = (() => {
   /* S/R level cache — levels must NOT drift on every data tick */
   let srLevelsCache = [];
   let srCacheGroup = null;
+  let srCacheFingerprint = "";
   let srRescanNeeded = false;
 
+  function srFingerprint() {
+    if (!curBars.length) return `${group}:0`;
+    const b = curBars[curBars.length - 1];
+    return `${group}:${curBars.length}:${b.time}:${b.o}:${b.h}:${b.l}:${b.c}`;
+  }
+
   function ensureSRLevels() {
-    if (srCacheGroup !== group || srRescanNeeded || !srLevelsCache.length) {
+    const fp = srFingerprint();
+    if (srCacheGroup !== group || srRescanNeeded || srCacheFingerprint !== fp || !srLevelsCache.length) {
       srLevelsCache = srLevels(curBars);
       srCacheGroup = group;
+      srCacheFingerprint = fp;
       srRescanNeeded = false;
     }
     return srLevelsCache;
@@ -605,7 +614,8 @@ window.TRXChart = (() => {
       }
     };
     for (let i = runStart; i < n; i++) {
-      const dir = bars[i].c > bars[i].o ? 1 : -1;
+      const dir = bars[i].c > bars[i].o ? 1 : bars[i].c < bars[i].o ? -1 : 0;
+      if (dir === 0) { flushRun(); rd = 0; rl = 0; rEnd = -1; continue; }
       if (dir === rd) { rl++; rEnd = i; }
       else { flushRun(); rd = dir; rl = 1; rEnd = i; }
     }
@@ -1242,7 +1252,7 @@ window.TRXChart = (() => {
     bindOpt("ema-toggle", "ema");
     bindOpt("bb-toggle", "bb");
     bindOpt("pat-toggle", "pat");
-    bindOpt("sr-toggle", "sr");
+    bindOpt("sr-toggle", "sr", syncSrControls);
     bindOpt("tl-toggle", "tl");
     bindOpt("rsi-toggle", "rsi", applyRsiVisibility);
     bindOpt("macd-toggle", "macd", applyMacdVisibility);
@@ -1274,7 +1284,10 @@ window.TRXChart = (() => {
 
     // skip rebuild when nothing changed
     const lastIssue = hist.length ? hist[hist.length - 1].issue : "";
-    const key = `${hist.length}:${lastIssue}:${group}:${viewMode}:${JSON.stringify(opts)}:${(s.log || []).length}`;
+    const tailFingerprint = hist.slice(-3).map((r) =>
+      `${r.issue || ""}/${r.number ?? ""}/${r.type || ""}/${r.block_time || r.blockTime || r.hm || ""}`
+    ).join("|");
+    const key = `${hist.length}:${lastIssue}:${tailFingerprint}:${group}:${viewMode}:${JSON.stringify(opts)}:${(s.log || []).length}`;
     if (!force && key === lastKey) return;
     lastKey = key;
 
@@ -1435,22 +1448,29 @@ window.TRXChart = (() => {
   }
 
   /* ---- public: Auto S/R button (rescan+show / hide toggle) ---- */
+  function syncSrControls() {
+    const cb = $("sr-toggle"), btn = $("sr-find-btn");
+    if (cb) cb.checked = !!opts.sr;
+    if (btn) btn.classList.toggle("active", !!opts.sr);
+  }
+
   function autoSR() {
     if (!chart || !curBars.length) return { on: false, n: 0 };
-    const cb = $("sr-toggle");
     if (opts.sr) {
-      // OFF
       opts.sr = false;
-      if (cb) cb.checked = false;
+      syncSrControls();
       drawSrLines([]);
       return { on: false, n: 0 };
     }
-    // ON — full rescan and show
+    // ON — full rescan, replace the authoritative cache, and show it.
     opts.sr = true;
-    if (cb) cb.checked = true;
-    const levels = srLevels(curBars);
-    drawSrLines(levels);
-    return { on: true, n: levels.length };
+    srLevelsCache = srLevels(curBars);
+    srCacheGroup = group;
+    srCacheFingerprint = srFingerprint();
+    srRescanNeeded = false;
+    syncSrControls();
+    drawSrLines(srLevelsCache);
+    return { on: true, n: srLevelsCache.length };
   }
 
   /* ---- ultra-fast 1m candle + indicator append ----
