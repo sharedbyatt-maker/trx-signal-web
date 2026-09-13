@@ -25,6 +25,7 @@ _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _MAX_DRAWINGS = 500
 _MAX_BODY_BYTES = 1024 * 1024
 _MAX_FIB_LEVELS = 64
+_MAX_FUTURE_OFFSET = 10000
 
 
 def _utc_now():
@@ -67,7 +68,18 @@ def _sanitize_drawings(value):
             lb = pt.get("lb")
             if lb is not None:
                 lb = str(lb)[:96]
-            pts.append({"p": float(pt["p"]), "t": t, "lb": lb})
+            anchor_lb = pt.get("anchorLb")
+            if anchor_lb is not None:
+                anchor_lb = str(anchor_lb)[:96]
+            offset = pt.get("offset")
+            if offset is not None:
+                try:
+                    offset = int(offset)
+                except (TypeError, ValueError):
+                    raise ValueError("invalid future offset")
+                if offset < 0 or offset > _MAX_FUTURE_OFFSET:
+                    raise ValueError("invalid future offset")
+            pts.append({"p": float(pt["p"]), "t": t, "lb": lb, "anchorLb": anchor_lb, "offset": offset})
 
         color = str(row.get("color") or "#2962ff")
         if not _HEX.match(color):
@@ -124,6 +136,8 @@ class DrawingStore:
         except (TypeError, ValueError):
             self.max_backups = 10
         self.lock = threading.RLock()
+        self.last_recovery = None
+        self.last_quarantine = None
 
     @property
     def token(self):
@@ -139,22 +153,79 @@ class DrawingStore:
             supplied = auth[7:].strip()
         return hmac.compare_digest(str(supplied), str(token))
 
+    def _read_state_file(self, path):
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("drawing state must be an object")
+        return {
+            "schema": 2,
+            "revision": max(0, int(data.get("revision", 0))),
+            "updated_at": data.get("updated_at"),
+            "drawings": _sanitize_drawings(data.get("drawings", [])),
+        }
+
+    def _quarantine_corrupt(self):
+        if not self.path.exists():
+            return None
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        target = self.path.with_name(f"{self.path.name}.corrupt.{stamp}")
+        try:
+            os.replace(self.path, target)
+            self.last_quarantine = str(target)
+            return target
+        except OSError:
+            return None
+
+    def _latest_valid_backup(self):
+        if not self.backup_dir.exists():
+            return None, None
+        files = sorted(self.backup_dir.glob("drawings-r*.json"), key=lambda x: x.stat().st_mtime, reverse=True)
+        for path in files:
+            try:
+                return path, self._read_state_file(path)
+            except Exception:
+                continue
+        return None, None
+
+    def _atomic_write_state(self, state):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=".drawings_state.", suffix=".tmp", dir=str(self.path.parent or Path('.')))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, separators=(",", ":"))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, self.path)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+
+    def storage_info(self):
+        durable = str(os.environ.get("DRAWINGS_STORAGE_DURABLE", "")).lower() in {"1", "true", "yes", "on"}
+        return {
+            "mode": "durable" if durable else "host-filesystem",
+            "durable_declared": durable,
+            "recovered_from_backup": self.last_recovery,
+            "quarantined_corrupt_file": self.last_quarantine,
+        }
+
     def read(self):
         with self.lock:
             if not self.path.exists():
                 return {"schema": 2, "revision": 0, "updated_at": None, "drawings": []}
             try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                if not isinstance(data, dict):
-                    raise ValueError
-                return {
-                    "schema": 2,
-                    "revision": max(0, int(data.get("revision", 0))),
-                    "updated_at": data.get("updated_at"),
-                    "drawings": _sanitize_drawings(data.get("drawings", [])),
-                }
+                return self._read_state_file(self.path)
             except Exception:
-                return {"schema": 2, "revision": 0, "updated_at": None, "drawings": []}
+                quarantined = self._quarantine_corrupt()
+                backup_path, recovered = self._latest_valid_backup()
+                if recovered is not None:
+                    # Preserve the recovered revision exactly; the next normal write
+                    # will advance it, while the corrupt original remains quarantined.
+                    self._atomic_write_state(recovered)
+                    self.last_recovery = backup_path.name if backup_path else "backup"
+                    return recovered
+                self.last_recovery = "no-valid-backup"
+                return {"schema": 2, "revision": 0, "updated_at": None, "drawings": [], "recovery_required": bool(quarantined)}
 
     def _backup_current(self, current):
         if not self.path.exists() or int(current.get("revision", 0)) <= 0:
@@ -183,17 +254,7 @@ class DrawingStore:
                 "updated_at": _utc_now(),
                 "drawings": clean,
             }
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp_name = tempfile.mkstemp(prefix=".drawings_state.", suffix=".tmp", dir=str(self.path.parent or Path('.')))
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(state, f, ensure_ascii=False, separators=(",", ":"))
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_name, self.path)
-            finally:
-                if os.path.exists(tmp_name):
-                    os.unlink(tmp_name)
+            self._atomic_write_state(state)
             return state, None
 
     def backups(self):
@@ -247,7 +308,7 @@ def install_drawings_persistence(app):
         if err:
             return err
         state = store.read()
-        return jsonify({"ok": True, **state})
+        return jsonify({"ok": True, **state, "storage": store.storage_info()})
 
     @app.put("/api/drawings")
     def drawings_put():
@@ -264,7 +325,7 @@ def install_drawings_persistence(app):
             return jsonify({"ok": False, "error": str(exc)}), 400
         if conflict is not None:
             return jsonify({"ok": False, "error": "revision conflict", "revision": conflict["revision"], "updated_at": conflict["updated_at"]}), 409
-        return jsonify({"ok": True, **state})
+        return jsonify({"ok": True, **state, "storage": store.storage_info()})
 
     @app.get("/api/drawings/backups")
     def drawings_backups():

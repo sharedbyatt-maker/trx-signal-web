@@ -5,6 +5,8 @@ window.TRXDraw = (() => {
   const STORE_KEY = "trx_drawings_v3"; // keep existing drawings backward-compatible
   const PREF_KEY = "trx_draw_v2_prefs";
   const SYNC_TOKEN_KEY = "trx_draw_sync_token";
+  const SAFETY_BACKUP_KEY = "trx_drawings_safety_backup_v1";
+  const MAX_CLIENT_DRAWINGS = 500;
   const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
   const FIB_EXT_LEVELS = [1.272, 1.414, 1.618, 2.0];
   const FIB_COLORS = ["#787b86", "#f23645", "#ff9800", "#089981", "#2962ff", "#ff9800", "#f23645", "#00bcd4", "#9c27b0", "#e91e63", "#607d8b"];
@@ -79,6 +81,56 @@ window.TRXDraw = (() => {
   function labelOf(t) {
     return api && api.fulls && api.fulls[t - 1] ? api.fulls[t - 1] : null;
   }
+  function serializePoint(p) {
+    const lb = p.lb || labelOf(p.t);
+    const n = api && Array.isArray(api.fulls) ? api.fulls.length : 0;
+    const anchorLb = !lb && n > 0 && p.t != null && p.t > n ? api.fulls[n - 1] : null;
+    const offset = anchorLb ? Math.max(0, Math.round(Number(p.t) - n)) : null;
+    return { p: Number(p.p), lb: lb || null, t: p.t, anchorLb: anchorLb || null, offset };
+  }
+  function rowsSignature(rows) {
+    try { return JSON.stringify(rows || []); } catch (_e) { return ""; }
+  }
+  function backupLocalSnapshot(reason) {
+    try {
+      localStorage.setItem(SAFETY_BACKUP_KEY, JSON.stringify({schema:2,reason,created_at:new Date().toISOString(),drawings:serializeDrawings()}));
+    } catch (_e) {}
+  }
+  function sanitizeClientRows(value) {
+    if (!Array.isArray(value) || value.length > MAX_CLIENT_DRAWINGS) throw new Error("Invalid drawing list");
+    const allowed = new Set(["trend","ray","hline","vline","rect","fib"]);
+    return value.map((row) => {
+      if (!row || typeof row !== "object" || !allowed.has(row.type)) throw new Error("Invalid drawing type");
+      const need = needPoints(row.type);
+      if (!Array.isArray(row.points) || row.points.length < need || row.points.length > 2) throw new Error("Invalid drawing points");
+      const points = row.points.slice(0, need).map((pt) => {
+        if (!pt || !Number.isFinite(Number(pt.p))) throw new Error("Invalid drawing point");
+        const t = pt.t == null ? null : Number(pt.t);
+        if (t != null && (!Number.isInteger(t) || t < 1 || t > 10000000)) throw new Error("Invalid drawing time");
+        const offset = pt.offset == null ? null : Number(pt.offset);
+        if (offset != null && (!Number.isInteger(offset) || offset < 0 || offset > 10000)) throw new Error("Invalid future offset");
+        return {p:Number(pt.p),t,lb:pt.lb==null?null:String(pt.lb).slice(0,96),anchorLb:pt.anchorLb==null?null:String(pt.anchorLb).slice(0,96),offset};
+      });
+      const out={...row,id:String(row.id||"").slice(0,96),type:row.type,points};
+      if(row.type==="fib" && row.fibLevels!=null && (!Array.isArray(row.fibLevels) || row.fibLevels.length>64)) throw new Error("Invalid Fibonacci levels");
+      return out;
+    });
+  }
+  function mergeRowsPreservingLocal(serverRows, localRows) {
+    const merged = sanitizeClientRows(serverRows).map((x)=>JSON.parse(JSON.stringify(x)));
+    const byId = new Map(merged.map((x,i)=>[x.id,i]));
+    sanitizeClientRows(localRows).forEach((local) => {
+      const idx = local.id ? byId.get(local.id) : null;
+      if (idx == null) { merged.push(local); if(local.id)byId.set(local.id,merged.length-1); return; }
+      if (rowsSignature(merged[idx]) === rowsSignature(local)) return;
+      // Preserve both versions on a same-id conflict: local keeps the canonical id,
+      // server copy is retained under a new id so neither device's edit disappears.
+      const serverCopy={...merged[idx],id:`${merged[idx].id||"drawing"}-srv-${uid()}`};
+      merged[idx]=local; merged.push(serverCopy);
+    });
+    if (merged.length > MAX_CLIENT_DRAWINGS) throw new Error("Merged drawing limit exceeded");
+    return merged;
+  }
   function serializeDrawings() {
     return drawings.map((d) => ({
       id: d.id, type: d.type, color: d.color, width: d.width, style: d.style,
@@ -89,7 +141,7 @@ window.TRXDraw = (() => {
       fibLabelSide: d.type === "fib" ? d.fibLabelSide : undefined,
       fibFill: d.type === "fib" ? d.fibFill : undefined,
       fibExtendRight: d.type === "fib" ? !!d.fibExtendRight : undefined,
-      points: d.points.map((p) => ({ p: p.p, lb: p.lb || labelOf(p.t), t: p.t })),
+      points: d.points.map(serializePoint),
     }));
   }
   function saveLocal() {
@@ -104,13 +156,14 @@ window.TRXDraw = (() => {
   }
   function replaceFromRows(raw) {
     const map = labelIndexMap(); drawings = [];
-    (Array.isArray(raw) ? raw : []).forEach((row) => {
+    sanitizeClientRows(raw).forEach((row) => {
       const pts = [];
       (row.points || []).forEach((p) => {
         let t = null;
         if (p.lb != null && map.has(p.lb)) t = map.get(p.lb);
+        else if (p.anchorLb != null && map.has(p.anchorLb) && Number.isInteger(Number(p.offset))) t = map.get(p.anchorLb) + Number(p.offset);
         else if (p.t != null) t = p.t;
-        pts.push({ t, p: Number(p.p), lb: p.lb != null ? p.lb : null });
+        pts.push({ t, p: Number(p.p), lb: p.lb != null ? p.lb : null, anchorLb:p.anchorLb||null, offset:p.offset==null?null:Number(p.offset) });
       });
       if (pts.length >= needPoints(row.type)) drawings.push(defaults({
         ...row, id: row.id || uid(), color: row.color || "#2962ff",
@@ -143,7 +196,7 @@ window.TRXDraw = (() => {
       const r=await fetch("/api/drawings",{method:"PUT",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({expected_revision:serverRevision,drawings:serializeDrawings()})});
       const j=await r.json().catch(()=>({}));
       if(r.status===401){setSyncToken("");serverRevision=null;setSyncStatus("AUTH NEEDED",true);return false;}
-      if(r.status===409){serverConflict=true;setSyncStatus("CONFLICT · PULL",true);return false;}
+      if(r.status===409){backupLocalSnapshot("revision-conflict");serverConflict=true;setSyncStatus("CONFLICT · TAP SYNC",true);return false;}
       if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
       serverRevision=Number(j.revision);serverConflict=false;setSyncStatus(`SYNCED r${serverRevision}`);return true;
     } catch(e){setSyncStatus("LOCAL · SERVER ERROR",true);return false;}
@@ -156,9 +209,32 @@ window.TRXDraw = (() => {
       if(r.status===401){setSyncToken("");serverRevision=null;setSyncStatus("AUTH NEEDED",true);return false;}
       if(r.status===503){serverRevision=null;setSyncStatus("SERVER SYNC DISABLED",true);return false;}
       if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
-      serverRevision=Number(j.revision||0);serverConflict=false;
-      if(Array.isArray(j.drawings)&&j.drawings.length){replaceFromRows(j.drawings);saveLocal();setSyncStatus(`PULLED r${serverRevision}`);}
-      else if(drawings.length){setSyncStatus("SERVER EMPTY · UPLOADING");await pushServer();}
+      const remote=sanitizeClientRows(j.drawings||[]), local=serializeDrawings();
+      const remoteRev=Number(j.revision||0), same=rowsSignature(remote)===rowsSignature(local);
+      const storage=j.storage||{};
+      if(storage.recovered_from_backup) setSyncStatus(`RECOVERED ${storage.recovered_from_backup}`);
+      if(storage.mode==="host-filesystem" && syncStatusEl) syncStatusEl.title="Server drawings use host filesystem; configure persistent storage and DRAWINGS_STORAGE_DURABLE=1 for redeploy durability.";
+
+      if(serverConflict){
+        backupLocalSnapshot("before-conflict-merge");
+        if(!interactive){serverRevision=remoteRev;setSyncStatus("CONFLICT · TAP SYNC",true);return false;}
+        if(!window.confirm("Server drawings changed on another device. Merge both versions? Cancel keeps your local drawings unchanged.")){serverRevision=remoteRev;setSyncStatus("CONFLICT PRESERVED",true);return false;}
+        const merged=mergeRowsPreservingLocal(remote,local);
+        serverRevision=remoteRev;serverConflict=false;replaceFromRows(merged);saveLocal();
+        setSyncStatus("MERGED · SAVING…");return await pushServer();
+      }
+
+      if(remote.length && local.length && !same){
+        backupLocalSnapshot("server-diff-detected");
+        serverRevision=remoteRev;serverConflict=true;
+        if(!interactive){setSyncStatus("DIFF · TAP SYNC",true);return false;}
+        if(!window.confirm("Local and server drawings differ. Merge both safely? Cancel keeps local drawings unchanged.")){setSyncStatus("DIFF PRESERVED",true);return false;}
+        const merged=mergeRowsPreservingLocal(remote,local);serverConflict=false;replaceFromRows(merged);saveLocal();return await pushServer();
+      }
+
+      serverRevision=remoteRev;serverConflict=false;
+      if(remote.length){replaceFromRows(remote);saveLocal();setSyncStatus(`PULLED r${serverRevision}`);}
+      else if(local.length){setSyncStatus("SERVER EMPTY · UPLOADING");await pushServer();}
       else setSyncStatus(`SYNCED r${serverRevision}`);
       return true;
     }catch(e){setSyncStatus("LOCAL · SERVER ERROR",true);return false;}
@@ -168,7 +244,10 @@ window.TRXDraw = (() => {
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`trx-drawings-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
   function importDrawings(){
-    const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json";inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(String(rd.result||"{}"));const rows=Array.isArray(j)?j:j.drawings;if(!Array.isArray(rows))throw new Error();replaceFromRows(rows);save();setSyncStatus("IMPORTED · SAVED");}catch(_e){window.alert("Invalid drawing backup file");}};rd.readAsText(f);};inp.click();
+    const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json";inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;if(f.size>1024*1024){window.alert("Drawing backup is too large");return;}const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(String(rd.result||"{}"));const rows=sanitizeClientRows(Array.isArray(j)?j:j.drawings);backupLocalSnapshot("before-import");replaceFromRows(rows);save();setSyncStatus("IMPORTED · SAVED");}catch(_e){window.alert("Invalid drawing backup file");}};rd.readAsText(f);};inp.click();
+  }
+  function restoreLocalSafetyBackup(){
+    try{const raw=localStorage.getItem(SAFETY_BACKUP_KEY);if(!raw){window.alert("No local safety backup yet");return;}const j=JSON.parse(raw);const rows=sanitizeClientRows(j.drawings||[]);if(!window.confirm(`Restore local safety backup from ${j.created_at||"unknown time"}? Current drawings will be backed up first.`))return;backupLocalSnapshot("before-local-recovery");replaceFromRows(rows);saveLocal();serverConflict=true;setSyncStatus("LOCAL BACKUP RESTORED · SYNC REVIEW",true);}catch(_e){window.alert("Local safety backup is invalid");}
   }
   async function restoreBackup(){
     if(!syncToken()){const t=window.prompt("Drawing Sync Token");if(!t)return;setSyncToken(t.trim());}
@@ -177,7 +256,7 @@ window.TRXDraw = (() => {
   function buildPersistenceToolbar(){
     const host=$("draw-tools");if(!host)return;const sep=document.createElement("span");sep.className="dt-sep";host.appendChild(sep);
     const mk=(txt,title,fn)=>{const b=document.createElement("button");b.type="button";b.className="dt-btn txt";b.textContent=txt;b.title=title;b.addEventListener("click",fn);host.appendChild(b);return b;};
-    mk("SYNC","Connect/pull server drawings",()=>pullServer(true));mk("EXPORT","Download drawing backup",exportDrawings);mk("IMPORT","Import drawing backup",importDrawings);mk("BACKUPS","Restore a server backup",restoreBackup);
+    mk("SYNC","Connect/pull/merge server drawings",()=>pullServer(true));mk("EXPORT","Download drawing backup",exportDrawings);mk("IMPORT","Import validated drawing backup",importDrawings);mk("BACKUPS","Restore a server backup",restoreBackup);mk("LOCAL BKP","Restore latest local safety backup",restoreLocalSafetyBackup);
     syncStatusEl=document.createElement("span");syncStatusEl.style.cssText="font:10px Consolas,monospace;color:#9aa0aa;padding:0 4px";syncStatusEl.textContent=syncToken()?"SYNC READY":"LOCAL ONLY";host.appendChild(syncStatusEl);
   }
 
