@@ -1,0 +1,55 @@
+name: Manual Drawing Tools v2 Validation
+on:
+  push:
+    branches: [manual-drawing-tools-v2-20260913]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply Phase 1 patch
+        run: python phase1_drawing_v2_patch.py
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Python syntax
+        run: python -m py_compile app.py app_core.py decision.py robust_engine.py robust_audit.py robust_integration.py tests_engine.py tests_robust.py tests_deep_audit.py tests_daily12.py tests_feed_resilience.py tests_live_feed_deep.py tests_feed_recovery.py tests_robust_telegram_detail.py tests_12step_ui_detail.py tests_streak_alert.py tests_drawing_v2.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/js/chart.js
+          node --check static/js/draw.js
+          node --check static/js/app.js
+          node --check static/js/robust.js
+      - name: Legacy tests
+        run: python tests_engine.py
+      - name: Robust tests
+        run: python tests_robust.py
+      - name: Deep audit tests
+        run: python tests_deep_audit.py
+      - name: Daily12 tests
+        run: python tests_daily12.py
+      - name: Feed resilience tests
+        run: python tests_feed_resilience.py
+      - name: Live feed tests
+        run: python tests_live_feed_deep.py
+      - name: Feed recovery tests
+        run: python tests_feed_recovery.py
+      - name: Robust Telegram tests
+        run: python tests_robust_telegram_detail.py
+      - name: 12-Step UI tests
+        run: python tests_12step_ui_detail.py
+      - name: Streak alert tests
+        run: python tests_streak_alert.py
+      - name: Drawing v2 tests
+        run: python tests_drawing_v2.py
+      - name: Commit passing Phase 1 patch
+        run: |
+          git config user.name "sharedbyatt-maker"
+          git config user.email "sharedbyatt@gmail.com"
+          git add static/js/draw.js static/js/chart.js tests_drawing_v2.py
+          git commit -m "Upgrade Manual Drawing Tools to v2" || true
+          git push origin HEAD:manual-drawing-tools-v2-20260913
