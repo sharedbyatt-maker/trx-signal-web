@@ -300,7 +300,7 @@ def test_robust_telegram_events_and_dedupe():
         re.signal_for_next = original
 
 
-def test_telegram_bridge_reuses_core_sender_and_isolation():
+def test_telegram_bridge_is_disabled_without_affecting_engine():
     original = force_signal("BIG")
     import os
     old_path = os.environ.get("ROBUST_STATE_FILE")
@@ -312,10 +312,9 @@ def test_telegram_bridge_reuses_core_sender_and_isolation():
             core = FakeCore(h, target)
             svc = ri.RobustService(core)
             svc.tick()
-            assert len(core.tg_messages) == 1
-            assert "📡 NEW SIGNAL" in core.tg_messages[0]
+            assert len(core.tg_messages) == 0
             svc.tick()
-            assert len(core.tg_messages) == 1
+            assert len(core.tg_messages) == 0
 
             os.environ["ROBUST_STATE_FILE"] = str(Path(td) / "bridge_fail.json")
             h2 = make_history(110)
