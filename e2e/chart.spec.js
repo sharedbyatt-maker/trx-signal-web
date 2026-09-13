@@ -81,7 +81,6 @@ test('S/R control remains synchronized with the indicator checkbox', async ({ pa
 
 test('manual drawing is persisted locally across reload', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Precise canvas drawing is covered on desktop; mobile has layout/touch smoke coverage.');
-  await page.addInitScript(() => localStorage.removeItem('trx_drawings_v3'));
   await waitForChart(page);
   await page.locator('#dt-toggle-btn').click();
   await expect(page.locator('#draw-tools')).not.toHaveClass(/collapsed/);
