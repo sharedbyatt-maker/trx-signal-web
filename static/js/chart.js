@@ -378,6 +378,19 @@ window.TRXChart = (() => {
   }
 
   /* ================= pivots & structure ================= */
+  function structureScale(bars, lookback = 180) {
+    const tail = (bars || []).slice(-lookback);
+    if (!tail.length) return 1.0;
+    const ranges = tail.map((b) => Math.max(0.1, Number(b.h) - Number(b.l)))
+      .filter((v) => Number.isFinite(v)).sort((a,b)=>a-b);
+    if (!ranges.length) return 1.0;
+    // Median is deliberately used instead of mean so one unusually long candle
+    // cannot inflate every structural threshold on higher timeframes.
+    const m = Math.floor(ranges.length / 2);
+    const med = ranges.length % 2 ? ranges[m] : (ranges[m-1] + ranges[m]) / 2;
+    return Math.max(0.75, Math.min(8.0, med));
+  }
+
   function findPivots(bars, k = PIVOT_K) {
     const hi = [], lo = [];
     for (let i = k; i < bars.length - k; i++) {
@@ -416,8 +429,10 @@ window.TRXChart = (() => {
     // Keep runtime bounded on long history while still considering older anchors.
     const ps = pivs.slice(-48);
     const lastI = bars.length - 1;
-    const touchTol = 0.8;
-    const hardBreak = 1.35;
+    const scale = structureScale(bars);
+    const touchTol = Math.max(0.8, Math.min(4.8, scale * 0.8));
+    const hardBreak = Math.max(1.35, Math.min(8.0, scale * 1.35));
+    const maxAbsSlope = Math.max(0.5, Math.min(3.0, scale * 0.5));
     let best = null;
 
     for (let a = 0; a < ps.length - 1; a++) {
@@ -430,7 +445,7 @@ window.TRXChart = (() => {
         if (!dt) continue;
         const slope = (p2.v - p1.v) / dt;
         const absSlope = Math.abs(slope);
-        if (absSlope > 0.5) continue; // implausibly steep on the ±1 synthetic walk
+        if (absSlope > maxAbsSlope) continue; // normalized to current timeframe range
 
         const lineAt = (i) => p1.v + slope * (bars[i].time - p1.t);
 
@@ -515,6 +530,11 @@ window.TRXChart = (() => {
   function detectPatterns(ph, pl, bars) {
     const marks = [];
     const n = bars.length;
+    const scale = structureScale(bars);
+    const patternTol = Math.max(PAT_TOL, Math.min(5.0, scale * 0.75));
+    const minSwing = Math.max(2.5, scale * 2.0);
+    const breakoutNear = Math.max(0.3, Math.min(2.5, scale * 0.25));
+    const breakoutClear = Math.max(0.4, Math.min(3.5, scale * 0.45));
     const from = Math.max(0, n - 450);
     const hh = ph.filter((p) => p.i >= from);
     const ll = pl.filter((p) => p.i >= from);
@@ -528,8 +548,8 @@ window.TRXChart = (() => {
       let trough = Infinity;
       for (let i = p.i; i <= q.i; i++) trough = Math.min(trough, bars[i].low);
       const height = Math.max(p.v, q.v) - trough;
-      const tol = Math.max(PAT_TOL, height * 0.18);      // adaptive tolerance
-      if (Math.abs(q.v - p.v) <= tol && height >= 2.5) {
+      const tol = Math.max(patternTol, height * 0.18);      // adaptive tolerance
+      if (Math.abs(q.v - p.v) <= tol && height >= minSwing) {
         marks.push(mk(q.t, q.v, "aboveBar", "circle", "#ff9800", "DT ▼"));
         lastDT = q.i;
       }
@@ -543,8 +563,8 @@ window.TRXChart = (() => {
       let peak = -Infinity;
       for (let i = p.i; i <= q.i; i++) peak = Math.max(peak, bars[i].high);
       const depth = peak - Math.min(p.v, q.v);
-      const tol = Math.max(PAT_TOL, depth * 0.18);
-      if (Math.abs(q.v - p.v) <= tol && depth >= 2.5) {
+      const tol = Math.max(patternTol, depth * 0.18);
+      if (Math.abs(q.v - p.v) <= tol && depth >= minSwing) {
         marks.push(mk(q.t, q.v, "belowBar", "circle", "#ff9800", "DB ▲"));
         lastDB = q.i;
       }
@@ -555,10 +575,10 @@ window.TRXChart = (() => {
       const L = hh[b - 1], M = hh[b], R = hh[b + 1];
       if (R.i - L.i < 8 || R.i - L.i > 130) continue;
       if (M.i <= lastHS) continue;
-      const margin = Math.max(1.0, (M.v - Math.min(L.v, R.v)) * 0.25);
+      const margin = Math.max(scale * 0.8, (M.v - Math.min(L.v, R.v)) * 0.25);
       const dL = M.i - L.i, dR = R.i - M.i;
       if (M.v > L.v + margin && M.v > R.v + margin
-          && Math.abs(L.v - R.v) <= PAT_TOL * 1.5
+          && Math.abs(L.v - R.v) <= patternTol * 1.5
           && dL / dR >= 0.5 && dL / dR <= 2) {
         marks.push(mk(M.t, M.v, "aboveBar", "square", DOWN, "HS ▼"));
         lastHS = R.i;
@@ -570,10 +590,10 @@ window.TRXChart = (() => {
       const L = ll[b - 1], M = ll[b], R = ll[b + 1];
       if (R.i - L.i < 8 || R.i - L.i > 130) continue;
       if (M.i <= lastIHS) continue;
-      const margin = Math.max(1.0, (Math.max(L.v, R.v) - M.v) * 0.25);
+      const margin = Math.max(scale * 0.8, (Math.max(L.v, R.v) - M.v) * 0.25);
       const dL = M.i - L.i, dR = R.i - M.i;
       if (M.v < L.v - margin && M.v < R.v - margin
-          && Math.abs(L.v - R.v) <= PAT_TOL * 1.5
+          && Math.abs(L.v - R.v) <= patternTol * 1.5
           && dL / dR >= 0.5 && dL / dR <= 2) {
         marks.push(mk(M.t, M.v, "belowBar", "square", UP, "IHS ▲"));
         lastIHS = R.i;
@@ -592,10 +612,10 @@ window.TRXChart = (() => {
       }
       const c = bars[i], pc = bars[i - 1].c;
       if (i - lastBo > 3) {
-        if (res && pc <= res.v + 0.3 && c.c > res.v + 0.4) {
+        if (res && pc <= res.v + breakoutNear && c.c > res.v + breakoutClear) {
           marks.push(mk(c.time, c.h, "aboveBar", "arrowUp", UP, "BO ↑"));
           lastBo = i; res = null;
-        } else if (sup && pc >= sup.v - 0.3 && c.c < sup.v - 0.4) {
+        } else if (sup && pc >= sup.v - breakoutNear && c.c < sup.v - breakoutClear) {
           marks.push(mk(c.time, c.l, "belowBar", "arrowDown", DOWN, "BO ↓"));
           lastBo = i; sup = null;
         }
@@ -648,12 +668,8 @@ window.TRXChart = (() => {
      Adaptive clustering + touch/rejection/recency scoring + break/retest and
      support<->resistance role-flip detection. Display-only chart structure. */
   function srAdaptiveTolerance(bars) {
-    const tail = bars.slice(-180);
-    if (!tail.length) return 1.0;
-    let rangeSum = 0;
-    tail.forEach((b) => { rangeSum += Math.max(0.1, b.h - b.l); });
-    const avgRange = rangeSum / tail.length;
-    return Math.max(0.65, Math.min(2.4, avgRange * 1.15));
+    const scale = structureScale(bars, 180);
+    return Math.max(0.65, Math.min(6.0, scale * 1.15));
   }
 
   function srLevelStats(level, bars, tol) {
@@ -728,7 +744,7 @@ window.TRXChart = (() => {
 
     const picked=[];
     for (const it of scored.sort((a,b)=>b.score-a.score)) {
-      if (picked.every((p)=>Math.abs(p.L-it.L)>=Math.max(2.2,tol*1.6))) picked.push(it);
+      if (picked.every((p)=>Math.abs(p.L-it.L)>=Math.max(1.6,tol*1.6))) picked.push(it);
       if (picked.length>=maxLevels) break;
     }
     // Ensure one useful level on each side when available.
