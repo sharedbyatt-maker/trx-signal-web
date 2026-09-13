@@ -1004,7 +1004,7 @@ window.TRXChart = (() => {
         window.TRXDraw.onData({
           chart, series: candleSeries,
           labels: curLabels, labelMap: curLabelMap,
-          fulls: curFulls,      // FULL issue per slot — drawing anchor keys
+          fulls: curFulls, bars: curBars, // drawing v2 OHLC magnet snap (display-only)
         });
       } catch (e) { /* noop */ }
     }
@@ -1146,7 +1146,7 @@ window.TRXChart = (() => {
       try {
         window.TRXDraw.onData({
           chart, series: candleSeries, labels: curLabels,
-          labelMap: curLabelMap, fulls: curFulls,
+          labelMap: curLabelMap, fulls: curFulls, bars: curBars,
         });
       } catch (e) { /* drawing overlay can wait for full refresh */ }
     }
