@@ -202,18 +202,11 @@ class RobustService:
         return history, next_issue
 
     def _forward_robust_events(self):
-        for event in self.engine.drain_notification_events():
-            message = format_robust_telegram_event(event)
-            if not message:
-                continue
-            try:
-                # Reuse the legacy sender/queue/credentials/retry worker exactly as-is.
-                self.core.tg_notify(message)
-            except Exception as exc:
-                # Telegram enqueue failure must never alter Robust financial state or
-                # escape into the legacy polling loop. Event identity is already
-                # persisted by RobustEngine, so retries/restarts cannot duplicate it.
-                print(f"[ROBUST-TG] enqueue failed for {event.get('id')}: {exc}", flush=True)
+        # Robust Telegram notifications are intentionally disabled. Drain the
+        # engine's transient notification events so they cannot accumulate, but
+        # never forward them into the shared legacy Telegram sender. Robust
+        # signal/risk/state logic remains completely unchanged.
+        self.engine.drain_notification_events()
 
     def tick(self):
         history, next_issue = self._snapshot_legacy_history()
