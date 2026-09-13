@@ -69,6 +69,7 @@ window.TRXChart = (() => {
   }
 
   let curBars = [];           // [{time,o,h,l,c}]
+  let curCloses = [];         // hot-path close cache; kept in lockstep with curBars
   let curLabels = [];
   let curTimes = [];          // real blockTime per bar (slot index -> "YYYY-MM-DD HH:MM:SS")
   let curFulls = [];          // per-slot FULL issue (drawing anchor)
@@ -152,7 +153,7 @@ window.TRXChart = (() => {
       signal[i] = prev;
     }
     const hist = macd.map((v, i) => (v == null || signal[i] == null) ? null : v - signal[i]);
-    return { macd, signal, hist };
+    return { macd, signal, hist, emaFast: ef, emaSlow: es };
   }
 
   function smaArr(values, period) {
@@ -187,12 +188,14 @@ window.TRXChart = (() => {
     return { k, d };
   }
 
-  function seedLiveIndicators(closes) {
+  function seedLiveIndicators(closes, computed = null) {
     if (!closes.length) { liveInd = null; return; }
-    const ema5 = calcEma(closes, 5), ema15 = calcEma(closes, 15), ema100 = calcEma(closes, 100);
-    const rsi = calcRsi(closes, 14);
-    const macd = calcMacd(closes, 12, 26, 9);
-    const st = calcStoch(closes, 14, 3, 3);
+    const ema5 = computed?.ema5 || calcEma(closes, 5);
+    const ema15 = computed?.ema15 || calcEma(closes, 15);
+    const ema100 = computed?.ema100 || calcEma(closes, 100);
+    const rsi = computed?.rsi || calcRsi(closes, 14);
+    const macd = computed?.macd || calcMacd(closes, 12, 26, 9);
+    const st = computed?.stoch || calcStoch(closes, 14, 3, 3);
 
     // Wilder RSI state, seeded exactly like calcRsi().
     let ag = null, al = null;
@@ -212,7 +215,7 @@ window.TRXChart = (() => {
 
     liveInd = {
       ema5: ema5.at(-1), ema15: ema15.at(-1), ema100: ema100.at(-1),
-      ema12: calcEma(closes, 12).at(-1), ema26: calcEma(closes, 26).at(-1),
+      ema12: macd.emaFast.at(-1), ema26: macd.emaSlow.at(-1),
       rsiAg: ag, rsiAl: al,
       macdSignal: macd.signal.at(-1),
       stochRaw: [], stochK: [],
@@ -244,7 +247,7 @@ window.TRXChart = (() => {
 
   function updateLiveIndicators(close, time) {
     if (!liveInd || group !== 1) return false;
-    const closes = curBars.map((b)=>b.c);
+    const closes = curCloses;
     const before = liveInd.count;
     const prevClose = liveInd.lastClose;
 
@@ -885,7 +888,7 @@ window.TRXChart = (() => {
 
   function paneCrosshairTargets() {
     return [
-      { chart, series: candleSeries, values: curBars.map((b) => b.c), enabled: true },
+      { chart, series: candleSeries, values: curCloses, enabled: true },
       { chart: rsiChart, series: rsiSeries, values: curRsiValues, enabled: opts.rsi },
       { chart: macdChart, series: macdLineSeries, values: curMacdValues, enabled: opts.macd },
       { chart: stochChart, series: stochKSeries, values: curStochValues, enabled: opts.stoch },
@@ -1046,12 +1049,17 @@ window.TRXChart = (() => {
     });
 
 
+    let resizeRaf = 0;
     new ResizeObserver(() => {
-      if (!chart || !containerEl) return;
-      chart.applyOptions({ width: containerEl.clientWidth, height: containerEl.clientHeight });
-      if (rsiChart && rsiEl) rsiChart.applyOptions({ width: rsiEl.clientWidth, height: rsiEl.clientHeight });
-      if (macdChart && macdEl) macdChart.applyOptions({ width: macdEl.clientWidth, height: macdEl.clientHeight });
-      if (stochChart && stochEl) stochChart.applyOptions({ width: stochEl.clientWidth, height: stochEl.clientHeight });
+      if (resizeRaf) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0;
+        if (!chart || !containerEl) return;
+        chart.applyOptions({ width: containerEl.clientWidth, height: containerEl.clientHeight });
+        if (rsiChart && rsiEl) rsiChart.applyOptions({ width: rsiEl.clientWidth, height: rsiEl.clientHeight });
+        if (macdChart && macdEl) macdChart.applyOptions({ width: macdEl.clientWidth, height: macdEl.clientHeight });
+        if (stochChart && stochEl) stochChart.applyOptions({ width: stochEl.clientWidth, height: stochEl.clientHeight });
+      });
     }).observe(container);
 
     initRsiPane();
@@ -1100,6 +1108,15 @@ window.TRXChart = (() => {
     }
   }
 
+  let drawRedrawRaf = 0;
+  function scheduleDrawRedraw() {
+    if (drawRedrawRaf || !window.TRXDraw || !window.TRXDraw.redraw) return;
+    drawRedrawRaf = requestAnimationFrame(() => {
+      drawRedrawRaf = 0;
+      try { window.TRXDraw.redraw(); } catch (e) { /* noop */ }
+    });
+  }
+
   function syncRanges() {
     // N-way visible-range sync (main <-> rsi <-> macd <-> stoch), feedback-guarded
     const charts = [chart, rsiChart, macdChart, stochChart].filter(Boolean);
@@ -1109,7 +1126,7 @@ window.TRXChart = (() => {
         rangeLock = true;
         try { charts.forEach((c) => { if (c !== src) c.timeScale().setVisibleLogicalRange(r); }); }
         catch (e) { /* noop */ }
-        if (window.TRXDraw && window.TRXDraw.redraw) window.TRXDraw.redraw();
+        scheduleDrawRedraw();
         rangeLock = false;
       });
     });
@@ -1314,6 +1331,7 @@ window.TRXChart = (() => {
 
     const { bars, labels, labelMap, times, fulls } = buildBars(hist);
     curBars = bars.map((b) => ({ time: b.time, o: b.open, h: b.high, l: b.low, c: b.close }));
+    curCloses = curBars.map((b) => b.c);
     curLabels = labels;
     curTimes = times || [];
     curFulls = fulls || [];
@@ -1322,17 +1340,21 @@ window.TRXChart = (() => {
     candleSeries.setData(bars);
     candleSeries.applyOptions({ visible: viewMode === "candles" });
 
-    areaSeries.setData(linePoints(curBars.map((b) => b.c)));
+    areaSeries.setData(linePoints(curCloses));
     areaSeries.applyOptions({ visible: viewMode === "line" });
 
-    const closes = curBars.map((b) => b.c);
-    seedLiveIndicators(closes);
+    const closes = curCloses;
+    const ema5 = calcEma(closes, 5);
+    const ema15 = calcEma(closes, 15);
+    const ema100 = calcEma(closes, 100);
+    const rsiArr = calcRsi(closes, 14);
+    const macdCalc = calcMacd(closes, 12, 26, 9);
+    const stochCalc = calcStoch(closes, 14, 3, 3);
+    seedLiveIndicators(closes, { ema5, ema15, ema100, rsi: rsiArr, macd: macdCalc, stoch: stochCalc });
 
-    const emaFpts = linePoints(calcEma(closes, 5));
-    const emaSpts = linePoints(calcEma(closes, 15));
-    emaFastSeries.setData(emaFpts);
-    emaSlowSeries.setData(emaSpts);
-    emaLongSeries.setData(linePoints(calcEma(closes, 100)));
+    emaFastSeries.setData(linePoints(ema5));
+    emaSlowSeries.setData(linePoints(ema15));
+    emaLongSeries.setData(linePoints(ema100));
     emaFastSeries.applyOptions({ visible: opts.ema && viewMode !== "none" });
     emaSlowSeries.applyOptions({ visible: opts.ema });
     emaLongSeries.applyOptions({ visible: opts.ema });
@@ -1390,7 +1412,6 @@ window.TRXChart = (() => {
 
     // ---- RSI sub-pane ----
     if (rsiSeries) {
-      const rsiArr = calcRsi(closes, 14);
       curRsiValues = rsiArr.slice();
       rsiSeries.setData(linePoints(rsiArr));
       const lastRsi = [...rsiArr].reverse().find((v) => v != null);
@@ -1399,7 +1420,7 @@ window.TRXChart = (() => {
 
     // ---- MACD sub-pane ----
     if (macdLineSeries) {
-      const m = calcMacd(closes, 12, 26, 9);
+      const m = macdCalc;
       curMacdValues = m.macd.slice();
       macdLineSeries.setData(linePoints(m.macd));
       macdSigSeries.setData(linePoints(m.signal));
@@ -1415,7 +1436,7 @@ window.TRXChart = (() => {
 
     // ---- Stochastic sub-pane ----
     if (stochKSeries) {
-      const st = calcStoch(closes, 14, 3, 3);
+      const st = stochCalc;
       curStochValues = st.k.slice();
       stochKSeries.setData(linePoints(st.k));
       stochDSeries.setData(linePoints(st.d));
@@ -1449,7 +1470,7 @@ window.TRXChart = (() => {
         else if (resSeg.slope < -0.04 && supSeg.slope < -0.04) tags.push("CHANNEL ▼");
       }
       if (curBars.length > 30) {
-        const diff = calcEma(closes, 5).at(-1) - calcEma(closes, 15).at(-1);
+        const diff = (ema5.at(-1) ?? 0) - (ema15.at(-1) ?? 0);
         tags.push(diff > 0 ? "TREND ▲" : "TREND ▼");
       }
       chip.textContent = tags.join(" · ");
@@ -1511,6 +1532,7 @@ window.TRXChart = (() => {
     }
 
     curBars.push({ time, o: open, h: raw.high, l: raw.low, c: close });
+    curCloses.push(close);
     curLabels.push(row.short_issue || issue.slice(-6));
     curTimes.push(row.block_time || row.hm || "");
     curFulls.push(issue);
