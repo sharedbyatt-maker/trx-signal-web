@@ -29,6 +29,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add robust_integration.py tests_robust_telegram_disabled.py
-          git commit -m "Disable Robust Engine Telegram notifications"
+          git add robust_integration.py tests_robust.py tests_robust_telegram_disabled.py
+          git diff --cached --quiet || git commit -m "Disable Robust Engine Telegram notifications"
           git push
