@@ -4,6 +4,7 @@
 window.TRXDraw = (() => {
   const STORE_KEY = "trx_drawings_v3"; // keep existing drawings backward-compatible
   const PREF_KEY = "trx_draw_v2_prefs";
+  const SYNC_TOKEN_KEY = "trx_draw_sync_token";
   const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
   const FIB_EXT_LEVELS = [1.272, 1.414, 1.618, 2.0];
   const FIB_COLORS = ["#787b86", "#f23645", "#ff9800", "#089981", "#2962ff", "#ff9800", "#f23645", "#00bcd4", "#9c27b0", "#e91e63", "#607d8b"];
@@ -33,6 +34,7 @@ window.TRXDraw = (() => {
   let tool = "cursor", color = "#2962ff", drawings = [], placing = null, placeStage = 0;
   let hover = null, selectedId = null, downXY = null, drag = null, restored = false;
   let magnet = true;
+  let serverRevision = null, serverConflict = false, serverSyncTimer = null, syncStatusEl = null;
 
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const $ = (id) => document.getElementById(id);
@@ -77,50 +79,106 @@ window.TRXDraw = (() => {
   function labelOf(t) {
     return api && api.fulls && api.fulls[t - 1] ? api.fulls[t - 1] : null;
   }
-  function save() {
-    try {
-      const rows = drawings.map((d) => ({
-        id: d.id, type: d.type, color: d.color, width: d.width, style: d.style,
-        locked: !!d.locked, hidden: !!d.hidden, extendLeft: !!d.extendLeft,
-        extendRight: !!d.extendRight,
-        fibLevels: d.type === "fib" ? normalizeFibLevels(d.fibLevels) : undefined,
-        fibReverse: d.type === "fib" ? !!d.fibReverse : undefined,
-        fibLabelSide: d.type === "fib" ? d.fibLabelSide : undefined,
-        fibFill: d.type === "fib" ? d.fibFill : undefined,
-        fibExtendRight: d.type === "fib" ? !!d.fibExtendRight : undefined,
-        points: d.points.map((p) => ({ p: p.p, lb: p.lb || labelOf(p.t), t: p.t })),
-      }));
-      localStorage.setItem(STORE_KEY, JSON.stringify(rows));
-    } catch (_e) {}
+  function serializeDrawings() {
+    return drawings.map((d) => ({
+      id: d.id, type: d.type, color: d.color, width: d.width, style: d.style,
+      locked: !!d.locked, hidden: !!d.hidden, extendLeft: !!d.extendLeft,
+      extendRight: !!d.extendRight,
+      fibLevels: d.type === "fib" ? normalizeFibLevels(d.fibLevels) : undefined,
+      fibReverse: d.type === "fib" ? !!d.fibReverse : undefined,
+      fibLabelSide: d.type === "fib" ? d.fibLabelSide : undefined,
+      fibFill: d.type === "fib" ? d.fibFill : undefined,
+      fibExtendRight: d.type === "fib" ? !!d.fibExtendRight : undefined,
+      points: d.points.map((p) => ({ p: p.p, lb: p.lb || labelOf(p.t), t: p.t })),
+    }));
   }
+  function saveLocal() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(serializeDrawings())); } catch (_e) {}
+  }
+  function save() { saveLocal(); queueServerSave(); }
   function needPoints(type) { return (type === "hline" || type === "vline") ? 1 : 2; }
   function labelIndexMap() {
     if (api && api.labelMap instanceof Map && api.labelMap.size) return api.labelMap;
     if (api && api.fulls && api.fulls.length) return new Map(api.fulls.map((lb, i) => [lb, i + 1]).filter(x => x[0]));
     return new Map(((api && api.labels) || []).map((lb, i) => [lb, i + 1]));
   }
+  function replaceFromRows(raw) {
+    const map = labelIndexMap(); drawings = [];
+    (Array.isArray(raw) ? raw : []).forEach((row) => {
+      const pts = [];
+      (row.points || []).forEach((p) => {
+        let t = null;
+        if (p.lb != null && map.has(p.lb)) t = map.get(p.lb);
+        else if (p.t != null) t = p.t;
+        pts.push({ t, p: Number(p.p), lb: p.lb != null ? p.lb : null });
+      });
+      if (pts.length >= needPoints(row.type)) drawings.push(defaults({
+        ...row, id: row.id || uid(), color: row.color || "#2962ff",
+        points: pts.slice(0, needPoints(row.type)),
+      }));
+    });
+    selectedId = null; updatePanel(); redraw();
+  }
   function restore() {
     if (!api || !api.labels) return;
     restored = true;
-    const map = labelIndexMap();
-    try {
-      const raw = JSON.parse(localStorage.getItem(STORE_KEY) || "[]");
-      drawings = [];
-      raw.forEach((row) => {
-        const pts = [];
-        (row.points || []).forEach((p) => {
-          let t = null;
-          if (p.lb != null && map.has(p.lb)) t = map.get(p.lb);
-          else if (p.t != null) t = p.t;
-          pts.push({ t, p: p.p, lb: p.lb != null ? p.lb : null });
-        });
-        if (pts.length >= needPoints(row.type)) drawings.push(defaults({
-          ...row, id: row.id || uid(), color: row.color || "#2962ff",
-          points: pts.slice(0, needPoints(row.type)),
-        }));
-      });
-    } catch (_e) { drawings = []; }
+    try { replaceFromRows(JSON.parse(localStorage.getItem(STORE_KEY) || "[]")); }
+    catch (_e) { drawings = []; }
     updatePanel();
+    if (syncToken()) pullServer(false);
+  }
+
+  function syncToken() { try { return localStorage.getItem(SYNC_TOKEN_KEY) || ""; } catch (_e) { return ""; } }
+  function setSyncToken(v) { try { if(v)localStorage.setItem(SYNC_TOKEN_KEY,v);else localStorage.removeItem(SYNC_TOKEN_KEY); } catch(_e){} }
+  function authHeaders(extra={}) { const t=syncToken(); return {...extra,...(t?{"X-Drawings-Token":t}:{})}; }
+  function setSyncStatus(txt,bad=false) { if(syncStatusEl){syncStatusEl.textContent=txt;syncStatusEl.style.color=bad?"#f23645":"#9aa0aa";} }
+  function queueServerSave() {
+    if (!syncToken() || serverRevision == null || serverConflict) return;
+    clearTimeout(serverSyncTimer); serverSyncTimer=setTimeout(()=>pushServer(),900);
+  }
+  async function pushServer() {
+    if (!syncToken() || serverRevision == null || serverConflict) return false;
+    setSyncStatus("SYNCING…");
+    try {
+      const r=await fetch("/api/drawings",{method:"PUT",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({expected_revision:serverRevision,drawings:serializeDrawings()})});
+      const j=await r.json().catch(()=>({}));
+      if(r.status===401){setSyncToken("");serverRevision=null;setSyncStatus("AUTH NEEDED",true);return false;}
+      if(r.status===409){serverConflict=true;setSyncStatus("CONFLICT · PULL",true);return false;}
+      if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
+      serverRevision=Number(j.revision);serverConflict=false;setSyncStatus(`SYNCED r${serverRevision}`);return true;
+    } catch(e){setSyncStatus("LOCAL · SERVER ERROR",true);return false;}
+  }
+  async function pullServer(interactive=true) {
+    if(!syncToken()&&interactive){const t=window.prompt("Drawing Sync Token");if(!t)return false;setSyncToken(t.trim());}
+    if(!syncToken())return false;setSyncStatus("LOADING…");
+    try{
+      const r=await fetch("/api/drawings",{headers:authHeaders()});const j=await r.json().catch(()=>({}));
+      if(r.status===401){setSyncToken("");serverRevision=null;setSyncStatus("AUTH NEEDED",true);return false;}
+      if(r.status===503){serverRevision=null;setSyncStatus("SERVER SYNC DISABLED",true);return false;}
+      if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
+      serverRevision=Number(j.revision||0);serverConflict=false;
+      if(Array.isArray(j.drawings)&&j.drawings.length){replaceFromRows(j.drawings);saveLocal();setSyncStatus(`PULLED r${serverRevision}`);}
+      else if(drawings.length){setSyncStatus("SERVER EMPTY · UPLOADING");await pushServer();}
+      else setSyncStatus(`SYNCED r${serverRevision}`);
+      return true;
+    }catch(e){setSyncStatus("LOCAL · SERVER ERROR",true);return false;}
+  }
+  function exportDrawings(){
+    const payload={schema:2,exported_at:new Date().toISOString(),drawings:serializeDrawings()};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`trx-drawings-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+  function importDrawings(){
+    const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json";inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(String(rd.result||"{}"));const rows=Array.isArray(j)?j:j.drawings;if(!Array.isArray(rows))throw new Error();replaceFromRows(rows);save();setSyncStatus("IMPORTED · SAVED");}catch(_e){window.alert("Invalid drawing backup file");}};rd.readAsText(f);};inp.click();
+  }
+  async function restoreBackup(){
+    if(!syncToken()){const t=window.prompt("Drawing Sync Token");if(!t)return;setSyncToken(t.trim());}
+    try{const r=await fetch("/api/drawings/backups",{headers:authHeaders()});const j=await r.json();if(!r.ok)throw new Error();const list=j.backups||[];if(!list.length){window.alert("No server backups yet");return;}const msg=list.map(x=>`r${x.revision} · ${x.count} drawings · ${x.updated_at||""}`).join("\n");const v=window.prompt(`Restore which revision?\n\n${msg}`);if(v==null)return;const rev=Number(String(v).replace(/^r/i,""));if(!Number.isInteger(rev))return;const rr=await fetch("/api/drawings/restore",{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({revision:rev,expected_revision:serverRevision})});const jj=await rr.json();if(!rr.ok)throw new Error(jj.error||"restore failed");serverRevision=Number(jj.revision);serverConflict=false;replaceFromRows(jj.drawings||[]);saveLocal();setSyncStatus(`RESTORED → r${serverRevision}`);}catch(e){setSyncStatus("RESTORE FAILED",true);}
+  }
+  function buildPersistenceToolbar(){
+    const host=$("draw-tools");if(!host)return;const sep=document.createElement("span");sep.className="dt-sep";host.appendChild(sep);
+    const mk=(txt,title,fn)=>{const b=document.createElement("button");b.type="button";b.className="dt-btn txt";b.textContent=txt;b.title=title;b.addEventListener("click",fn);host.appendChild(b);return b;};
+    mk("SYNC","Connect/pull server drawings",()=>pullServer(true));mk("EXPORT","Download drawing backup",exportDrawings);mk("IMPORT","Import drawing backup",importDrawings);mk("BACKUPS","Restore a server backup",restoreBackup);
+    syncStatusEl=document.createElement("span");syncStatusEl.style.cssText="font:10px Consolas,monospace;color:#9aa0aa;padding:0 4px";syncStatusEl.textContent=syncToken()?"SYNC READY":"LOCAL ONLY";host.appendChild(syncStatusEl);
   }
 
   function toXY(pt) {
@@ -441,8 +499,8 @@ window.TRXDraw = (() => {
   }
   function init(){
     if(canvas)return;wrapEl=$("tv-chart");if(!wrapEl)return;loadPrefs();canvas=document.createElement("canvas");canvas.className="draw-overlay";wrapEl.appendChild(canvas);ctx=canvas.getContext("2d");
-    hintEl=document.createElement("div");hintEl.className="draw-hint";hintEl.textContent=HINTS.cursor;wrapEl.appendChild(hintEl);buildPanel();bindEvents();resize();
+    hintEl=document.createElement("div");hintEl.className="draw-hint";hintEl.textContent=HINTS.cursor;wrapEl.appendChild(hintEl);buildPanel();buildPersistenceToolbar();bindEvents();resize();
   }
   document.addEventListener("DOMContentLoaded",init);if(document.readyState!=="loading")init();
-  return {onData,redraw,undo,clearAll,_dbg:()=>({tool,apiReady:!!api,count:drawings.length,selectedId,dragging:!!drag,placing:!!placing,magnet,selected:selected()?{type:selected().type,locked:selected().locked,hidden:selected().hidden,width:selected().width,style:selected().style,extendLeft:selected().extendLeft,extendRight:selected().extendRight}:null,hidden:drawings.filter(d=>d.hidden).length})};
+  return {onData,redraw,undo,clearAll,pullServer,pushServer,exportDrawings,_dbg:()=>({tool,apiReady:!!api,count:drawings.length,selectedId,dragging:!!drag,placing:!!placing,magnet,serverRevision,serverConflict,selected:selected()?{type:selected().type,locked:selected().locked,hidden:selected().hidden,width:selected().width,style:selected().style,extendLeft:selected().extendLeft,extendRight:selected().extendRight}:null,hidden:drawings.filter(d=>d.hidden).length})};
 })();

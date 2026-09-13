@@ -9,3 +9,9 @@ robust_state.json
 # 12-step daily live report state
 strat_daily_reports.json
 .strat_daily_reports.json.tmp.*
+
+
+# Manual Drawing Persistence v2 runtime state
+drawings_state.json
+.drawings_state.*.tmp
+drawings_backups/

@@ -23,6 +23,7 @@ import app_core as core
 from app_core import *  # noqa: F401,F403 - preserve existing public module API
 from decision import decide_signal
 from robust_integration import install_robust_routes
+from drawings_persistence import install_drawings_persistence
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +405,9 @@ start_engine = core.start_engine
 # Additive Robust subsystem. It registers separate APIs/UI assets and observes
 # a thread-safe copy of legacy completed history without mutating legacy state.
 robust_service = install_robust_routes(core)
+# Phase 8: token-protected, additive server persistence for manual chart drawings.
+# This does not mutate legacy/Robust/feed state.
+drawings_store = install_drawings_persistence(core.app)
 
 # Restore caller intent and start only after all decision paths/routes are wired.
 if _engine_disabled_by_caller:
