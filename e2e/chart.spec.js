@@ -45,6 +45,10 @@ test('indicator controls independently open and toggle panes', async ({ page }) 
   await page.locator('#ind-toggle-btn').click();
   await expect(page.locator('#ind-bar')).not.toHaveClass(/collapsed/);
 
+  await expect(page.locator('#sma-toggle')).not.toBeChecked();
+  await page.locator('#sma-toggle').check();
+  await expect(page.locator('#sma-toggle')).toBeChecked();
+
   await page.locator('#macd-toggle').check();
   await expect(page.locator('#macd-pane')).toBeVisible();
   await page.locator('#stoch-toggle').check();

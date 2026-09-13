@@ -1,6 +1,6 @@
 /* TradingView-style chart (Lightweight Charts v4)
    Trend model: BIG -> +1 step, SMALL -> -1 step
-   Features: Candles/Area · TF grouping ×1..×50 · EMA 5/15 · Bollinger Bands
+   Features: Candles/Area · TF grouping ×1..×50 · EMA 5/15 · SMA 20/50 · Bollinger Bands
              RSI(14) sub-pane (synced) · Auto Trendlines · S/R levels
              Pattern markers: DT / DB / HS / IHS / 3 Soldiers / 3 Crows */
 window.TRXChart = (() => {
@@ -23,6 +23,8 @@ window.TRXChart = (() => {
   let emaFastSeries = null;
   let emaSlowSeries = null;
   let emaLongSeries = null;
+  let sma20Series = null;
+  let sma50Series = null;
   let bbUpperSeries = null;
   let bbMidSeries = null;
   let bbLowerSeries = null;
@@ -41,7 +43,7 @@ window.TRXChart = (() => {
   let group = 1;
   let viewMode = "candles";   // candles | line
   let opts = {
-    ema: true, bb: false, rsi: true, sig: true,
+    ema: true, sma: false, bb: false, rsi: true, sig: true,
     pat: true, sr: true, tl: true, macd: false, stoch: false,
   };
 
@@ -269,9 +271,16 @@ window.TRXChart = (() => {
       let var20 = 0;
       for (const v of tail20) var20 += (v - mean20) ** 2;
       const sd20 = Math.sqrt(var20 / 20);
+      // SMA20 and BB middle are mathematically identical: compute once, fan out.
+      sma20Series.update({time,value:mean20});
       bbUpperSeries.update({time,value:mean20 + 2 * sd20});
       bbMidSeries.update({time,value:mean20});
       bbLowerSeries.update({time,value:mean20 - 2 * sd20});
+    }
+    if (closes.length >= 50) {
+      const tail50 = closes.slice(-50);
+      const mean50 = tail50.reduce((a,b)=>a+b,0) / 50;
+      sma50Series.update({time,value:mean50});
     }
 
     let rsiVal=null;
@@ -1102,6 +1111,17 @@ window.TRXChart = (() => {
       crosshairMarkerVisible: false, visible: opts.ema, priceFormat: fmt,
     });
 
+    sma20Series = chart.addLineSeries({
+      color: "#e91e63", lineWidth: 1.5,
+      priceLineVisible: false, lastValueVisible: false,
+      crosshairMarkerVisible: false, visible: opts.sma, priceFormat: fmt,
+    });
+    sma50Series = chart.addLineSeries({
+      color: "#ffd54f", lineWidth: 1.5, lineStyle: LightweightCharts.LineStyle.Dashed,
+      priceLineVisible: false, lastValueVisible: false,
+      crosshairMarkerVisible: false, visible: opts.sma, priceFormat: fmt,
+    });
+
     bbUpperSeries = chart.addLineSeries({
       color: "rgba(41,98,255,.65)", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Solid,
       priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
@@ -1364,6 +1384,7 @@ window.TRXChart = (() => {
       });
     };
     bindOpt("ema-toggle", "ema");
+    bindOpt("sma-toggle", "sma");
     bindOpt("bb-toggle", "bb");
     bindOpt("pat-toggle", "pat");
     bindOpt("sr-toggle", "sr", syncSrControls);
@@ -1428,6 +1449,8 @@ window.TRXChart = (() => {
     const ema5 = calcEma(closes, 5);
     const ema15 = calcEma(closes, 15);
     const ema100 = calcEma(closes, 100);
+    const sma20 = smaArr(closes, 20);
+    const sma50 = smaArr(closes, 50);
     const rsiArr = calcRsi(closes, 14);
     const macdCalc = calcMacd(closes, 12, 26, 9);
     const stochCalc = calcStoch(closes, 14, 3, 3);
@@ -1440,9 +1463,15 @@ window.TRXChart = (() => {
     emaSlowSeries.applyOptions({ visible: opts.ema });
     emaLongSeries.applyOptions({ visible: opts.ema });
 
+    sma20Series.setData(linePoints(sma20));
+    sma50Series.setData(linePoints(sma50));
+    sma20Series.applyOptions({ visible: opts.sma });
+    sma50Series.applyOptions({ visible: opts.sma });
+
     const bb = calcBB(closes, 20, 2);
     bbUpperSeries.setData(linePoints(bb.up));
-    bbMidSeries.setData(linePoints(bb.mid));
+    // BB middle === SMA20; reuse the already-computed SMA20 array.
+    bbMidSeries.setData(linePoints(sma20));
     bbLowerSeries.setData(linePoints(bb.lo));
     bbUpperSeries.applyOptions({ visible: opts.bb });
     bbMidSeries.applyOptions({ visible: opts.bb });
