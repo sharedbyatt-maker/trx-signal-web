@@ -106,6 +106,44 @@ RADAR_RESET_DOWN = 45.0
 RADAR_UP = 60.0
 RADAR_RESET_UP = 55.0
 
+# ---- 🔥 BIG/SMALL STREAK TELEGRAM ALERT ----
+# Notify once at streak 8, then again for every fresh round while the same side
+# continues (9, 10, 11, ...). This is notification-only and does not affect
+# signal generation, risk, 12-step, Robust, chart, or settlement logic.
+TG_STREAK_ALERT_FROM = 8
+
+
+def consecutive_bs_streak(history):
+    """Return (BIG|SMALL, count) for the current completed-round streak."""
+    if not history:
+        return None, 0
+    last_type = history[-1].get("type")
+    if last_type not in ("BIG", "SMALL"):
+        return None, 0
+    count = 0
+    for row in reversed(history):
+        if row.get("type") != last_type:
+            break
+        count += 1
+    return last_type, count
+
+
+def format_streak_telegram(latest, streak_type, streak_count):
+    """Pure formatter for the long-streak Telegram notification."""
+    icon = "🔴" if streak_type == "BIG" else "🔵"
+    label = "BIG (B)" if streak_type == "BIG" else "SMALL (S)"
+    short_issue = str((latest or {}).get("short_issue") or (latest or {}).get("issue") or "")[-6:]
+    block_time = str((latest or {}).get("block_time") or "")
+    return (
+        "[STREAK ALERT]\n"
+        f"{icon} {label} × {int(streak_count)} CONSECUTIVE\n\n"
+        f"Current Streak: {int(streak_count)} rounds\n"
+        f"Latest Issue: …{short_issue}\n"
+        f"Latest Result: {streak_type}\n"
+        f"Time: {block_time or '—'}\n\n"
+        f"Status: 🔥 {label} has continued for {int(streak_count)} rounds."
+    )
+
 
 def rsi_alert_state(r_now, up_lv, dn_lv, armed_up, armed_down,
                     up_ts, down_ts, now_ts, remind_sec=TG_REMIND_SEC):
@@ -1016,6 +1054,9 @@ def engine_loop():
     global tg_armed_up, tg_armed_down, _tg_up_ts, _tg_down_ts
     global radar_armed_up, radar_armed_down
     global strat_state, strat_pending
+    # Notification-only dedupe: engine already processes each fresh issue once;
+    # this additionally guarantees one streak message per issue in this process.
+    last_streak_alert_issue = None
     # ---- tail-mode polling state (local to engine thread) ----
     all_rows = []          # persistent parsed rows (newest at end)
     seen_issues = set()
@@ -1101,6 +1142,19 @@ def engine_loop():
                         next_issue = str(latest["issue_int"] + 1) if latest["issue_int"] > 0 else "NEXT"
 
                         analysis = analyze_all_in_one(parsed_history)
+
+                        # ---- 🔥 BIG/SMALL LONG-STREAK TELEGRAM ALERT ----
+                        # Notification only: 8 first, then every fresh continuation 9,10,11,...
+                        streak_type, streak_count = consecutive_bs_streak(parsed_history)
+                        if (streak_type in ("BIG", "SMALL")
+                                and streak_count >= TG_STREAK_ALERT_FROM
+                                and latest["issue"] != last_streak_alert_issue):
+                            tg_notify(format_streak_telegram(latest, streak_type, streak_count))
+                            last_streak_alert_issue = latest["issue"]
+                            print(
+                                f"[STREAK] {streak_type} x{streak_count} @ …{latest['short_issue']}",
+                                flush=True,
+                            )
 
                         # ---- ⚠️ PRE-SIGNAL RADAR (RSI 40/60 · hysteresis 45/55) ----
                         # 33/67 trading signal မလာခင် ကြိုပြင်ဆင်ဖို့ radar။
