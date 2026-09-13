@@ -15,8 +15,9 @@ for token in [
     assert token in chart, token
 
 # Flat aggregated candles are neutral, never bearish momentum.
-assert 'bars[i].c > bars[i].o ? 1 : bars[i].c < bars[i].o ? -1 : 0' in chart
-assert 'if (dir === 0) { flushRun(); rd = 0; rl = 0; rEnd = -1; continue; }' in chart
+compact = ''.join(chart.split())
+assert 'bars[i].c>bars[i].o?1:bars[i].c<bars[i].o?-1:0' in compact
+assert 'if(dir===0){flushRun();rd=0;rl=0;rEnd=-1;continue;}' in compact
 
 # Rebuild fingerprint notices corrections to recent rows, not only len/last issue.
 assert 'const tailFingerprint = hist.slice(-3)' in chart
