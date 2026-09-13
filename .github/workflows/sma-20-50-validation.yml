@@ -1,0 +1,53 @@
+name: SMA 20 50 Validation
+
+on:
+  push:
+    branches: [sma-20-50-indicator-20260913]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sma-20-50-indicator-20260913
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply SMA patch
+        run: python phase16_sma_patch.py
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+      - name: Syntax checks
+        run: |
+          python -m py_compile app.py app_core.py decision.py robust_engine.py robust_integration.py drawings_persistence.py
+          node --check static/js/app.js
+          node --check static/js/chart.js
+          node --check static/js/draw.js
+      - name: Python regression suite
+        run: |
+          for f in tests_*.py; do
+            echo "== $f =="
+            python "$f"
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install Playwright
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Browser E2E
+        run: npm run test:e2e
+      - name: Commit passing SMA implementation
+        run: |
+          git config user.name "sharedbyatt-maker"
+          git config user.email "sharedbyatt@gmail.com"
+          git add static/js/chart.js templates/index.html e2e/chart.spec.js tests_sma_indicator.py
+          git commit -m "Add SMA 20 and SMA 50 chart indicator" || true
+          git push origin HEAD:sma-20-50-indicator-20260913
