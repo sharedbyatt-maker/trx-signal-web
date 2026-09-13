@@ -23,12 +23,11 @@ new = '''    def _forward_robust_events(self):
         # signal/risk/state logic remains completely unchanged.
         self.engine.drain_notification_events()
 '''
-if old not in s:
-    raise SystemExit('Robust Telegram forwarding block not found')
-p.write_text(s.replace(old, new, 1), encoding='utf-8')
+if old in s:
+    p.write_text(s.replace(old, new, 1), encoding='utf-8')
+elif new not in s:
+    raise SystemExit('Expected Robust Telegram forwarding block not found')
 
-# Existing Robust regression expected the old bridge to send one Telegram.
-# Update only that expectation; financial/state assertions remain intact.
 q = Path('tests_robust.py')
 t = q.read_text(encoding='utf-8')
 t = t.replace('def test_telegram_bridge_reuses_core_sender_and_isolation():',
