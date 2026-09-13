@@ -12,8 +12,12 @@ for token in [
     "const breakoutClear = Math.max(0.4, Math.min(3.5, scale * 0.45))",
     "return Math.max(0.65, Math.min(6.0, scale * 1.15))",
 ]: assert token in s, token
-assert "Math.abs(L.v - R.v) <= patternTol * 1.5" in s
-assert "pc <= res.v + breakoutNear && c.c > res.v + breakoutClear" in s
-assert "pc >= sup.v - breakoutNear && c.c < sup.v - breakoutClear" in s
+compact=''.join(s.split())
+# H&S shoulder tolerance remains scale-aware under Pattern Engine v2.
+assert 'constshoulderTol=Math.max(patternTol,scale*.9)' in compact
+assert 'Math.abs(L.v-R.v)>shoulderTol*1.6' in compact
+# Breakout thresholds still use normalized near/clear values.
+assert 'pc<=res.v+breakoutNear&&c.c>res.v+breakoutClear' in compact
+assert 'pc>=sup.v-breakoutNear&&c.c<sup.v-breakoutClear' in compact
 for f in ["decision.py","robust_engine.py","app_core.py","drawings_persistence.py"]: assert Path(f).exists()
 print("Multi-TF Normalization contract OK")
