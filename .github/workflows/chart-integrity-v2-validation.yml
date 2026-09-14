@@ -1,0 +1,46 @@
+name: Chart Analysis Integrity v2 Validation
+on:
+  push:
+    branches: [chart-analysis-integrity-v2-20260914]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chart-analysis-integrity-v2-20260914
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply integrity patch
+        run: python chart_integrity_v2_patch.py
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Syntax checks
+        run: |
+          python -m py_compile app.py app_core.py decision.py robust_engine.py robust_integration.py robust_audit.py tests_chart_integrity_v2.py
+          node --check static/js/chart.js
+          node tests_chart_integrity_v2.js
+      - name: Focused integrity tests
+        run: pytest -q tests_chart_integrity_v2.py tests_chart_history_10d.py
+      - name: Full chart regressions
+        run: pytest -q tests_engine.py tests_robust.py tests_deep_audit.py tests_daily12.py tests_streak_alert.py tests_sma_indicator.py tests_chart_correctness_v2.py tests_multi_tf_normalization.py tests_chart_performance_v2.py tests_chart_latency_v2.py tests_pattern_engine_v2.py tests_timeframe_v2.py tests_crosshair_sync_v2.py tests_fast_live_indicators_v2.py tests_trendline_v2.py tests_sr_v2.py tests_fibonacci_v2.py tests_drawing_v2.py
+      - name: Install Playwright
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Browser E2E
+        run: npx playwright test
+      - name: Commit passing implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/js/chart.js templates/index.html e2e/chart.spec.js tests_chart_integrity_v2.js tests_chart_integrity_v2.py
+          git diff --cached --quiet || git commit -m "Implement Chart Analysis Integrity v2"
+          git push
