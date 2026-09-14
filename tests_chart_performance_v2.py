@@ -8,7 +8,7 @@ for token in [
     "function seedLiveIndicators(closes, computed = null)",
     "ema12: macd.emaFast.at(-1)",
     "const macdCalc = calcMacd(closes, 12, 26, 9)",
-    "const stochCalc = calcStoch(closes, 14, 3, 3)",
+    "const stochCalc = calcStoch(curBars, 14, 3, 3)",
     "seedLiveIndicators(closes, { ema5, ema15, ema100, rsi: rsiArr, macd: macdCalc, stoch: stochCalc })",
     "function scheduleDrawRedraw()",
     "let resizeRaf = 0",
