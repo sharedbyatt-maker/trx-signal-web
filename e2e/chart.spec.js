@@ -39,6 +39,15 @@ test('switches true timeframes and keeps the chart alive', async ({ page }) => {
   }
 });
 
+test('chart clearly discloses synthetic model and HLC stochastic', async ({ page }) => {
+  await waitForChart(page);
+  await expect(page.locator('#chart-model-note')).toContainText('NOT TRX MARKET PRICE');
+  await page.locator('#ind-toggle-btn').click();
+  await page.locator('#stoch-toggle').check();
+  await expect(page.locator('#stoch-pane')).not.toHaveClass(/off/);
+  await expect(page.locator('#stoch-pane')).toContainText('STOCH H/L/C 14·3·3');
+});
+
 test('history range presets expose the full-history navigation controls', async ({ page }) => {
   await waitForChart(page);
   await expect(page.locator('#chart-meta')).not.toHaveText('loading…');

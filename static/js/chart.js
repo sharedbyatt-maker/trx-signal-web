@@ -175,19 +175,23 @@ window.TRXChart = (() => {
     return out;
   }
 
-  function calcStoch(closes, period = 14, kSmooth = 3, dSmooth = 3) {
-    const raw = new Array(closes.length).fill(null);
-    for (let i = period - 1; i < closes.length; i++) {
+  function calcStoch(bars, period = 14, kSmooth = 3, dSmooth = 3) {
+    // Standard Stochastic Oscillator: current close relative to the highest
+    // HIGH / lowest LOW over the lookback. This replaces the old close-only
+    // walk oscillator while preserving 14,3,3 smoothing.
+    const raw = new Array(bars.length).fill(null);
+    for (let i = period - 1; i < bars.length; i++) {
       let hh = -Infinity, ll = Infinity;
       for (let j = i - period + 1; j <= i; j++) {
-        if (closes[j] > hh) hh = closes[j];
-        if (closes[j] < ll) ll = closes[j];
+        if (bars[j].h > hh) hh = bars[j].h;
+        if (bars[j].l < ll) ll = bars[j].l;
       }
-      raw[i] = hh === ll ? 50 : ((closes[i] - ll) / (hh - ll)) * 100;
+      const close = bars[i].c;
+      raw[i] = hh === ll ? 50 : ((close - ll) / (hh - ll)) * 100;
     }
     const k = smaArr(raw, kSmooth);
     const d = smaArr(k, dSmooth);
-    return { k, d };
+    return { raw, k, d };
   }
 
   function seedLiveIndicators(closes, computed = null) {
@@ -197,7 +201,7 @@ window.TRXChart = (() => {
     const ema100 = computed?.ema100 || calcEma(closes, 100);
     const rsi = computed?.rsi || calcRsi(closes, 14);
     const macd = computed?.macd || calcMacd(closes, 12, 26, 9);
-    const st = computed?.stoch || calcStoch(closes, 14, 3, 3);
+    const st = computed?.stoch || calcStoch(curBars, 14, 3, 3);
 
     // Wilder RSI state, seeded exactly like calcRsi().
     let ag = null, al = null;
@@ -223,13 +227,7 @@ window.TRXChart = (() => {
       stochRaw: [], stochK: [],
       lastClose: closes.at(-1), count: closes.length,
     };
-    const raw = new Array(closes.length).fill(null);
-    for (let i = 13; i < closes.length; i++) {
-      let hh=-Infinity,ll=Infinity;
-      for (let j=i-13;j<=i;j++){ if(closes[j]>hh)hh=closes[j]; if(closes[j]<ll)ll=closes[j]; }
-      raw[i]=hh===ll?50:((closes[i]-ll)/(hh-ll))*100;
-    }
-    liveInd.stochRaw = raw.slice(-3).filter((v)=>v!=null);
+    liveInd.stochRaw = (st.raw || []).slice(-3).filter((v)=>v!=null);
     liveInd.stochK = st.k.slice(-3).filter((v)=>v!=null);
     curRsiValues = rsi.slice();
     curMacdValues = macd.macd.slice();
@@ -308,8 +306,9 @@ window.TRXChart = (() => {
     if (opts.macd) updateMacdLegend(macdVal);
 
     let raw=null,kVal=null,dVal=null;
-    if (closes.length>=14) {
-      const tail=closes.slice(-14), hh=Math.max(...tail), ll=Math.min(...tail);
+    if (curBars.length>=14) {
+      const tail=curBars.slice(-14);
+      const hh=Math.max(...tail.map((b)=>b.h)), ll=Math.min(...tail.map((b)=>b.l));
       raw=hh===ll?50:((close-ll)/(hh-ll))*100;
       liveInd.stochRaw.push(raw); if(liveInd.stochRaw.length>3)liveInd.stochRaw.shift();
       if(liveInd.stochRaw.length===3) kVal=liveInd.stochRaw.reduce((a,b)=>a+b,0)/3;
@@ -403,6 +402,16 @@ window.TRXChart = (() => {
   }
 
   /* ================= pivots & structure ================= */
+  function structuralLookbackBars(available, tfMinutes = group) {
+    const tf = Math.max(1, Number(tfMinutes) || 1);
+    // 1m: use 3 days (4,320 bars) to deepen structure context without
+    // rescanning all ~14,400 ten-day bars every authoritative refresh.
+    // 5m/15m/1h: the full 10-day buffer is small enough to analyze directly.
+    const days = tf === 1 ? 3 : 10;
+    const wanted = Math.ceil(days * 1440 / tf);
+    return Math.max(0, Math.min(Number(available) || 0, wanted));
+  }
+
   function structureScale(bars, lookback = 180) {
     const tail = (bars || []).slice(-lookback);
     if (!tail.length) return 1.0;
@@ -612,7 +621,7 @@ window.TRXChart = (() => {
     const minSwing = Math.max(2.5, scale * 2.0);
     const breakoutNear = Math.max(0.3, Math.min(2.5, scale * 0.25));
     const breakoutClear = Math.max(0.4, Math.min(3.5, scale * 0.45));
-    const from = Math.max(0, n - 500);
+    const from = Math.max(0, n - structuralLookbackBars(n));
     const hh = ph.filter((p) => p.i >= from);
     const ll = pl.filter((p) => p.i >= from);
     const recencyScore = (i) => Math.max(0, 12 - (n-1-i)/35);
@@ -800,7 +809,7 @@ window.TRXChart = (() => {
   }
 
   function srLevels(bars, maxLevels = 6) {
-    const lim = bars.slice(-2500);
+    const lim = bars.slice(-structuralLookbackBars(bars.length));
     if (lim.length < 25) return [];
     const close = lim[lim.length - 1].c;
     const tol = srAdaptiveTolerance(lim);
@@ -1469,7 +1478,7 @@ window.TRXChart = (() => {
     const sma50 = smaArr(closes, 50);
     const rsiArr = calcRsi(closes, 14);
     const macdCalc = calcMacd(closes, 12, 26, 9);
-    const stochCalc = calcStoch(closes, 14, 3, 3);
+    const stochCalc = calcStoch(curBars, 14, 3, 3);
     seedLiveIndicators(closes, { ema5, ema15, ema100, rsi: rsiArr, macd: macdCalc, stoch: stochCalc });
 
     emaFastSeries.setData(linePoints(ema5));
@@ -1494,9 +1503,9 @@ window.TRXChart = (() => {
     bbLowerSeries.applyOptions({ visible: opts.bb });
 
     // ---- structure: pivots -> trendlines -> patterns -> S/R ----
-    // FIX: compute fractal pivots on a tail window only — full-history scans
-    // (up to ~30k bars) made every refresh sluggish without adding signals.
-    const TAIL = Math.min(curBars.length, 1500);
+    // Analysis Integrity v2: adaptive structural window. 1m uses the latest
+    // 3 days; higher timeframes can safely use the full 10-day chart buffer.
+    const TAIL = structuralLookbackBars(curBars.length);
     const tailStart = curBars.length - TAIL;
     const tailBars = curBars.slice(tailStart);
     const pivRaw = findPivots(tailBars, PIVOT_K);
@@ -1694,5 +1703,6 @@ window.TRXChart = (() => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
       catch (e) { return null; }
     },
+    _qa: { calcStoch, structuralLookbackBars },
   };
 })();
