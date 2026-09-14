@@ -1067,8 +1067,11 @@ def engine_loop():
     while True:
         poll_started = time.monotonic()
         try:
-            url = URL_DATA if not have_full else URL_DATA + f"?limit={TAIL_LIMIT}"
-            timeout_sec = 15 if not have_full else 6
+            # Do not rely on the upstream bare-endpoint default size. Request an
+            # explicit deep snapshot so the 10-day chart cannot silently collapse
+            # to a small provider default after an upstream behavior change.
+            url = (URL_DATA + f"?limit={MAX_FULL_ROWS}") if not have_full else URL_DATA + f"?limit={TAIL_LIMIT}"
+            timeout_sec = 30 if not have_full else 6
             res = session.get(
                 url, timeout=timeout_sec,
                 headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})

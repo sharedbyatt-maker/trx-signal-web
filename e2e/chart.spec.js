@@ -39,6 +39,16 @@ test('switches true timeframes and keeps the chart alive', async ({ page }) => {
   }
 });
 
+test('history range presets expose the full-history navigation controls', async ({ page }) => {
+  await waitForChart(page);
+  await expect(page.locator('#chart-meta')).not.toHaveText('loading…');
+  for (const d of ['3', '10', '1']) {
+    await page.locator(`.hist-range-btn[data-days="${d}"]`).click();
+    await expect(page.locator(`.hist-range-btn[data-days="${d}"]`)).toHaveClass(/active/);
+    await expect(page.locator('#tv-chart canvas').first()).toBeVisible();
+  }
+});
+
 test('indicator controls independently open and toggle panes', async ({ page }) => {
   await waitForChart(page);
   await expect(page.locator('#ind-bar')).toHaveClass(/collapsed/);

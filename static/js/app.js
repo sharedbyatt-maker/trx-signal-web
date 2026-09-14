@@ -11,7 +11,9 @@ const HIST_REFETCH_MS = 45000;
 function mergeRows(a, b) {
   const m = new Map();
   (a || []).forEach((r) => m.set(r.issue, r));
-  (b || []).forEach((r) => { if (!m.has(r.issue)) m.set(r.issue, r); });
+  // Newer/server-authoritative copies win. This also lets corrected historical
+  // rows replace stale browser copies instead of being silently masked.
+  (b || []).forEach((r) => m.set(r.issue, r));
   return [...m.values()].sort((x, y) => (x.issue < y.issue ? -1 : x.issue > y.issue ? 1 : 0));
 }
 
@@ -34,18 +36,23 @@ async function fetchFullHistory(force) {
       type: number >= 5 ? "BIG" : "SMALL",
     }));
     if (inc.length) {
-      fullRows = mergeRows(fullRows, inc);
+      // A forced fetch is a fresh authoritative 10-day snapshot, not an append.
+      // Incremental fetches append/replace by issue.
+      fullRows = force ? mergeRows([], inc) : mergeRows(fullRows, inc);
       if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
-    } else if (!force && !inc.length && data.incremental) {
-      /* server has nothing newer (or was restarted with a shorter buffer):
-         force one full refetch on the next cycle */
+    } else {
+      // Initial page load can beat the background engine. Do not lock the chart
+      // into the small /api/state fallback for 45 seconds; allow the next refresh
+      // to retry the full history immediately.
       lastHistFetch = 0;
     }
     if (data.last_time) lastResultTime = data.last_time;
     else if (fullRows.length) lastResultTime = fullRows[fullRows.length - 1].block_time;
     const metaEl = $("chart-meta");
-    if (metaEl && data.meta) {
-      metaEl.textContent = `${(data.meta.count || fullRows.length).toLocaleString("en-US")} rounds · ${data.meta.days}d loaded`;
+    if (metaEl) {
+      const days = data.meta && data.meta.days ? data.meta.days : 10;
+      metaEl.textContent = `${fullRows.length.toLocaleString("en-US")} rounds · ${days}D BUFFER`;
+      metaEl.title = `Loaded chart history: ${fullRows.length.toLocaleString("en-US")} rounds`;
     }
   } catch (e) {
     /* keep old buffer on failure */

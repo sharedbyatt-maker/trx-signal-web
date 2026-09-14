@@ -1063,7 +1063,7 @@ window.TRXChart = (() => {
         visible: true,
         rightOffset: 3,
         barSpacing: 7,
-        minBarSpacing: 0.5,
+        minBarSpacing: 0.02,
         shiftVisibleRangeOnNewBar: true,
         ticksVisible: true,
         secondsVisible: false,
@@ -1343,6 +1343,13 @@ window.TRXChart = (() => {
     });
     const activeTf = document.querySelector(".tf-btn.active[data-g]");
     if (activeTf) { const tf = $("lg-tf"); if (tf) tf.textContent = activeTf.textContent; }
+    document.querySelectorAll(".hist-range-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".hist-range-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        setHistoryRange(Number(btn.dataset.days) || 1);
+      });
+    });
     const fitBtn = $("fit-btn");
     if (fitBtn) fitBtn.addEventListener("click", () => {
       [chart, rsiChart, macdChart, stochChart].forEach((c) => {
@@ -1399,13 +1406,22 @@ window.TRXChart = (() => {
     srRescanNeeded = true;   // re-cluster S/R for the new timeframe
   }
 
-  function anchorRecent(n) {
-    const span = Math.min(Math.max(Math.round(320 / group), 60), n);
-    const range = { from: Math.max(1, n - span), to: n + 4 };
+  function setHistoryRange(days = 1) {
+    const n = curBars.length;
+    if (!n) return false;
+    const wanted = Math.max(1, Math.ceil((Number(days) || 1) * 1440 / Math.max(1, group)));
+    const from = Math.max(1, n - wanted + 1);
+    const range = { from, to: n + 4 };
     [chart, rsiChart, macdChart, stochChart].forEach((c) => {
       if (!c) return;
       try { c.timeScale().setVisibleLogicalRange(range); } catch (e) { /* noop */ }
     });
+    return true;
+  }
+
+  function anchorRecent() {
+    // Default analytical view: one full day, not the old ~320-bar (~5h) slice.
+    setHistoryRange(1);
   }
 
   /* ================= main update ================= */
@@ -1558,7 +1574,7 @@ window.TRXChart = (() => {
     if (curBars.length > 5) {
       const bigJump = curBars.length - lastLen > 500;
       if (!fittedOnce || bigJump) {
-        anchorRecent(curBars.length);
+        anchorRecent();
         fittedOnce = true;
       } else if (prevRange) {
         // restore exactly where the user was (prevents jump on every refresh)
@@ -1673,7 +1689,7 @@ window.TRXChart = (() => {
   }
 
   return {
-    update, appendLatest, autoSR, toggleSignals,
+    update, appendLatest, autoSR, toggleSignals, setHistoryRange,
     _view: () => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
       catch (e) { return null; }

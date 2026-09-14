@@ -9,6 +9,7 @@ import os
 import statistics
 import threading
 import time
+from urllib.parse import parse_qs, urlparse
 from collections import Counter
 from datetime import datetime
 
@@ -142,11 +143,25 @@ def _recovery_fetch(previous_issue):
     return None
 
 
+def _feed_limit(url_s):
+    try:
+        raw = parse_qs(urlparse(str(url_s)).query).get("limit", [None])[0]
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_live_tail_url(url_s):
+    """Only small bounded polling requests get tail timeouts/cache rescue."""
+    limit = _feed_limit(url_s)
+    return str(url_s).startswith(core.URL_DATA) and limit is not None and limit <= max(500, int(getattr(core, "TAIL_LIMIT", 50)))
+
+
 def _resilient_session_get(url, *args, **kwargs):
     """Freshness-aware upstream fetch with active stale-feed recovery."""
     url_s = str(url)
     is_feed = url_s.startswith(core.URL_DATA)
-    is_tail = is_feed and "?limit=" in url_s
+    is_tail = _is_live_tail_url(url_s)
     actual_url = url_s
 
     if is_tail:
