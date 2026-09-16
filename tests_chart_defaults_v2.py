@@ -9,7 +9,7 @@ def test_chart_defaults():
     assert 'id="sig-btn"' in html and 'active" id="sig-btn"' not in html
     assert 'id="sr-toggle">' in html and 'id="sr-toggle" checked' not in html
     assert 'rsi: true, sig: false' in js
-    assert 'pat: true, sr: false' in js
+    assert 'pat: false, sr: false, tl: false' in js
     assert 'function setHistoryRange(days = 10)' in js
-    assert 'setHistoryRange(10);' in js
+    assert 'group === 1 ? 320' in js
     assert 'srBtn.classList.remove("active")' in app
