@@ -43,8 +43,8 @@ window.TRXChart = (() => {
   let group = 1;
   let viewMode = "candles";   // candles | line
   let opts = {
-    ema: true, sma: false, bb: false, rsi: true, sig: true,
-    pat: true, sr: true, tl: true, macd: false, stoch: false,
+    ema: true, sma: false, bb: false, rsi: true, sig: false,
+    pat: true, sr: false, tl: true, macd: false, stoch: false,
   };
 
   /* S/R level cache — levels must NOT drift on every data tick */
@@ -1415,10 +1415,10 @@ window.TRXChart = (() => {
     srRescanNeeded = true;   // re-cluster S/R for the new timeframe
   }
 
-  function setHistoryRange(days = 1) {
+  function setHistoryRange(days = 10) {
     const n = curBars.length;
     if (!n) return false;
-    const wanted = Math.max(1, Math.ceil((Number(days) || 1) * 1440 / Math.max(1, group)));
+    const wanted = Math.max(1, Math.ceil((Number(days) || 10) * 1440 / Math.max(1, group)));
     const from = Math.max(1, n - wanted + 1);
     const range = { from, to: n + 4 };
     [chart, rsiChart, macdChart, stochChart].forEach((c) => {
@@ -1429,8 +1429,8 @@ window.TRXChart = (() => {
   }
 
   function anchorRecent() {
-    // Default analytical view: one full day, not the old ~320-bar (~5h) slice.
-    setHistoryRange(1);
+    // Default analytical view: full loaded 10-day history.
+    setHistoryRange(10);
   }
 
   /* ================= main update ================= */

@@ -485,10 +485,9 @@ document.addEventListener("fullscreenchange", () => {
 });
 
 /* Auto S/R toggle (find & show / hide) + signal arrows toggle */
-/* Auto S/R toggle (find & show / hide) + signal arrows toggle */
 const srBtn = $("sr-find-btn");
 if (srBtn) {
-  srBtn.classList.add("active");   // S/R checkbox defaults to ON
+  srBtn.classList.remove("active"); // Auto S/R defaults to OFF
   srBtn.addEventListener("click", () => {
     if (window.TRXChart && TRXChart.autoSR) {
       const r = TRXChart.autoSR();
