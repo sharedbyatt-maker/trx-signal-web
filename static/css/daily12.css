@@ -20,3 +20,29 @@
 .stake-bottom{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-top:8px;padding-top:7px;border-top:1px solid rgba(120,130,150,.13);color:#7f899d;font-size:9px;letter-spacing:.45px}
 .stake-bottom span{min-width:0}.stake-bottom b{color:#cbd3e2;font-size:10px;font-weight:600;letter-spacing:0;overflow-wrap:anywhere}
 @media(max-width:700px){.daily12-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.d12-activity-row{grid-template-columns:auto auto minmax(0,1fr);}.d12-activity-row>span:nth-last-child(-n+2){display:none}.daily12-history>div{grid-template-columns:.9fr 1.4fr 1fr}.daily12-history>div span:nth-child(3){display:none}.stake-bottom{align-items:flex-start;flex-direction:column;gap:5px}.stake-meta-grid>div{grid-template-columns:60px minmax(0,1fr)}}
+
+
+/* v47 decision-card hierarchy */
+.stake-card{border-color:#2b3b55;background:linear-gradient(180deg,rgba(52,120,246,.03),transparent 48%),#111a29}
+.stake-card .card-title{color:#dce5f3;font-size:12px}
+.stake-mode{padding:4px 9px;background:#0e1725;font-size:8px}
+.stake-signal-hero{min-height:64px;padding:11px 13px;border-color:#30415e;background:linear-gradient(100deg,rgba(52,120,246,.12),rgba(52,120,246,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.stake-signal-hero.armed{border-color:#3478f6;box-shadow:0 0 0 1px rgba(52,120,246,.22),0 8px 24px rgba(52,120,246,.09)}
+.stake-hero-dir{font-size:22px;letter-spacing:.5px;color:#edf3fd}
+.stake-hero-issue{font-size:9px}
+.stake-meta-grid{border-color:#29384f;background:#29384f}
+.stake-meta-grid>div{grid-template-columns:78px minmax(0,1fr);padding:8px 10px;background:#131e2e}
+.stake-meta-grid>div>span{font-size:8.5px;color:#8997ad}
+.stake-meta-grid>div>b{font-size:10.5px;color:#e0e7f3}
+.stake-rule{background:#0f1928;border:1px solid rgba(52,120,246,.10);color:#8f9eb4}
+.stake-bottom{color:#8290a6}
+.daily12-card{border-color:#26364d}
+.daily12-grid{gap:7px}
+.daily12-grid>div{padding:10px;background:#172233;border:1px solid rgba(45,61,85,.38)}
+.daily12-grid small{font-size:8px;color:#8794a9;opacity:1}
+.daily12-grid b{font-size:12px;color:#e0e7f3}
+.daily12-grid .daily12-focus{background:rgba(19,184,154,.07);border-color:rgba(19,184,154,.22)}
+@media(max-width:700px){
+  .stake-meta-grid>div{grid-template-columns:66px minmax(0,1fr)}
+  .stake-hero-dir{font-size:19px}
+}

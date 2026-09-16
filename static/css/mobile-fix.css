@@ -306,3 +306,20 @@
   .stat-grid { grid-template-columns: 1fr; }
   .stat.wide { grid-column: span 1; }
 }
+
+/* v47 responsive polish */
+@media(max-width:700px){
+  header{min-height:auto;padding:9px 11px}
+  .brand h1{font-size:13px}
+  .sub{max-width:72vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ticker{padding:8px 10px}
+  .tk-item{min-width:103px;padding:6px 9px}
+  main{padding:10px 8px 22px}
+  .side-stack{display:flex;gap:10px}
+  .chart-card>.card-title-row{padding:11px 12px}
+  .chart-card .card-title{align-items:flex-start;flex-direction:column;gap:6px}
+  .chart-toolbar{width:100%;flex-wrap:nowrap}
+  .tv-wrap,.chart-time-bar,.chart-strip,.digit-panel{margin-left:8px;margin-right:8px}
+  #tv-chart{height:420px}
+  .ctx-grid>div{grid-template-columns:110px minmax(0,1fr)}
+}
