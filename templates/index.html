@@ -54,9 +54,9 @@
         <button class="tf-btn" data-g="60">1h</button>
         <span class="tb-sep"></span>
         <span class="tb-group-label">RANGE</span>
-        <button class="tf-btn hist-range-btn active" data-days="1" title="နောက်ဆုံး 1 ရက်">1D</button>
+        <button class="tf-btn hist-range-btn" data-days="1" title="နောက်ဆုံး 1 ရက်">1D</button>
         <button class="tf-btn hist-range-btn" data-days="3" title="နောက်ဆုံး 3 ရက်">3D</button>
-        <button class="tf-btn hist-range-btn" data-days="10" title="10-day history အကုန်">10D</button>
+        <button class="tf-btn hist-range-btn active" data-days="10" title="10-day history အကုန်">10D</button>
         <span class="tb-group-label mono" id="chart-meta" title="Loaded chart history">loading…</span>
         <button class="tf-btn fit" id="fit-btn" title="Chart အားလုံး ကျယ်ကျယ် မြင်ရန်">FIT</button>
         <button class="tf-btn" id="zoom-in-btn" title="Zoom In (+)">＋</button>
@@ -68,7 +68,7 @@
           <svg viewBox="0 0 24 24" class="btn-ico"><circle cx="10.5" cy="10.5" r="6"/><line x1="15" y1="15" x2="20" y2="20"/></svg>
           S/R
         </button>
-        <button class="tf-btn active" id="sig-btn" title="Signal arrows ဖွင့်/ပိတ်">
+        <button class="tf-btn" id="sig-btn" title="Signal arrows ဖွင့်/ပိတ်">
           <svg viewBox="0 0 24 24" class="btn-ico"><path d="M12 4l5 8h-3v7h-4v-7H7z" fill="currentColor" stroke="none"/></svg>
           SIG
         </button>
@@ -88,7 +88,7 @@
       <span class="tb-sep"></span>
       <span class="tb-group-label">OVERLAYS</span>
       <label class="chart-toggle"><input type="checkbox" id="tl-toggle" checked> Trend</label>
-      <label class="chart-toggle"><input type="checkbox" id="sr-toggle" checked> S/R</label>
+      <label class="chart-toggle"><input type="checkbox" id="sr-toggle"> S/R</label>
       <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle" checked> Patterns</label>
     </div>
 
@@ -170,53 +170,54 @@
       <div class="counts" id="counts">—</div>
     </div>
     <div class="digit-panel mono">
-      <div class="digit-head">
-        <span class="dd-title">🔢 DIGIT DISTRIBUTION</span>
-        <span class="dd-sub" title="နောက်ဆုံး 500 rounds ထဲမှာ digit တစ်ခုစီ ထွက်ခဲ့တဲ့ ရာခိုင်နှုန်း">last 500 rounds · 10% = balanced</span>
-        <span class="dd-legend">
-          <span class="dd-dot big"></span>BIG 5–9
-          <span class="dd-dot small"></span>SMALL 0–4
-        </span>
-      </div>
-      <div class="digit-dist" id="digit-dist"></div>
+      <div class="digit-title">DIGIT DISTRIBUTION · LAST 100</div>
+      <div class="digit-grid" id="digit-grid"></div>
     </div>
   </section>
 
-  <aside class="side-col">
-    <section class="card ctx-card" id="context-card">
-      <div class="card-title">🧭 MARKET CONTEXT</div>
-      <div class="ctx-strip mono"><span class="ctx-k">TREND</span><span id="ctx-trend">—</span></div>
-      <div class="ctx-strip"><span class="ctx-label">MTF</span><span id="mtf-chip"></span></div>
-      <div class="ctx-strip"><span class="ctx-label">MARKOV</span><span id="mk-chip"></span></div>
-      <div class="ctx-strip"><span class="ctx-label">RSI 30D</span><span id="ctx-rsi30" title="နောက်ဆုံး 30 ရက်အတွင်း အမြင့်ဆုံး/အနိမ့်ဆုံး RSI (နှိပ်ပြီး ပြန်တွက်)">—</span></div>
-      <div class="ctx-strip"><span class="ctx-label">SCORE</span><span id="score-badge">score 0</span></div>
-      <div class="gauges" id="gauges"></div>
-      <div class="reason small" id="reason">Data စုဆောင်းနေဆဲ…</div>
-
-      <div class="stake-panel mono" id="stake-panel">
-        <div class="stake-title-row">
-          <span class="stake-title">🎰 12-STEP ENGINE</span>
-          <span class="stake-mode waiting" id="st-status">WAITING</span>
-          <span class="stake-badge" id="st-tier">T1</span>
-          <span class="stake-badge" id="st-step">S1</span>
-        </div>
-        <div class="stake-signal-hero" id="st-signal-hero">
-          <span class="stake-hero-dir" id="st-pending">waiting for valid setup…</span>
-          <span class="stake-hero-issue" id="st-target-issue">NO ACTIVE TARGET</span>
-        </div>
-        <div class="stake-detail-grid">
-          <div><small>STAKE</small><b id="st-stake">—</b></div>
-          <div><small>TRIGGER</small><b id="st-trigger">RSI 32 / 68</b></div>
-          <div><small>CONFIRM SOURCE</small><b id="st-source">—</b></div>
-          <div><small>LAST RESULT</small><b id="st-last">waiting…</b></div>
-        </div>
-        <div class="stake-foot"><span>12-STEP BUSTS <b id="st-busts">0</b></span><span id="st-rule">Prev RSI ≤32 + BIG / ≥68 + SMALL</span></div>
+  <aside class="side-stack">
+    <section class="card" id="context-card">
+      <div class="card-title-row"><div class="card-title">MARKET CONTEXT</div><span id="score-badge" class="ctx-val mono">score —</span></div>
+      <div class="ctx-grid">
+        <div><span class="ctx-label">TREND</span><span class="ctx-val mono" id="ctx-trend">—</span></div>
+        <div><span class="ctx-label">RSI 30D LOW/HIGH</span><span class="ctx-val mono" id="ctx-rsi30">—</span></div>
       </div>
+      <div class="gauges" id="gauges"></div>
+      <div class="reason mono" id="reason"></div>
+      <div class="ctx-chips"><span id="mtf-chip"></span><span id="mk-chip"></span></div>
+    </section>
 
-      <div class="daily12-panel mono" id="daily12-panel">
-        <div class="daily12-head"><span>📊 12-STEP DAILY REPORT</span><span id="d12-date">—</span></div>
+    <section class="card stake-card" id="stake-card">
+      <div class="card-title-row">
+        <div class="card-title">12-STEP SIGNAL</div>
+        <span class="stake-mode waiting" id="st-status">WAITING</span>
+      </div>
+      <div class="stake-signal-hero" id="st-signal-hero">
+        <div class="stake-hero-dir" id="st-pending">WAITING</div>
+        <div class="stake-hero-issue mono" id="st-target-issue">NO ACTIVE TARGET</div>
+      </div>
+      <div class="stake-meta-grid">
+        <div><span>STAKE</span><b class="mono" id="st-stake">—</b></div>
+        <div><span>LEVEL</span><b><span class="stake-badge" id="st-tier">T1</span> <span class="mono" id="st-step">S1</span></b></div>
+        <div><span>TRIGGER</span><b class="mono" id="st-trigger">Prev RSI ≤32 + BIG / ≥68 + SMALL</b></div>
+        <div><span>SOURCE</span><b class="mono" id="st-source">waiting for confirmation round…</b></div>
+      </div>
+      <div class="stake-rule mono">RULE · Prev RSI ≤32 + BIG → BIG · Prev RSI ≥68 + SMALL → SMALL</div>
+      <div class="stake-bottom">
+        <span>LAST <b id="st-last">No settled episode yet</b></span>
+        <span>BUSTS <b id="st-busts">0</b></span>
+      </div>
+    </section>
+
+    <section class="card daily12-card" id="daily12-card">
+      <div class="card-title-row">
+        <div class="card-title">12-STEP DAILY REPORT</div>
+        <span class="daily12-date mono" id="d12-date">—</span>
+      </div>
+      <div class="daily12-body">
         <div class="daily12-grid">
           <div><small>SIGNALS</small><b id="d12-signals">0</b></div>
+          <div><small>SETTLED BETS</small><b id="d12-bets">0</b></div>
           <div><small>BET W / L</small><b id="d12-wl">0 / 0</b></div>
           <div><small>BET WIN RATE</small><b id="d12-wr">0%</b></div>
           <div><small>EPISODE WR</small><b id="d12-episode-wr">0%</b></div>
@@ -250,9 +251,9 @@
 </footer>
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=47"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=48"></script>
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=41"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=46"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=47"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>
 </body>
 </html>
