@@ -1,0 +1,40 @@
+name: Chart UI Live v2 Validation
+on:
+  push:
+    branches: [chart-ui-live-v2-20260916]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chart-ui-live-v2-20260916
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python chart_ui_live_v2_patch.py
+      - run: pip install -r requirements.txt pytest
+      - name: Validate
+        run: |
+          python -m py_compile app.py app_core.py decision.py
+          node --check static/js/chart.js
+          node --check static/js/app.js
+          pytest -q tests_chart_ui_live_v2.py tests_chart_defaults_v2.py tests_chart_integrity_v2.py tests_chart_correctness_v2.py tests_multi_tf_normalization.py tests_chart_latency_v2.py tests_fast_live_indicators_v2.py tests_timeframe_v2.py tests_engine.py tests_robust.py tests_daily12.py
+      - name: Browser E2E
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - name: Commit passing implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/js/chart.js static/css/style.css templates/index.html tests_chart_ui_live_v2.py
+          git diff --cached --quiet || git commit -m "Compact chart UI and enable multi-TF fast live updates"
+          git push
