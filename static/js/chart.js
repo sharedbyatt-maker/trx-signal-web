@@ -44,7 +44,7 @@ window.TRXChart = (() => {
   let viewMode = "candles";   // candles | line
   let opts = {
     ema: true, sma: false, bb: false, rsi: true, sig: false,
-    pat: true, sr: false, tl: true, macd: false, stoch: false,
+    pat: false, sr: false, tl: false, macd: false, stoch: false,
   };
 
   /* S/R level cache — levels must NOT drift on every data tick */
@@ -1429,8 +1429,17 @@ window.TRXChart = (() => {
   }
 
   function anchorRecent() {
-    // Default analytical view: full loaded 10-day history.
-    setHistoryRange(10);
+    // RANGE 10D is the selected/data-loaded range, but do not crush ~14,400 1m
+    // bars into the first screen. Start with a readable recent window; 10D remains
+    // available via the selected RANGE button / FIT.
+    const n = curBars.length;
+    if (!n) return;
+    const visible = group === 1 ? 320 : group === 5 ? 288 : group === 15 ? 192 : 120;
+    const range = { from: Math.max(1, n - visible + 1), to: n + 4 };
+    [chart, rsiChart, macdChart, stochChart].forEach((c) => {
+      if (!c) return;
+      try { c.timeScale().setVisibleLogicalRange(range); } catch (e) { /* noop */ }
+    });
   }
 
   /* ================= main update ================= */
@@ -1649,32 +1658,65 @@ window.TRXChart = (() => {
      /api/latest updates the fresh candle plus EMA/RSI/MACD/Stoch immediately.
      The normal /api/state refresh remains the authoritative full reconciliation. */
   function appendLatest(row) {
-    if (!chart || group !== 1 || !row || !row.issue || !curBars.length) return false;
+    if (!chart || !row || !row.issue || !curBars.length) return false;
     const issue = String(row.issue);
     if (curLabelMap instanceof Map && curLabelMap.has(issue)) return true;
 
     const dir = row.type === "BIG" ? 1 : -1;
-    const open = curBars[curBars.length - 1].c;
-    const close = open + dir;
-    const time = curBars.length + 1;
-    const raw = { time, open, high: Math.max(open, close), low: Math.min(open, close), close };
+    const last = curBars[curBars.length - 1];
+    const close = last.c + dir;
+    let time = last.time;
+    let isNewBar = group === 1;
+
+    // Higher TFs use the same source block-time bucket rule as full aggregation.
+    // If parsing is unavailable, return false so authoritative /api/state renders it.
+    if (group > 1) {
+      const bt = String(row.block_time || row.blockTime || "");
+      const prevBt = String(curTimes[curTimes.length - 1] || "");
+      const parseMinute = (s) => {
+        const m = s.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::\d{2})?$/);
+        return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+      };
+      const curMin = parseMinute(bt), prevMin = parseMinute(prevBt);
+      if (curMin == null || prevMin == null) return false;
+      isNewBar = Math.floor(curMin / group) !== Math.floor(prevMin / group) || bt.slice(0,10) !== prevBt.slice(0,10);
+    }
+
+    let raw;
+    if (isNewBar) {
+      time = curBars.length + 1;
+      const open = last.c;
+      raw = { time, open, high: Math.max(open, close), low: Math.min(open, close), close };
+    } else {
+      raw = { time, open: last.o, high: Math.max(last.h, close), low: Math.min(last.l, close), close };
+    }
 
     try {
       candleSeries.update(raw);
       areaSeries.update({ time, value: close });
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
 
-    curBars.push({ time, o: open, h: raw.high, l: raw.low, c: close });
-    curCloses.push(close);
-    curLabels.push(row.short_issue || issue.slice(-6));
-    curTimes.push(row.block_time || row.hm || "");
-    curFulls.push(issue);
+    if (isNewBar) {
+      curBars.push({ time, o: raw.open, h: raw.high, l: raw.low, c: close });
+      curCloses.push(close);
+      curLabels.push(row.short_issue || issue.slice(-6));
+      curTimes.push(row.block_time || row.hm || "");
+      curFulls.push(issue);
+    } else {
+      curBars[curBars.length - 1] = { time, o: raw.open, h: raw.high, l: raw.low, c: close };
+      curCloses[curCloses.length - 1] = close;
+      curLabels[curLabels.length - 1] = row.short_issue || issue.slice(-6);
+      curTimes[curTimes.length - 1] = row.block_time || row.hm || curTimes[curTimes.length - 1];
+      curFulls[curFulls.length - 1] = issue;
+    }
     if (!(curLabelMap instanceof Map)) curLabelMap = new Map();
     curLabelMap.set(issue, time);
     lastLen = curBars.length;
-    try { updateLiveIndicators(close, time); } catch (e) { /* full state refresh will reconcile */ }
+    // Incremental indicator state is exact for a newly closed 1m bar. Higher-TF
+    // in-progress bars are reconciled by the normal /api/state refresh.
+    if (group === 1) {
+      try { updateLiveIndicators(close, time); } catch (e) { /* full state refresh will reconcile */ }
+    }
     updateLegend(curBars[curBars.length - 1]);
 
     if (window.TRXDraw && window.TRXDraw.onData) {

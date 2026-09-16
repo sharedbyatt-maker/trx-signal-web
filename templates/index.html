@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#131722">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=43">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=44">
 </head>
 <body>
 <header>
@@ -87,9 +87,9 @@
       <label class="chart-toggle"><input type="checkbox" id="stoch-toggle"> STOCH</label>
       <span class="tb-sep"></span>
       <span class="tb-group-label">OVERLAYS</span>
-      <label class="chart-toggle"><input type="checkbox" id="tl-toggle" checked> Trend</label>
+      <label class="chart-toggle"><input type="checkbox" id="tl-toggle"> Trend</label>
       <label class="chart-toggle"><input type="checkbox" id="sr-toggle"> S/R</label>
-      <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle" checked> Patterns</label>
+      <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle"> Patterns</label>
     </div>
 
     <div class="draw-tools collapsed" id="draw-tools">
@@ -251,7 +251,7 @@
 </footer>
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=48"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=49"></script>
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=47"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>

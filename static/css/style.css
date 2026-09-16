@@ -2,3 +2,14 @@
 @import url("./mobile-fix.css");
 
 @import url("daily12.css");
+
+/* Compact terminal typography guard — preserve the original dense desktop scale. */
+html { font-size: 16px; }
+body { font-size: 12px; }
+button, input, select, textarea { font: inherit; }
+.tf-btn { font-size: 10px; }
+.chart-toggle { font-size: 10px; }
+@media (max-width: 600px) {
+  body { font-size: 11px; }
+  .tf-btn { font-size: 10px; }
+}
