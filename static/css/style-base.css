@@ -9,8 +9,8 @@
   --red: #f23645;
   --blue: #2962ff;
   --orange: #ff9800;
-  --font-ui: "Segoe UI", "Myanmar Text", "Padauk", "Noto Sans Myanmar", Tahoma, sans-serif;
-  --font-mono: "Cascadia Mono", Consolas, "Segoe UI Symbol", "Myanmar Text", "Courier New", monospace;
+  --font-ui: "Inter", "Noto Sans Myanmar", "Myanmar Text", "Padauk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Noto Sans Myanmar", "Cascadia Mono", Consolas, monospace;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,6 +36,7 @@ body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "kern" 1, "liga" 1;
 }
 
 /* ---------- header ---------- */
