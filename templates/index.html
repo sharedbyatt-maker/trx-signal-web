@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=45">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=46">
 </head>
 <body>
 <header>
@@ -202,10 +202,10 @@
       <div class="stake-meta-grid">
         <div><span>STAKE</span><b class="mono" id="st-stake">—</b></div>
         <div><span>LEVEL</span><b><span class="stake-badge" id="st-tier">T1</span> <span class="mono" id="st-step">S1</span></b></div>
-        <div><span>TRIGGER</span><b class="mono" id="st-trigger">Prev RSI ≤32 + BIG / ≥68 + SMALL</b></div>
-        <div><span>SOURCE</span><b class="mono" id="st-source">waiting for confirmation round…</b></div>
+        <div><span>TRIGGER</span><b id="st-trigger">Prev RSI ≤32 + BIG / ≥68 + SMALL</b></div>
+        <div><span>SOURCE</span><b id="st-source">waiting for confirmation round…</b></div>
       </div>
-      <div class="stake-rule mono">RULE · Prev RSI ≤32 + BIG → BIG · Prev RSI ≥68 + SMALL → SMALL</div>
+      <div class="stake-rule">RULE · Prev RSI ≤32 + BIG → BIG · Prev RSI ≥68 + SMALL → SMALL</div>
       <div class="stake-bottom">
         <span>LAST <b id="st-last">No settled episode yet</b></span>
         <span>BUSTS <b id="st-busts">0</b></span>
