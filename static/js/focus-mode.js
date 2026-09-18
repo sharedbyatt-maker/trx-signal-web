@@ -6,6 +6,12 @@
     const el = $(id);
     return el && el.textContent.trim() ? el.textContent.trim() : fallback;
   };
+  const setText = (el, value) => {
+    if (el && el.textContent !== value) el.textContent = value;
+  };
+  const setClass = (el, value) => {
+    if (el && el.className !== value) el.className = value;
+  };
 
   function classify(value) {
     const v = String(value || "").toUpperCase();
@@ -20,45 +26,41 @@
     const el = $(id);
     if (!el) return;
     const [cls, icon] = classify(value);
-    el.className = "focus-state " + cls;
-    const iconEl = el.querySelector(".focus-state-icon");
-    const labelEl = el.querySelector("span:not(.focus-state-icon)");
-    const valueEl = el.querySelector("b");
-    if (iconEl) iconEl.textContent = icon;
-    if (labelEl) labelEl.textContent = label;
-    if (valueEl) valueEl.textContent = value || "WAITING";
+    setClass(el, "focus-state " + cls);
+    setText(el.querySelector(".focus-state-icon"), icon);
+    setText(el.querySelector("span:not(.focus-state-icon)"), label);
+    setText(el.querySelector("b"), value || "WAITING");
   }
 
   function sync() {
-    const issue = $("focus-issue");
-    if (issue) issue.textContent = text("tk-issue");
+    setText($("focus-issue"), text("tk-issue"));
 
-    const next = $("focus-next");
-    if (next) {
-      const raw = text("ctb-next");
-      next.textContent = raw.replace(/^NEXT ISSUE ETA:\s*/i, "") || "—";
-    }
+    const raw = text("ctb-next");
+    setText($("focus-next"), raw.replace(/^NEXT ISSUE ETA:\s*/i, "") || "—");
 
     const stepMode = text("st-status", "WAITING");
     const stepTarget = text("st-pending", "WAITING");
     paintState("focus-step", "12-STEP", /BIG|SMALL/i.test(stepTarget) ? stepTarget : stepMode);
 
-    const robustValue = text("rb-status", "NO TRADE");
-    paintState("focus-robust", "ROBUST", robustValue);
+    paintState("focus-robust", "ROBUST", text("rb-status", "NO TRADE"));
 
     const conn = $("focus-connection");
     if (conn) {
       const value = text("conn-txt", "OFFLINE");
       const delayed = /DELAY|STALE|LAG/i.test(value);
       const offline = /OFFLINE|ERROR|DISCONNECT/i.test(value) || $("dot")?.classList.contains("off");
-      conn.className = "focus-connection " + (offline ? "is-offline" : delayed ? "is-delayed" : "is-live");
-      const b = conn.querySelector("b");
-      if (b) b.textContent = offline ? "OFFLINE" : delayed ? "DELAYED" : "LIVE";
+      setClass(conn, "focus-connection " + (offline ? "is-offline" : delayed ? "is-delayed" : "is-live"));
+      setText(conn.querySelector("b"), offline ? "OFFLINE" : delayed ? "DELAYED" : "LIVE");
     }
   }
 
+  // Observe only source elements. Observing document.body made sync() react to
+  // its own focus-bar writes and could create a MutationObserver feedback loop.
   const observer = new MutationObserver(sync);
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  ["tk-issue", "ctb-next", "st-status", "st-pending", "rb-status", "conn-txt", "dot"].forEach((id) => {
+    const el = $(id);
+    if (el) observer.observe(el, { childList: true, subtree: true, characterData: true, attributes: id === "dot", attributeFilter: id === "dot" ? ["class"] : undefined });
+  });
   sync();
   window.setInterval(sync, 1000);
 })();
