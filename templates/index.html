@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=48">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=49">
 </head>
 <body>
 <header>
@@ -57,11 +57,15 @@
         <button class="tf-btn" data-g="15">15m</button>
         <button class="tf-btn" data-g="60">1h</button>
         <span class="tb-sep"></span>
-        <span class="tb-group-label">RANGE</span>
-        <button class="tf-btn hist-range-btn" data-days="1" title="နောက်ဆုံး 1 ရက်">1D</button>
-        <button class="tf-btn hist-range-btn" data-days="3" title="နောက်ဆုံး 3 ရက်">3D</button>
-        <button class="tf-btn hist-range-btn active" data-days="10" title="10-day history အကုန်">10D</button>
-        <span class="tb-group-label mono" id="chart-meta" title="Loaded chart history">loading…</span>
+        <label class="range-select-wrap" for="history-range-select">
+          <span class="tb-group-label">RANGE</span>
+          <select id="history-range-select" class="range-select" title="Chart history range">
+            <option value="1">1D</option>
+            <option value="3">3D</option>
+            <option value="10" selected>10D</option>
+          </select>
+        </label>
+        <span id="chart-meta" hidden aria-hidden="true"></span>
         <button class="tf-btn fit" id="fit-btn" title="Chart အားလုံး ကျယ်ကျယ် မြင်ရန်">FIT</button>
         <button class="tf-btn" id="zoom-in-btn" title="Zoom In (+)">＋</button>
         <button class="tf-btn" id="zoom-out-btn" title="Zoom Out (−)">−</button>
@@ -262,7 +266,7 @@
 </footer>
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=49"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=50"></script>
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=42"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=47"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>

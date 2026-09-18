@@ -1352,13 +1352,12 @@ window.TRXChart = (() => {
     });
     const activeTf = document.querySelector(".tf-btn.active[data-g]");
     if (activeTf) { const tf = $("lg-tf"); if (tf) tf.textContent = activeTf.textContent; }
-    document.querySelectorAll(".hist-range-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".hist-range-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        setHistoryRange(Number(btn.dataset.days) || 1);
+    const historyRangeSelect = $("history-range-select");
+    if (historyRangeSelect) {
+      historyRangeSelect.addEventListener("change", () => {
+        setHistoryRange(Number(historyRangeSelect.value) || 10);
       });
-    });
+    }
     const fitBtn = $("fit-btn");
     if (fitBtn) fitBtn.addEventListener("click", () => {
       [chart, rsiChart, macdChart, stochChart].forEach((c) => {

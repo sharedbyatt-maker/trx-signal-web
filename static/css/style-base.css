@@ -823,3 +823,40 @@ footer{background:#080d16;border-top:1px solid #1e2a3e}
   .chart-toolbar{margin-top:10px}
 }
 @media(max-width:700px){#tv-chart{height:420px}}
+
+
+/* v49 compact single-row toolbar: no horizontal scrolling. */
+.chart-toolbar{
+  gap:3px;
+  overflow:visible;
+  padding-bottom:0;
+  scrollbar-width:none;
+}
+.chart-toolbar::-webkit-scrollbar{display:none}
+.chart-toolbar .tf-btn{padding-inline:8px}
+.chart-toolbar .tb-sep{margin-inline:3px}
+.range-select-wrap{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
+.range-select{
+  height:31px;
+  min-width:62px;
+  padding:0 24px 0 9px;
+  border:1px solid #3478f6;
+  border-radius:7px;
+  background:#172746;
+  color:#b9d2ff;
+  font:700 10.5px/1 var(--font-ui);
+  letter-spacing:.04em;
+  cursor:pointer;
+  outline:none;
+}
+.range-select:hover,.range-select:focus{border-color:#5b91f7;background:#1b2e50}
+#chart-meta[hidden]{display:none!important}
+@media(max-width:1100px){
+  .chart-toolbar{gap:2px}
+  .chart-toolbar .tf-btn{padding-inline:6px}
+  .chart-toolbar .tb-sep{margin-inline:1px}
+  .chart-toolbar .tb-group-label{padding-inline:5px}
+}
+@media(max-width:900px){
+  .chart-toolbar{flex-wrap:wrap;overflow:visible}
+}
