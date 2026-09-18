@@ -39,9 +39,8 @@ test('switches true timeframes and keeps the chart alive', async ({ page }) => {
   }
 });
 
-test('chart clearly discloses synthetic model and HLC stochastic', async ({ page }) => {
+test('chart supports HLC stochastic', async ({ page }) => {
   await waitForChart(page);
-  await expect(page.locator('#chart-model-note')).toContainText('NOT TRX MARKET PRICE');
   await page.locator('#ind-toggle-btn').click();
   await page.locator('#stoch-toggle').check();
   await expect(page.locator('#stoch-pane')).not.toHaveClass(/off/);
@@ -180,4 +179,13 @@ test('drawing tool exposes active and drag feedback classes', async ({ page }, t
   await page.locator('.dt-btn[data-tool="trend"]').click();
   await expect(page.locator('.dt-btn[data-tool="trend"]')).toHaveClass(/active/);
   await expect(page.locator('#tv-chart')).toHaveClass(/drawing-active/);
+});
+
+
+test('focus countdown is clearly distinguished from wall clock and chart note is removed', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.focus-countdown > span')).toHaveText('NEXT IN');
+  await expect(page.locator('#focus-next')).toContainText(/~?\d+:\d{2}|—/);
+  await expect(page.locator('#chart-model-note')).toHaveCount(0);
+  await expect(page.locator('#chart-card .card-title')).toHaveText('CHART');
 });

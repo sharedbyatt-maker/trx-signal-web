@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=52">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=53">
 </head>
 <body>
 <header>
@@ -46,7 +46,7 @@
 <div class="focus-bar" id="focus-bar" aria-label="Trading focus status">
   <div class="focus-brand"><span class="focus-pulse"></span><span>FOCUS</span></div>
   <div class="focus-item"><span>ISSUE</span><b class="mono" id="focus-issue">—</b></div>
-  <div class="focus-item focus-countdown"><span>NEXT</span><b class="mono" id="focus-next">—</b></div>
+  <div class="focus-item focus-countdown" title="Countdown until the next 1-minute issue"><span>NEXT IN</span><b class="mono" id="focus-next">—</b></div>
   <div class="focus-state is-waiting" id="focus-step" aria-live="polite"><span class="focus-state-icon">◷</span><span>12-STEP</span><b>WAITING</b></div>
   <div class="focus-state is-waiting" id="focus-robust" aria-live="polite"><span class="focus-state-icon">◷</span><span>ROBUST</span><b>NO TRADE</b></div>
   <div class="focus-connection is-live" id="focus-connection"><span class="focus-dot"></span><b>LIVE</b></div>
@@ -58,7 +58,7 @@
   <!-- ================= CHART — PRIMARY ================= -->
   <section class="card chart-card" id="chart-card">
     <div class="card-title-row">
-      <div class="card-title">CHART <span class="tb-group-label orange" id="chart-model-note" title="This chart is built from BIG/SMALL round outcomes, not TRX exchange price candles.">SYNTHETIC BIG/SMALL WALK · NOT TRX MARKET PRICE</span></div>
+      <div class="card-title">CHART</div>
       <div class="chart-toolbar">
         <span class="tb-group-label">TF</span>
         <button class="tf-btn active" data-g="1">1m</button>
