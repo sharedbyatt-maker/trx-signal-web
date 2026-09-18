@@ -42,7 +42,8 @@ _feed_cache = {}
 _feed_health = {
     "last_issue": "", "last_advance": 0.0, "last_http_ok": 0.0,
     "last_request": 0.0, "last_latency_ms": None, "last_status_code": None,
-    "request_count": 0, "recovery_count": 0,
+    "request_count": 0, "recovery_count": 0, "failure_count": 0,
+    "last_error": None,
 }
 _PROCESS_STARTED_MONO = time.monotonic()
 _last_recovery_attempt = 0.0
@@ -211,6 +212,12 @@ def _resilient_session_get(url, *args, **kwargs):
         return response
 
     except (requests.Timeout, requests.ConnectionError) as exc:
+        if is_feed:
+            with _feed_cache_lock:
+                _feed_health["last_request"] = time.monotonic()
+                _feed_health["last_latency_ms"] = round((time.monotonic() - request_started) * 1000, 1)
+                _feed_health["failure_count"] = int(_feed_health.get("failure_count", 0)) + 1
+                _feed_health["last_error"] = type(exc).__name__
         if is_tail:
             now = time.monotonic()
             with _feed_cache_lock:
@@ -253,7 +260,14 @@ def api_health():
     request_age = round(max(0.0, now_mono - last_request), 1) if last_request else None
     advance_age = feed_health.get("seconds_since_advance")
     status = str(feed_health.get("status") or ("LIVE" if connected else "STARTING"))
-    healthy = bool(connected and status not in ("OFFLINE", "STALE"))
+    engine_thread = getattr(core, "_engine_thread", None)
+    tg_thread = getattr(core, "_tg_thread", None)
+    engine_thread_alive = bool(engine_thread and engine_thread.is_alive())
+    tg_thread_alive = bool(tg_thread and tg_thread.is_alive())
+    # In test/tooling mode background threads are intentionally disabled.
+    threads_expected = os.environ.get("TRX_NO_ENGINE") != "1"
+    threads_ok = (engine_thread_alive and tg_thread_alive) if threads_expected else True
+    healthy = bool(connected and status not in ("OFFLINE", "STALE") and threads_ok)
     payload = {
         "ok": healthy,
         "status": status,
@@ -265,6 +279,7 @@ def api_health():
             "state_history_rows": history_count,
             "full_history_rows": full_history_count,
             "history_days": hist_meta.get("days"),
+            "thread_alive": engine_thread_alive,
         },
         "feed": {
             "last_issue": fh.get("last_issue") or feed_health.get("last_issue"),
@@ -274,10 +289,15 @@ def api_health():
             "last_status_code": fh.get("last_status_code"),
             "request_count": int(fh.get("request_count") or 0),
             "recovery_count": int(fh.get("recovery_count") or 0),
+            "failure_count": int(fh.get("failure_count") or 0),
+            "last_error": fh.get("last_error"),
             "note": feed_health.get("note", ""),
         },
         "queues": {
             "telegram": core._tg_queue.qsize() if hasattr(core, "_tg_queue") else None,
+            "telegram_max": getattr(core, "TG_QUEUE_MAX", None),
+            "telegram_dropped": int(getattr(core, "_tg_drop_count", 0)),
+            "telegram_worker_alive": tg_thread_alive,
         },
         "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
