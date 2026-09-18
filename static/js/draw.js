@@ -37,6 +37,7 @@ window.TRXDraw = (() => {
   let hover = null, selectedId = null, downXY = null, drag = null, restored = false;
   let magnet = true;
   let serverRevision = null, serverConflict = false, serverSyncTimer = null, syncStatusEl = null;
+  let moveFrame = 0, pendingMove = null;
 
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const $ = (id) => document.getElementById(id);
@@ -445,6 +446,12 @@ window.TRXDraw = (() => {
     if(!ctx||!canvas)return; ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight); if(!api)return;
     drawings.forEach(d=>renderOne(d));
     if(placing){ if(hover&&placing.points.length===1){ const cur=fromXY(hover.x,hover.y,true); renderOne({...placing,id:"_ghost",points:[placing.points[0],cur||placing.points[0]]},true);} else renderOne(placing,true); }
+    // One-point tools get a live preview before click, so placing an S/R or
+    // vertical marker feels anchored to the pointer instead of appearing late.
+    if(hover && (tool==="hline" || tool==="vline")){
+      const cur=fromXY(hover.x,hover.y,true);
+      if(cur) renderOne(defaults({id:"_hover",type:tool,color,points:[{...cur,lb:labelOf(cur.t)}],width:2,style:"solid"}),true);
+    }
   }
 
   function commit(type,pts,c) {
@@ -532,9 +539,9 @@ window.TRXDraw = (() => {
     downXY={x,y};
     if(tool==="cursor"){
       const hh=handleHit(x,y);
-      if(hh){const d=selected();drag={id:hh.id,mode:"handle",index:hh.index};ev.stopPropagation();redraw();return;}
+      if(hh){const d=selected();drag={id:hh.id,mode:"handle",index:hh.index};lockChart(true);ev.preventDefault();ev.stopPropagation();redraw();return;}
       const id=hitTest(x,y);
-      if(id){selectedId=id;const d=selected();if(d&&!d.locked){const ptsPx=d.points.map(p=>d.type==="vline"?xOnly(p):toXY(p));if(ptsPx.every(Boolean))drag={id,mode:"move",start:{x,y},origPx:ptsPx,origData:JSON.parse(JSON.stringify(d.points))};}ev.stopPropagation();updatePanel();redraw();}
+      if(id){selectedId=id;const d=selected();if(d&&!d.locked){const ptsPx=d.points.map(p=>d.type==="vline"?xOnly(p):toXY(p));if(ptsPx.every(Boolean)){drag={id,mode:"move",start:{x,y},origPx:ptsPx,origData:JSON.parse(JSON.stringify(d.points))};lockChart(true);ev.preventDefault();}}ev.stopPropagation();updatePanel();redraw();}
       else if(selectedId){selectedId=null;updatePanel();redraw();}
       return;
     }
@@ -549,11 +556,12 @@ window.TRXDraw = (() => {
       const dx=x-drag.start.x,dy=y-drag.start.y;d.points=drag.origPx.map((o,i)=>{if(d.type==="hline"){const p=api.series.coordinateToPrice(o.y+dy);return{...drag.origData[i],p:(p==null||isNaN(p))?drag.origData[i].p:p};}const np=fromXY(o.x+dx,d.type==="vline"?0:o.y+dy,false);if(!np)return drag.origData[i];return d.type==="vline"?{...drag.origData[i],t:np.t,lb:labelOf(np.t)||null}:{t:np.t,p:np.p,lb:labelOf(np.t)||null};});redraw();return;
     }
     if(placing&&placing.points.length===1)redraw();
+    else if(tool==="hline"||tool==="vline")redraw();
   }
   function finishTwoPoint(pt){placing.points.push({...pt,lb:labelOf(pt.t)});commit(placing.type,placing.points,placing.color);placing=null;placeStage=0;setTool("cursor");redraw();}
   function onUp(x,y){
     const moved=downXY?Math.hypot(x-downXY.x,y-downXY.y):0;
-    if(drag){if(moved>1)save();drag=null;downXY=null;updatePanel();redraw();return;}
+    if(drag){if(moved>1)save();drag=null;downXY=null;lockChart(false);updatePanel();redraw();return;}
     const wasDown=!!downXY;downXY=null;if(tool==="cursor")return;const pt=fromXY(x,y,true);if(!pt)return;
     if(tool==="hline"||tool==="vline"){if(!wasDown||moved>6)return;commit(tool,[{t:pt.t,p:tool==="hline"?pt.p:0,lb:labelOf(pt.t)}]);setTool("cursor");redraw();return;}
     if(!placing)return;if(moved>8)finishTwoPoint(pt);else if(placeStage===1&&wasDown)placeStage=2;else if(placeStage===2&&wasDown){const a0=toXY(placing.points[0]);if(!(a0&&Math.hypot(x-a0.x,y-a0.y)<3))finishTwoPoint(pt);}
@@ -561,9 +569,20 @@ window.TRXDraw = (() => {
 
   function bindEvents(){
     wrapEl.addEventListener("pointerdown",ev=>{if(ev.button!==0)return;const p=localXY(ev);if(tool!=="cursor"||handleHit(p.x,p.y)||hitTest(p.x,p.y)){try{wrapEl.setPointerCapture(ev.pointerId);}catch(_e){} ev.stopPropagation();}onDown(p.x,p.y,ev);},true);
-    wrapEl.addEventListener("pointermove",ev=>{const p=localXY(ev);onMove(p.x,p.y);});
+    // Coalesce high-frequency mouse/stylus events to one drawing update per
+    // animation frame. This removes redundant coordinate conversion + full
+    // overlay redraws while preserving the latest pointer position.
+    wrapEl.addEventListener("pointermove",ev=>{
+      pendingMove=localXY(ev);
+      if(moveFrame)return;
+      moveFrame=requestAnimationFrame(()=>{
+        moveFrame=0;
+        const p=pendingMove; pendingMove=null;
+        if(p)onMove(p.x,p.y);
+      });
+    }, {passive:true});
     const finish=(ev)=>{const p=localXY(ev);if(tool==="cursor"&&drag)ev.stopPropagation();onUp(p.x,p.y);try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}};
-    wrapEl.addEventListener("pointerup",finish,true);wrapEl.addEventListener("pointercancel",ev=>{drag=null;downXY=null;placing=null;placeStage=0;try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}redraw();},true);
+    wrapEl.addEventListener("pointerup",finish,true);wrapEl.addEventListener("pointercancel",ev=>{drag=null;downXY=null;placing=null;placeStage=0;lockChart(false);try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}redraw();},true);
     wrapEl.addEventListener("pointerleave",()=>{hover=null;});wrapEl.addEventListener("contextmenu",ev=>{if(tool!=="cursor"){ev.preventDefault();setTool("cursor");}});
     document.querySelectorAll(".dt-btn[data-tool]").forEach(btn=>btn.addEventListener("click",()=>setTool(btn.dataset.tool)));
     document.querySelectorAll(".dt-swatch").forEach(sw=>sw.addEventListener("click",()=>{color=sw.dataset.color;document.querySelectorAll(".dt-swatch").forEach(s=>s.classList.toggle("active",s.dataset.color===color));const d=selected();if(d){d.color=color;save();redraw();}if(placing)placing.color=color;}));
