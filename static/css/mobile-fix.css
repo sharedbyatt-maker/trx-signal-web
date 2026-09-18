@@ -163,10 +163,7 @@
     flex: 0 0 auto;
   }
 
-  #tv-chart {
-    height: 330px;
-    min-height: 300px;
-  }
+  #tv-chart { min-height: 300px; }
 
   #rsi-pane:not(.off) {
     min-height: 86px;
@@ -301,7 +298,7 @@
   .sub { max-width: calc(100vw - 58px); }
   .bell-btn { padding-left: 6px; padding-right: 6px; }
   .tk-item { padding-left: 7px; padding-right: 7px; }
-  #tv-chart { height: 300px; }
+
   .chart-time-bar { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: 1fr; }
   .stat.wide { grid-column: span 1; }
@@ -320,7 +317,7 @@
   .chart-card .card-title{align-items:flex-start;flex-direction:column;gap:6px}
   .chart-toolbar{width:100%;flex-wrap:nowrap}
   .tv-wrap,.chart-time-bar,.chart-strip,.digit-panel{margin-left:8px;margin-right:8px}
-  #tv-chart{height:420px}
+
   .ctx-grid>div{grid-template-columns:110px minmax(0,1fr)}
 }
 

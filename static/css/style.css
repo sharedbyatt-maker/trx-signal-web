@@ -14,9 +14,57 @@ button, input, select, textarea { font: inherit; }
   .tf-btn { font-size: 10px; }
 }
 
+/* v52 UI/UX polish.
+   P2: readable critical/secondary hierarchy.
+   P3: Focus Bar is the single live decision-status surface.
+   P4: clearer drawing interaction feedback.
+   P6: one authoritative responsive chart-height layer. */
+.daily12-grid small,
+.daily12-section-title,
+.stake-mode,
+.stake-meta-grid>div>span,
+.stake-hero-issue,
+.d12-activity-row,
+.daily12-history>div,
+.d12-empty,
+.daily12-updated { font-size: 9.5px; }
 
-/* Chart workspace expansion — digit distribution UI removed.
-   Keep analysis canvas dominant without changing chart/data logic. */
+.stake-rule,
+.stake-bottom,
+.ctx-label,
+.ctx-k { font-size: 10px; }
+
+@media (max-width: 600px) {
+  .ticker .tk-label { font-size: 9px; }
+  .ticker .tk-val { font-size: 11px; }
+  .focus-state b { font-size: 9px; }
+}
+
+/* Focus Bar owns LIVE / DELAYED / OFFLINE. Header keeps utilities and clock,
+   while the chart footer remains timing diagnostics rather than status duplication. */
+header #dot,
+header #conn-txt { display: none; }
+#ctb-srv { color: var(--muted); font-weight: 600; }
+
+/* Drawing interaction confidence: active tool, capture cursor and selected object
+   controls are visually distinct without changing drawing geometry or persistence. */
+#tv-chart.drawing-active,
+.tv-wrap.drawing-active { cursor: crosshair; }
+.tv-wrap.drawing-dragging,
+.tv-wrap.drawing-dragging #tv-chart { cursor: grabbing !important; }
+.draw-tools .dt-btn.active {
+  border-color: rgba(91,140,255,.85);
+  background: rgba(41,98,255,.18);
+  color: #eef4ff;
+  box-shadow: 0 0 0 1px rgba(41,98,255,.16), 0 0 12px rgba(41,98,255,.10);
+}
+#draw-v2-panel {
+  outline: 1px solid rgba(91,140,255,.18);
+}
+
+/* Authoritative chart workspace sizing. Keep these values visually equivalent
+   to the current terminal while removing competing responsive declarations. */
+#tv-chart { height: max(560px, calc(100vh - 560px)); }
 @media (min-width: 1281px) {
   #tv-chart { height: max(620px, calc(100vh - 500px)); }
 }
@@ -28,4 +76,7 @@ button, input, select, textarea { font: inherit; }
 }
 @media (max-width: 600px) {
   #tv-chart { height: 400px; }
+}
+@media (max-width: 380px) {
+  #tv-chart { height: 300px; }
 }
