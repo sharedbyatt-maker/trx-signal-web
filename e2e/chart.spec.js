@@ -179,5 +179,5 @@ test('drawing tool exposes active and drag feedback classes', async ({ page }, t
   await page.locator('#dt-toggle-btn').click();
   await page.locator('.dt-btn[data-tool="trend"]').click();
   await expect(page.locator('.dt-btn[data-tool="trend"]')).toHaveClass(/active/);
-  await expect(page.locator('.tv-wrap')).toHaveClass(/drawing-active/);
+  await expect(page.locator('#tv-chart')).toHaveClass(/drawing-active/);
 });
