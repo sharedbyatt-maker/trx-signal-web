@@ -3,10 +3,15 @@ const fmtInt = (n) => n.toLocaleString("en-US");
 
 /* ================= 10-day full history buffer ================= */
 let fullRows = [];            // from /api/history ([issue, number, blockTime] tuples)
+let fullIssueSet = new Set(); // O(1) membership for the 10-day browser buffer
 let lastHistFetch = 0;
 let mergedCount = 0;
 let lastResultTime = "";      // server-reported blockTime of the newest round
 const HIST_REFETCH_MS = 45000;
+
+function rebuildFullIssueSet() {
+  fullIssueSet = new Set(fullRows.map((r) => String(r.issue)));
+}
 
 function mergeRows(a, b) {
   const m = new Map();
@@ -40,6 +45,7 @@ async function fetchFullHistory(force) {
       // Incremental fetches append/replace by issue.
       fullRows = force ? mergeRows([], inc) : mergeRows(fullRows, inc);
       if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
+      rebuildFullIssueSet();
     } else {
       // Initial page load can beat the background engine. Do not lock the chart
       // into the small /api/state fallback for 45 seconds; allow the next refresh
@@ -566,7 +572,7 @@ async function pollLatest() {
         return;
       }
     } catch (_e) { /* non-standard issue format: fall back to normal path */ }
-    if (!fullRows.some((x) => x.issue === rd.issue)) {
+    if (!fullIssueSet.has(String(rd.issue))) {
       fullRows.push({
         issue: String(rd.issue),
         short_issue: String(rd.issue).slice(-6),
@@ -575,6 +581,7 @@ async function pollLatest() {
         type: rd.number >= 5 ? "BIG" : "SMALL",
       });
       if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
+      rebuildFullIssueSet();
       if (rd.block_time) lastResultTime = rd.block_time;
       const newest = fullRows[fullRows.length - 1];
       const fast = window.TRXChart && TRXChart.appendLatest
@@ -641,7 +648,11 @@ if (tgBtn) {
   tgBtn.addEventListener("click", async () => {
     tgBtn.textContent = "⏳";
     try {
-      const r = await fetch("/api/telegram-test", { cache: "no-store" });
+      const r = await fetch("/api/telegram-test", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "X-Requested-With": "TRX-Terminal" },
+      });
       const d = await r.json();
       tgBtn.textContent = d.ok ? "✅" : "❌";
       tgBtn.title = d.ok ? "Telegram OK — test message ပို့ပြီး" : ("Telegram error: " + (d.error || "unknown"));
