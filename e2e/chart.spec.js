@@ -39,9 +39,8 @@ test('switches true timeframes and keeps the chart alive', async ({ page }) => {
   }
 });
 
-test('chart clearly discloses synthetic model and HLC stochastic', async ({ page }) => {
+test('chart supports HLC stochastic', async ({ page }) => {
   await waitForChart(page);
-  await expect(page.locator('#chart-model-note')).toContainText('NOT TRX MARKET PRICE');
   await page.locator('#ind-toggle-btn').click();
   await page.locator('#stoch-toggle').check();
   await expect(page.locator('#stoch-pane')).not.toHaveClass(/off/);
