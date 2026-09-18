@@ -65,7 +65,9 @@
         <div id="rb-audit-results" class="rb-audit-results" hidden></div>
       </div>
     `;
-    main.insertAdjacentElement("afterend", section);
+    const slot = document.getElementById("robust-engine-slot");
+    if (slot) slot.appendChild(section);
+    else main.insertAdjacentElement("afterend", section);
 
     document.getElementById("rb-audit-btn").addEventListener("click", startAudit);
   }

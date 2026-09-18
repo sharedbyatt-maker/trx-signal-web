@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=47">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=48">
 </head>
 <body>
 <header>
@@ -45,6 +45,7 @@
 
 <main>
   <div class="layout-grid">
+  <div class="primary-stack">
   <!-- ================= CHART — PRIMARY ================= -->
   <section class="card chart-card" id="chart-card">
     <div class="card-title-row">
@@ -177,6 +178,8 @@
       <div class="digit-grid" id="digit-grid"></div>
     </div>
   </section>
+  <div id="robust-engine-slot"></div>
+  </div>
 
   <aside class="side-stack">
     <section class="card" id="context-card">
@@ -218,29 +221,34 @@
         <span class="daily12-date mono" id="d12-date">—</span>
       </div>
       <div class="daily12-body">
-        <div class="daily12-grid">
+        <div class="daily12-grid daily12-summary-grid">
           <div><small>SIGNALS</small><b id="d12-signals">0</b></div>
           <div><small>SETTLED BETS</small><b id="d12-bets">0</b></div>
-          <div><small>BET W / L</small><b id="d12-wl">0 / 0</b></div>
           <div><small>BET WIN RATE</small><b id="d12-wr">0%</b></div>
-          <div><small>EPISODE WR</small><b id="d12-episode-wr">0%</b></div>
           <div class="daily12-focus"><small>NET P/L</small><b id="d12-pnl">0 MMK</b></div>
-          <div><small>ROI ON STAKED</small><b id="d12-roi">0%</b></div>
           <div><small>TOTAL STAKED</small><b id="d12-staked">0</b></div>
-          <div><small>TOTAL RETURNED</small><b id="d12-returned">0</b></div>
-          <div><small>AVG STAKE / BET</small><b id="d12-avg-stake">0</b></div>
           <div><small>OPEN EPISODES</small><b id="d12-open">0</b></div>
         </div>
-        <div class="daily12-section-title">SESSION QUALITY</div>
-        <div class="daily12-line" id="d12-episodes">Episodes —</div>
-        <div class="daily12-line" id="d12-depth">Deepest —</div>
-        <div class="daily12-line" id="d12-edge">Break-even —</div>
-        <div class="daily12-line daily12-engine" id="d12-status">Engine —</div>
-        <div class="daily12-line daily12-updated" id="d12-updated">Updated —</div>
-        <div class="daily12-section-title">RECENT ACTIVITY</div>
-        <div class="daily12-activity" id="d12-activity"></div>
-        <div class="daily12-section-title">PREVIOUS DAYS</div>
-        <div class="daily12-history" id="d12-history"></div>
+        <details class="daily12-details">
+          <summary><span>SESSION DETAILS</span><span class="daily12-chevron">⌄</span></summary>
+          <div class="daily12-grid daily12-extra-grid">
+            <div><small>BET W / L</small><b id="d12-wl">0 / 0</b></div>
+            <div><small>EPISODE WR</small><b id="d12-episode-wr">0%</b></div>
+            <div><small>ROI ON STAKED</small><b id="d12-roi">0%</b></div>
+            <div><small>TOTAL RETURNED</small><b id="d12-returned">0</b></div>
+            <div><small>AVG STAKE / BET</small><b id="d12-avg-stake">0</b></div>
+          </div>
+          <div class="daily12-section-title">SESSION QUALITY</div>
+          <div class="daily12-line" id="d12-episodes">Episodes —</div>
+          <div class="daily12-line" id="d12-depth">Deepest —</div>
+          <div class="daily12-line" id="d12-edge">Break-even —</div>
+          <div class="daily12-line daily12-engine" id="d12-status">Engine —</div>
+          <div class="daily12-line daily12-updated" id="d12-updated">Updated —</div>
+          <div class="daily12-section-title">RECENT ACTIVITY</div>
+          <div class="daily12-activity" id="d12-activity"></div>
+          <div class="daily12-section-title">PREVIOUS DAYS</div>
+          <div class="daily12-history" id="d12-history"></div>
+        </details>
       </div>
 
       <div class="ctx-note">⚠️ Layers တွေဟာ သင်္ချာအရ ~50% coin-flip ပါ — လေ့လာမှု/visualization အတွက်သာ၊ trade အတည်ပြုချက်အဖြစ် မသုံးပါနဲ့။</div>
@@ -255,7 +263,7 @@
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/chart.js') }}?v=49"></script>
-<script src="{{ url_for('static', filename='js/draw.js') }}?v=41"></script>
+<script src="{{ url_for('static', filename='js/draw.js') }}?v=42"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=47"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>
 </body>

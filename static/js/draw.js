@@ -387,6 +387,7 @@ window.TRXDraw = (() => {
     ctx.strokeStyle=c; ctx.lineWidth=width; ctx.setLineDash(dash||[]); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.setLineDash([]);
   }
   function priceLabel(y,txt,c) {
+    if (!Number.isFinite(y) || y < 0 || y > canvas.clientHeight) return;
     const w=canvas.clientWidth; ctx.font="10px Consolas, monospace"; const tw=ctx.measureText(txt).width+10;
     ctx.fillStyle=c; ctx.globalAlpha=.85; ctx.fillRect(w-tw-58,Math.max(0,Math.min(canvas.clientHeight-16,y-8)),tw,16);
     ctx.globalAlpha=1; ctx.fillStyle="#fff"; ctx.textBaseline="middle"; ctx.fillText(txt,w-tw-53,Math.max(8,Math.min(canvas.clientHeight-8,y+1)));

@@ -806,3 +806,20 @@ footer{background:#080d16;border-top:1px solid #1e2a3e}
   .side-stack{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
   #context-card{grid-column:1/-1}
 }
+
+
+/* v48 layout-density pass: presentation only; strategy behavior is untouched. */
+.primary-stack{min-width:0;display:flex;flex-direction:column;gap:14px}
+.chart-card>.card-title-row{display:block}
+.chart-card>.card-title-row>.card-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chart-toolbar{width:100%;margin-top:13px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:0 0 7px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.chart-toolbar>*{flex:0 0 auto}
+#tv-chart{height:clamp(500px,54vh,580px)}
+#robust-engine-slot:empty{display:none}
+@media(max-width:1380px){#tv-chart{height:520px}}
+@media(max-width:900px){
+  .primary-stack{gap:12px}
+  #tv-chart{height:480px}
+  .chart-toolbar{margin-top:10px}
+}
+@media(max-width:700px){#tv-chart{height:420px}}

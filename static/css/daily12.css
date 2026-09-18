@@ -46,3 +46,14 @@
   .stake-meta-grid>div{grid-template-columns:66px minmax(0,1fr)}
   .stake-hero-dir{font-size:19px}
 }
+
+
+/* v48 compact summary + on-demand operational detail. */
+.daily12-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.daily12-details{margin-top:11px;border-top:1px solid rgba(120,130,150,.18);padding-top:8px}
+.daily12-details>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 2px;color:#8fa0bb;font:700 10px/1 var(--font-ui,Inter,sans-serif);letter-spacing:.12em;cursor:pointer;user-select:none}
+.daily12-details>summary::-webkit-details-marker{display:none}
+.daily12-chevron{font-size:15px;transition:transform .18s ease}
+.daily12-details[open] .daily12-chevron{transform:rotate(180deg)}
+.daily12-extra-grid{margin-top:4px}
+.daily12-details:focus-within>summary{color:#dce6f5}

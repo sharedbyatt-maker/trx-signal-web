@@ -393,12 +393,12 @@ def install_robust_routes(core):
                     html = html.replace(
                         "</head>",
                         '<link id="robust-engine-ui-assets" rel="stylesheet" '
-                        'href="/static/css/robust.css?v=1">\n</head>',
+                        'href="/static/css/robust.css?v=2">\n</head>',
                         1,
                     )
                     html = html.replace(
                         "</body>",
-                        '<script src="/static/js/robust.js?v=1"></script>\n</body>',
+                        '<script src="/static/js/robust.js?v=2"></script>\n</body>',
                         1,
                     )
                     response.set_data(html)
