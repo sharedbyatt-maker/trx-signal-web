@@ -23,7 +23,9 @@ jobs:
         with:
           node-version: '24'
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest
+      - name: Run focused stability regression
+        run: pytest -q tests_stability_performance_hardening.py tests_chart_latency_v2.py tests_multi_tf_normalization.py tests_engine.py tests_robust.py
       - name: Install Playwright
         run: |
           npm install

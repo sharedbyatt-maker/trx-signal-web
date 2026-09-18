@@ -39,7 +39,12 @@ from drawings_persistence import install_drawings_persistence
 _original_session_get = core.session.get
 _feed_cache_lock = threading.Lock()
 _feed_cache = {}
-_feed_health = {"last_issue": "", "last_advance": 0.0, "last_http_ok": 0.0}
+_feed_health = {
+    "last_issue": "", "last_advance": 0.0, "last_http_ok": 0.0,
+    "last_request": 0.0, "last_latency_ms": None, "last_status_code": None,
+    "request_count": 0, "recovery_count": 0,
+}
+_PROCESS_STARTED_MONO = time.monotonic()
 _last_recovery_attempt = 0.0
 try:
     FEED_GRACE_SEC = max(3.0, min(float(os.environ.get("TRX_FEED_GRACE_SEC", "12")), 30.0))
@@ -159,6 +164,7 @@ def _is_live_tail_url(url_s):
 
 def _resilient_session_get(url, *args, **kwargs):
     """Freshness-aware upstream fetch with active stale-feed recovery."""
+    request_started = time.monotonic()
     url_s = str(url)
     is_feed = url_s.startswith(core.URL_DATA)
     is_tail = _is_live_tail_url(url_s)
@@ -174,6 +180,12 @@ def _resilient_session_get(url, *args, **kwargs):
 
     try:
         response = _original_session_get(actual_url, *args, **kwargs)
+        if is_feed:
+            with _feed_cache_lock:
+                _feed_health["last_request"] = time.monotonic()
+                _feed_health["last_latency_ms"] = round((time.monotonic() - request_started) * 1000, 1)
+                _feed_health["last_status_code"] = int(response.status_code)
+                _feed_health["request_count"] = int(_feed_health.get("request_count", 0)) + 1
         if not is_feed or response.status_code != 200:
             return response
 
@@ -191,6 +203,8 @@ def _resilient_session_get(url, *args, **kwargs):
             _publish_feed_health("STALE", f"issue {newest} unchanged for {advance_age:.0f}s; recovering")
             recovered = _recovery_fetch(newest)
             if recovered is not None:
+                with _feed_cache_lock:
+                    _feed_health["recovery_count"] = int(_feed_health.get("recovery_count", 0)) + 1
                 return recovered
         else:
             _publish_feed_health("LIVE")
@@ -219,6 +233,55 @@ def _resilient_session_get(url, *args, **kwargs):
 
 
 core.session.get = _resilient_session_get
+
+
+@core.app.route("/api/health")
+def api_health():
+    """Lightweight production telemetry: feed freshness, engine age and queue pressure."""
+    now_mono = time.monotonic()
+    with _feed_cache_lock:
+        fh = dict(_feed_health)
+    with core.LOCK:
+        connected = bool(core.STATE.get("connected"))
+        error = core.STATE.get("error")
+        last_update = core.STATE.get("last_update")
+        hist_meta = dict(core.STATE.get("hist_meta") or {})
+        feed_health = dict(core.STATE.get("feed_health") or {})
+        history_count = len(core.STATE.get("history") or [])
+        full_history_count = len(core.STATE.get("full_history") or [])
+    last_request = fh.get("last_request") or 0.0
+    request_age = round(max(0.0, now_mono - last_request), 1) if last_request else None
+    advance_age = feed_health.get("seconds_since_advance")
+    status = str(feed_health.get("status") or ("LIVE" if connected else "STARTING"))
+    healthy = bool(connected and status not in ("OFFLINE", "STALE"))
+    payload = {
+        "ok": healthy,
+        "status": status,
+        "uptime_sec": round(max(0.0, now_mono - _PROCESS_STARTED_MONO), 1),
+        "engine": {
+            "connected": connected,
+            "last_update": last_update,
+            "error": error,
+            "state_history_rows": history_count,
+            "full_history_rows": full_history_count,
+            "history_days": hist_meta.get("days"),
+        },
+        "feed": {
+            "last_issue": fh.get("last_issue") or feed_health.get("last_issue"),
+            "seconds_since_advance": advance_age,
+            "seconds_since_request": request_age,
+            "last_latency_ms": fh.get("last_latency_ms"),
+            "last_status_code": fh.get("last_status_code"),
+            "request_count": int(fh.get("request_count") or 0),
+            "recovery_count": int(fh.get("recovery_count") or 0),
+            "note": feed_health.get("note", ""),
+        },
+        "queues": {
+            "telegram": core._tg_queue.qsize() if hasattr(core, "_tg_queue") else None,
+        },
+        "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    return core.jsonify(payload), (200 if healthy else 503)
 
 
 _legacy_analyze_all_in_one = core.analyze_all_in_one
