@@ -58,7 +58,7 @@
   }
 
   const observer = new MutationObserver(sync);
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class"] });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   sync();
   window.setInterval(sync, 1000);
 })();
