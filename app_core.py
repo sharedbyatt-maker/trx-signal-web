@@ -27,7 +27,9 @@ session = requests.Session()
 session.headers.update(HEADERS)
 LOCK = threading.Lock()
 
-_tg_queue = queue.Queue()
+TG_QUEUE_MAX = max(64, min(int(os.environ.get("TRX_TG_QUEUE_MAX", "512")), 4096))
+_tg_queue = queue.Queue(maxsize=TG_QUEUE_MAX)
+_tg_drop_count = 0
 
 _action_rate_lock = threading.Lock()
 _action_rate = {}
@@ -134,7 +136,15 @@ def _tg_worker():
 
 
 def tg_notify(text):
-    _tg_queue.put(text)
+    """Bound Telegram memory pressure. Normal operation never approaches this cap."""
+    global _tg_drop_count
+    try:
+        _tg_queue.put_nowait(text)
+        return True
+    except queue.Full:
+        _tg_drop_count += 1
+        print(f"[TG] queue full ({TG_QUEUE_MAX}); notification dropped safely", flush=True)
+        return False
 
 STATE = {
     "connected": False,
@@ -1545,6 +1555,7 @@ def api_latest():
 
 # ================= RSI EXTREMES (30-day high/low lookup) =================
 _rsi_ext_cache = {"ts": 0.0, "data": None}
+_rsi_ext_compute_lock = threading.Lock()
 
 
 def compute_rsi_extremes(days=30):
@@ -1605,12 +1616,23 @@ def api_rsi_extremes():
         cache = dict(_rsi_ext_cache)
     if cache["data"] and cache["data"].get("days") == days and time.time() - cache["ts"] < 3600:
         return jsonify(cache["data"])
-    data = compute_rsi_extremes(days)
-    if data:
+    # Prevent a cache-miss stampede: only one expensive upstream 30-90d
+    # calculation may run at a time. Concurrent callers get 429 and can retry.
+    if not _rsi_ext_compute_lock.acquire(blocking=False):
+        return jsonify({"error": "RSI extremes calculation already running", "retry_after": 5}), 429
+    try:
         with LOCK:
-            _rsi_ext_cache = {"ts": time.time(), "data": data}
-        return jsonify(data)
-    return jsonify({"error": "data မရနိုင်ပါ"}), 503
+            cache = dict(_rsi_ext_cache)
+        if cache["data"] and cache["data"].get("days") == days and time.time() - cache["ts"] < 3600:
+            return jsonify(cache["data"])
+        data = compute_rsi_extremes(days)
+        if data:
+            with LOCK:
+                _rsi_ext_cache = {"ts": time.time(), "data": data}
+            return jsonify(data)
+        return jsonify({"error": "data မရနိုင်ပါ"}), 503
+    finally:
+        _rsi_ext_compute_lock.release()
 
 
 @app.route("/api/backtest")
@@ -1651,12 +1673,17 @@ def start_engine():
             print("📄 telegram.json created — bot token & chat_id ဖြည့်ပါ (TG RSI alerts)", flush=True)
         except OSError:
             pass
-    threading.Thread(target=_tg_worker, daemon=True).start()
-    threading.Thread(target=engine_loop, daemon=True).start()
+    global _tg_thread, _engine_thread
+    _tg_thread = threading.Thread(target=_tg_worker, name="telegram-worker", daemon=True)
+    _engine_thread = threading.Thread(target=engine_loop, name="legacy-engine", daemon=True)
+    _tg_thread.start()
+    _engine_thread.start()
 
 
 _engine_started = False
 _ENGINE_LOCK = threading.Lock()
+_tg_thread = None
+_engine_thread = None
 
 
 if __name__ == "__main__":
