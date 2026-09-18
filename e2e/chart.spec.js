@@ -137,7 +137,8 @@ test('mobile layout keeps primary chart controls usable', async ({ page }, testI
 });
 
 
-test('digit distribution is removed and chart gets analysis space', async ({ page }) => {
+test('digit distribution is removed and desktop chart gets analysis space', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only chart workspace assertion.');
   await page.goto('/');
   await expect(page.locator('#digit-grid')).toHaveCount(0);
   await expect(page.getByText('DIGIT DISTRIBUTION · LAST 100')).toHaveCount(0);
@@ -147,7 +148,8 @@ test('digit distribution is removed and chart gets analysis space', async ({ pag
   expect(desktopBox.height).toBeGreaterThanOrEqual(540);
 });
 
-test('mobile chart remains usable after digit panel removal', async ({ page }) => {
+test('mobile chart remains usable after digit panel removal', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'Mobile-only chart workspace assertion.');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await expect(page.locator('#digit-grid')).toHaveCount(0);
