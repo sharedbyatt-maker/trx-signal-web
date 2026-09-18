@@ -4,7 +4,6 @@ async function waitForChart(page) {
   await page.goto('/');
   await expect(page.locator('#conn-txt')).toHaveText('LIVE');
   await expect(page.locator('#tv-chart canvas').first()).toBeVisible();
-  await expect(page.locator('#history .ball, #history > div').first()).toBeVisible();
 }
 
 function watchRuntimeErrors(page) {

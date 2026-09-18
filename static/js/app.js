@@ -341,10 +341,13 @@ const DRAGON_MIN = 4;   // တူညီတဲ့ရလဒ် ဒီအရေအ�
 
 function renderHistory(s) {
   const wrap = $("history");
+  const counts = $("counts");
+  /* Recent History UI is optional/removed; keep history data available for chart logic. */
+  if (!wrap && !counts) return;
   const h = s.history || [];
   /* skip DOM rebuild when the ball strip hasn't changed */
   const sig = h.length + ":" + (h.length ? h[h.length - 1].issue : "");
-  if (sig !== lastHistSig) {
+  if (wrap && sig !== lastHistSig) {
     lastHistSig = sig;
     const tail = h.slice(-500);
     /* streak length ending at each ball (chronological) */
@@ -368,9 +371,11 @@ function renderHistory(s) {
   }
 
   const a = s.analysis;
-  $("counts").innerHTML = a && a.ready
-    ? `Window ${s.config.long_window}: <b class="b">BIG ${a.big}</b> · <b class="s">SMALL ${a.small}</b> · Gap ${a.gap} · <span title="10-day buffer">Buffer ${mergedCount.toLocaleString("en-US")}</span>`
-    : `Collecting… Buffer ${mergedCount.toLocaleString("en-US")}`;
+  if (counts) {
+    counts.innerHTML = a && a.ready
+      ? `Window ${s.config.long_window}: <b class="b">BIG ${a.big}</b> · <b class="s">SMALL ${a.small}</b> · Gap ${a.gap} · <span title="10-day buffer">Buffer ${mergedCount.toLocaleString("en-US")}</span>`
+      : `Collecting… Buffer ${mergedCount.toLocaleString("en-US")}`;
+  }
 }
 
 let lastLogSig = "";
