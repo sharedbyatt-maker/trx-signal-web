@@ -328,8 +328,9 @@ window.TRXDraw = (() => {
   function lockChart(lock) {
     if (api) api.chart.applyOptions({ handleScroll: !lock, handleScale: !lock });
     if (wrapEl) {
-      wrapEl.style.cursor = lock ? "crosshair" : "";
+      wrapEl.style.cursor = "";
       wrapEl.classList.toggle("drawing-active", !!lock);
+      wrapEl.classList.toggle("drawing-dragging", !!(lock && drag));
     }
   }
   function setTool(next) {
@@ -549,7 +550,7 @@ window.TRXDraw = (() => {
   }
   function onMove(x,y){
     hover={x,y};
-    if(drag){const d=drawings.find(z=>z.id===drag.id);if(!d||d.locked){drag=null;return;}
+    if(drag){const d=drawings.find(z=>z.id===drag.id);if(!d||d.locked){drag=null;lockChart(tool!=="cursor");return;}
       if(drag.mode==="handle"){
         const np=fromXY(x,y,true);if(np){if(d.type==="vline")d.points[drag.index]={...d.points[drag.index],t:np.t,lb:labelOf(np.t)||null};else if(d.type==="hline")d.points[0]={...d.points[0],p:np.p};else d.points[drag.index]={t:np.t,p:np.p,lb:labelOf(np.t)||null};redraw();}return;
       }
