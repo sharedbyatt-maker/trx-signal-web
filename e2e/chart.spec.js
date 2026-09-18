@@ -25,7 +25,7 @@ test('loads the real chart UI without browser runtime errors', async ({ page }) 
   await expect(page.locator('#lg-tf')).toHaveText('1m');
   await expect(page.locator('#lg-ohlc')).not.toHaveText('');
   await expect(page.locator('#ctx-rsi30')).toContainText('L');
-  await expect(page.locator('.hist-range-btn[data-days="10"]')).toHaveClass(/active/);
+  await expect(page.locator('#history-range-select')).toHaveValue('10');
   await page.waitForTimeout(700);
   expect(errors).toEqual([]);
 });
@@ -53,8 +53,8 @@ test('history range presets expose the full-history navigation controls', async 
   await waitForChart(page);
   await expect(page.locator('#chart-meta')).not.toHaveText('loading…');
   for (const d of ['3', '1', '10']) {
-    await page.locator(`.hist-range-btn[data-days="${d}"]`).click();
-    await expect(page.locator(`.hist-range-btn[data-days="${d}"]`)).toHaveClass(/active/);
+    await page.locator('#history-range-select').selectOption(d);
+    await expect(page.locator('#history-range-select')).toHaveValue(d);
     await expect(page.locator('#tv-chart canvas').first()).toBeVisible();
   }
 });
