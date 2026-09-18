@@ -187,5 +187,5 @@ test('focus countdown is clearly distinguished from wall clock and chart note is
   await expect(page.locator('.focus-countdown > span')).toHaveText('NEXT IN');
   await expect(page.locator('#focus-next')).toContainText(/~?\d+:\d{2}|—/);
   await expect(page.locator('#chart-model-note')).toHaveCount(0);
-  await expect(page.locator('#chart-card .card-title')).toHaveText('CHART');
+  await expect(page.locator('#chart-card > .card-title')).toHaveCount(0);
 });
