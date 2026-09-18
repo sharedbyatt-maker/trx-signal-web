@@ -29,6 +29,41 @@ LOCK = threading.Lock()
 
 _tg_queue = queue.Queue()
 
+_action_rate_lock = threading.Lock()
+_action_rate = {}
+
+
+def _allow_browser_action(name, min_interval=3.0):
+    """Basic CSRF/spam guard for public UI actions without changing read APIs."""
+    if request.method != "POST":
+        return False
+    if request.headers.get("X-Requested-With") != "TRX-Terminal":
+        return False
+    site = (request.headers.get("Sec-Fetch-Site") or "").lower()
+    if site and site not in ("same-origin", "same-site", "none"):
+        return False
+    remote = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    key = (name, remote)
+    now = time.monotonic()
+    with _action_rate_lock:
+        last = _action_rate.get(key, 0.0)
+        if now - last < min_interval:
+            return False
+        _action_rate[key] = now
+        if len(_action_rate) > 512:
+            cutoff = now - 3600
+            for old_key, ts in list(_action_rate.items()):
+                if ts < cutoff:
+                    _action_rate.pop(old_key, None)
+    return True
+
+
+def _admin_action_allowed():
+    """Require an explicit server-side token for non-UI maintenance mutations."""
+    expected = os.environ.get("TRX_ADMIN_TOKEN", "").strip()
+    supplied = request.headers.get("X-TRX-Admin-Token", "").strip()
+    return bool(expected and supplied and supplied == expected)
+
 
 def load_tg_config():
     """telegram.json ဦးစားပေး — မရှိရင် TG_TOKEN / TG_CHAT env vars (cloud hosting)
@@ -1441,9 +1476,11 @@ def api_history():
     })
 
 
-@app.route("/api/telegram-test")
+@app.route("/api/telegram-test", methods=["POST"])
 def api_telegram_test():
-    """Header 📡 button — Telegram ချိတ်ဆက်မှု ချက်ချင်း စမ်းသပ်။"""
+    """Header 📡 button — same-origin POST only, with a small anti-spam guard."""
+    if not _allow_browser_action("telegram-test", min_interval=3.0):
+        return jsonify({"ok": False, "error": "action blocked or rate-limited"}), 429
     cfg = load_tg_config()
     if not cfg:
         return jsonify({"ok": False,
@@ -1578,12 +1615,20 @@ def api_rsi_extremes():
 
 @app.route("/api/backtest")
 def api_backtest():
-    if request.args.get("refresh") == "1":
-        with LOCK:
-            STATE["backtest"] = None      # engine re-calibrates next cycle
+    """Read-only backtest snapshot. GET never mutates production state."""
     with LOCK:
         bt = STATE.get("backtest")
     return jsonify(bt or {"status": "waiting"})
+
+
+@app.route("/api/backtest/refresh", methods=["POST"])
+def api_backtest_refresh():
+    """Maintenance mutation: explicit POST + server-side admin token."""
+    if not _admin_action_allowed():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    with LOCK:
+        STATE["backtest"] = None
+    return jsonify({"ok": True, "status": "queued"})
 
 
 def start_engine():
