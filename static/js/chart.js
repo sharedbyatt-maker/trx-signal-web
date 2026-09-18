@@ -324,6 +324,43 @@ window.TRXChart = (() => {
     return true;
   }
 
+  function refreshHigherTfLiveIndicators(time) {
+    if (group === 1 || !curCloses.length) return false;
+    // Higher-TF candles evolve in-place for several 1m rounds. Recompute the
+    // bounded indicator arrays from the current grouped closes, then update only
+    // the latest plotted point. This avoids using the 1m append-state math on an
+    // unfinished 5m/15m/1h candle and is still cheap at <= 2,880 bars.
+    const closes = curCloses;
+    const ema5 = calcEma(closes, 5), ema15 = calcEma(closes, 15), ema100 = calcEma(closes, 100);
+    const sma20 = smaArr(closes, 20), sma50 = smaArr(closes, 50);
+    const rsi = calcRsi(closes, 14);
+    const macd = calcMacd(closes, 12, 26, 9);
+    const st = calcStoch(curBars, 14, 3, 3);
+    const bb = calcBB(closes, 20, 2);
+    const last = (arr) => arr && arr.length ? arr[arr.length - 1] : null;
+    const put = (series, value) => {
+      if (series && value != null && Number.isFinite(value)) series.update({ time, value });
+    };
+
+    put(emaFastSeries, last(ema5)); put(emaSlowSeries, last(ema15)); put(emaLongSeries, last(ema100));
+    put(sma20Series, last(sma20)); put(sma50Series, last(sma50));
+    put(bbUpperSeries, last(bb.up)); put(bbMidSeries, last(sma20)); put(bbLowerSeries, last(bb.lo));
+    put(rsiSeries, last(rsi));
+    put(macdLineSeries, last(macd.macd)); put(macdSigSeries, last(macd.signal));
+    const mv = last(macd.macd), sv = last(macd.signal);
+    if (macdHistSeries && mv != null && sv != null) {
+      const hv = mv - sv;
+      macdHistSeries.update({ time, value: hv, color: hv >= 0 ? 'rgba(8,153,129,.55)' : 'rgba(242,54,69,.5)' });
+    }
+    put(stochKSeries, last(st.k)); put(stochDSeries, last(st.d));
+    curRsiValues = rsi.slice(); curMacdValues = macd.macd.slice(); curStochValues = st.k.slice();
+    seedLiveIndicators(closes, { ema5, ema15, ema100, rsi, macd, stoch: st });
+    if (opts.rsi) updateRsiLegend(last(rsi));
+    if (opts.macd) updateMacdLegend(last(macd.macd));
+    if (opts.stoch) updateStochLegend(last(st.k));
+    return true;
+  }
+
   /* ================= bars from BIG/SMALL walk ================= */
   // Phase 5 — True Timeframe Aggregation.
   // Bucket by the source wall-clock timestamp, not by row position. We deliberately
@@ -1715,6 +1752,8 @@ window.TRXChart = (() => {
     // in-progress bars are reconciled by the normal /api/state refresh.
     if (group === 1) {
       try { updateLiveIndicators(close, time); } catch (e) { /* full state refresh will reconcile */ }
+    } else {
+      try { refreshHigherTfLiveIndicators(time); } catch (e) { /* full state refresh will reconcile */ }
     }
     updateLegend(curBars[curBars.length - 1]);
 
