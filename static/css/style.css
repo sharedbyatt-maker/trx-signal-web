@@ -13,3 +13,19 @@ button, input, select, textarea { font: inherit; }
   body { font-size: 11px; }
   .tf-btn { font-size: 10px; }
 }
+
+
+/* Chart workspace expansion — digit distribution UI removed.
+   Keep analysis canvas dominant without changing chart/data logic. */
+@media (min-width: 1281px) {
+  #tv-chart { height: max(620px, calc(100vh - 500px)); }
+}
+@media (min-width: 901px) and (max-width: 1280px) {
+  #tv-chart { height: max(540px, calc(100vh - 500px)); }
+}
+@media (max-width: 900px) {
+  #tv-chart { height: 440px; }
+}
+@media (max-width: 600px) {
+  #tv-chart { height: 400px; }
+}
