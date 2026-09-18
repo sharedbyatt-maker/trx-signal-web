@@ -135,3 +135,29 @@ test('mobile layout keeps primary chart controls usable', async ({ page }, testI
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
   expect(overflow).toBeFalsy();
 });
+
+
+test('digit distribution is removed and desktop chart gets analysis space', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only chart workspace assertion.');
+  await page.goto('/');
+  await expect(page.locator('#digit-grid')).toHaveCount(0);
+  await expect(page.getByText('DIGIT DISTRIBUTION · LAST 100')).toHaveCount(0);
+  const chart = page.locator('#tv-chart');
+  await expect(chart).toBeVisible();
+  const desktopBox = await chart.boundingBox();
+  expect(desktopBox.height).toBeGreaterThanOrEqual(540);
+});
+
+test('mobile chart remains usable after digit panel removal', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'Mobile-only chart workspace assertion.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('#digit-grid')).toHaveCount(0);
+  const chart = page.locator('#tv-chart');
+  await expect(chart).toBeVisible();
+  const box = await chart.boundingBox();
+  expect(box.width).toBeLessThanOrEqual(390);
+  expect(box.height).toBeGreaterThanOrEqual(390);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
+  expect(overflow).toBeTruthy();
+});
