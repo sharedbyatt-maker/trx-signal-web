@@ -860,3 +860,43 @@ footer{background:#080d16;border-top:1px solid #1e2a3e}
 @media(max-width:900px){
   .chart-toolbar{flex-wrap:wrap;overflow:visible}
 }
+
+
+/* v50 Trading Focus Mode + explicit state language (display-only). */
+.ticker-wrap{position:static}
+.focus-bar{
+  position:sticky;top:61px;z-index:19;
+  min-height:38px;padding:5px 22px;
+  display:flex;align-items:center;gap:8px;
+  background:rgba(10,16,26,.96);
+  border-bottom:1px solid #253249;
+  box-shadow:0 7px 20px rgba(0,0,0,.18);
+  backdrop-filter:blur(12px);
+}
+.focus-brand,.focus-item,.focus-state,.focus-connection{display:flex;align-items:center;gap:7px;min-width:0}
+.focus-brand{padding-right:10px;color:#90a2bd;font-size:9px;font-weight:800;letter-spacing:.14em}
+.focus-pulse,.focus-dot{width:7px;height:7px;border-radius:50%;background:#11b99b;box-shadow:0 0 10px rgba(17,185,155,.75)}
+.focus-item{height:28px;padding:0 10px;border:1px solid #253249;border-radius:7px;background:#111b2a}
+.focus-item>span,.focus-state>span:not(.focus-state-icon){color:#7f8da4;font-size:8px;font-weight:800;letter-spacing:.09em}
+.focus-item>b{font-size:11px;color:#e8eef8;white-space:nowrap}
+.focus-state{height:28px;padding:0 10px;border:1px solid #34435a;border-radius:999px;background:#141c29}
+.focus-state b{font-size:9px;letter-spacing:.05em;white-space:nowrap}
+.focus-state-icon{font-size:11px}
+.focus-state.is-waiting{color:#aab4c3;border-color:#3a4658;background:rgba(108,120,139,.10)}
+.focus-state.is-ready{color:#ffc14d;border-color:rgba(255,193,77,.48);background:rgba(255,176,32,.10)}
+.focus-state.is-big{color:#ff5363;border-color:rgba(242,54,69,.55);background:rgba(242,54,69,.12);box-shadow:0 0 14px rgba(242,54,69,.10)}
+.focus-state.is-small{color:#5c96ff;border-color:rgba(52,120,246,.58);background:rgba(52,120,246,.13);box-shadow:0 0 14px rgba(52,120,246,.10)}
+.focus-state.is-stopped,.focus-connection.is-delayed,.focus-connection.is-offline{color:#ffb548;border-color:rgba(255,181,72,.48);background:rgba(255,181,72,.10)}
+.focus-connection{margin-left:auto;height:28px;padding:0 8px;color:#25c7aa;font-size:9px;letter-spacing:.08em}
+.focus-connection.is-delayed .focus-dot,.focus-connection.is-offline .focus-dot{background:#ffb548;box-shadow:0 0 10px rgba(255,181,72,.55)}
+.stake-mode{display:inline-flex!important;align-items:center;gap:6px}
+.stake-mode.waiting::before{content:"◷";color:#9aa6b8}
+.stake-mode.active::before{content:"●";color:#ffc14d}
+.stake-mode.waiting{color:#aab4c3!important;border-color:#3a4658!important;background:rgba(108,120,139,.10)!important}
+.stake-mode.active{color:#ffc14d!important;border-color:rgba(255,193,77,.48)!important;background:rgba(255,176,32,.10)!important}
+.stake-hero-dir.red{padding:5px 9px;border-radius:7px;background:rgba(242,54,69,.11)}
+.stake-hero-dir.blue{padding:5px 9px;border-radius:7px;background:rgba(52,120,246,.12)}
+@media(max-width:1100px){
+  .focus-bar{padding-inline:14px}
+  .focus-countdown{display:none}
+}

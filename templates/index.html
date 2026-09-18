@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=49">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=50">
 </head>
 <body>
 <header>
@@ -31,16 +31,25 @@
 
 <div class="ticker-wrap">
   <div class="ticker">
-    <div class="tk-item"><span class="tk-label">NEXT ISSUE</span><span class="tk-val mono" id="tk-issue">—</span></div>
+    <div class="tk-item tk-issue"><span class="tk-label">NEXT ISSUE</span><span class="tk-val mono" id="tk-issue">—</span></div>
     <div class="tk-sep"></div>
-    <div class="tk-item"><span class="tk-label">LAST</span><span class="tk-ball" id="tk-last">—</span></div>
+    <div class="tk-item tk-last"><span class="tk-label">LAST</span><span class="tk-ball" id="tk-last">—</span></div>
     <div class="tk-sep"></div>
-    <div class="tk-item"><span class="tk-label">BIG · 100</span><span class="tk-val mono red" id="tk-big">—</span></div>
-    <div class="tk-item"><span class="tk-label">SMALL · 100</span><span class="tk-val mono blue" id="tk-small">—</span></div>
+    <div class="tk-item tk-big"><span class="tk-label">BIG · 100</span><span class="tk-val mono red" id="tk-big">—</span></div>
+    <div class="tk-item tk-small"><span class="tk-label">SMALL · 100</span><span class="tk-val mono blue" id="tk-small">—</span></div>
     <div class="tk-sep"></div>
-    <div class="tk-item"><span class="tk-label">STREAK</span><span class="tk-val mono" id="tk-streak">—</span></div>
-    <div class="tk-item"><span class="tk-label">STDEV 20</span><span class="tk-val mono" id="tk-vol">—</span></div>
+    <div class="tk-item tk-streak"><span class="tk-label">STREAK</span><span class="tk-val mono" id="tk-streak">—</span></div>
+    <div class="tk-item tk-vol"><span class="tk-label">STDEV 20</span><span class="tk-val mono" id="tk-vol">—</span></div>
   </div>
+</div>
+
+<div class="focus-bar" id="focus-bar" aria-label="Trading focus status">
+  <div class="focus-brand"><span class="focus-pulse"></span><span>FOCUS</span></div>
+  <div class="focus-item"><span>ISSUE</span><b class="mono" id="focus-issue">—</b></div>
+  <div class="focus-item focus-countdown"><span>NEXT</span><b class="mono" id="focus-next">—</b></div>
+  <div class="focus-state is-waiting" id="focus-step" aria-live="polite"><span class="focus-state-icon">◷</span><span>12-STEP</span><b>WAITING</b></div>
+  <div class="focus-state is-waiting" id="focus-robust" aria-live="polite"><span class="focus-state-icon">◷</span><span>ROBUST</span><b>NO TRADE</b></div>
+  <div class="focus-connection is-live" id="focus-connection"><span class="focus-dot"></span><b>LIVE</b></div>
 </div>
 
 <main>
@@ -270,5 +279,6 @@
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=42"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=47"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=1"></script>
 </body>
 </html>

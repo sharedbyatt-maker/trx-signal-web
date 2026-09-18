@@ -323,3 +323,42 @@
   #tv-chart{height:420px}
   .ctx-grid>div{grid-template-columns:110px minmax(0,1fr)}
 }
+
+
+/* v50: two-row mobile ticker and non-obstructive focus strip. */
+@media(max-width:900px){
+  header{position:static}
+  .focus-bar{top:0}
+}
+@media(max-width:600px){
+  .ticker-wrap{overflow:visible;width:100%;max-width:100%}
+  .ticker{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:6px;
+    width:100%;
+    min-width:0;
+    padding:7px 8px;
+  }
+  .ticker .tk-sep{display:none}
+  .ticker .tk-item{min-width:0;width:auto;padding:6px 7px}
+  .ticker .tk-issue{grid-column:span 2}
+  .ticker .tk-last{grid-column:span 2}
+  .ticker .tk-big,.ticker .tk-small,.ticker .tk-streak,.ticker .tk-vol{grid-column:span 1}
+  .ticker .tk-label{font-size:7px;letter-spacing:.06em;white-space:nowrap}
+  .ticker .tk-val{font-size:10px;white-space:nowrap}
+  .ticker .tk-ball{width:22px;height:22px}
+  .focus-bar{min-height:36px;padding:4px 8px;gap:5px;overflow:hidden}
+  .focus-brand{display:none}
+  .focus-item{padding-inline:7px}
+  .focus-countdown{display:none}
+  .focus-state{padding-inline:7px;gap:4px}
+  .focus-state>span:not(.focus-state-icon){display:none}
+  .focus-state b{font-size:8px}
+  .focus-connection{padding-inline:4px}
+}
+@media(max-width:390px){
+  .focus-item>span{display:none}
+  .focus-state{padding-inline:6px}
+  .focus-connection b{display:none}
+}

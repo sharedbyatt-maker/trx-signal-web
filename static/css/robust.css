@@ -13,3 +13,18 @@
 .rb-status{border-color:var(--border2,#34435a);background:rgba(10,16,26,.35)}
 @media(max-width:900px){.robust-card{padding:14px}.robust-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rb-hero{grid-column:1/-1}}
 @media(max-width:560px){.robust-grid{grid-template-columns:1fr}.rb-hero{grid-column:auto}.robust-head{align-items:flex-start}}
+
+
+/* v50 explicit robust state colors and icons. */
+.rb-status{display:inline-flex;align-items:center;gap:6px}
+.rb-status::before{font-size:10px}
+.rb-status.s-no-trade::before{content:"◷"}
+.rb-status.s-active::before{content:"●"}
+.rb-status.s-big::before{content:"▲"}
+.rb-status.s-small::before{content:"▼"}
+.rb-status.s-daily-stop::before{content:"■"}
+.rb-status.s-insufficient-bankroll::before,.rb-status.s-offline::before{content:"!"}
+.rb-status.s-big{color:#ff5363!important;border-color:rgba(242,54,69,.55)!important;background:rgba(242,54,69,.12)!important}
+.rb-status.s-small{color:#5c96ff!important;border-color:rgba(52,120,246,.58)!important;background:rgba(52,120,246,.13)!important}
+.rb-status.s-active{color:#ffc14d!important;border-color:rgba(255,193,77,.48)!important;background:rgba(255,176,32,.10)!important}
+.rb-status.s-no-trade{color:#aab4c3!important;background:rgba(108,120,139,.10)!important}
