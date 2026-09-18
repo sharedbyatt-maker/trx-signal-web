@@ -160,3 +160,24 @@ test('mobile chart remains usable after digit panel removal', async ({ page }, t
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
   expect(overflow).toBeTruthy();
 });
+
+
+test('UI polish keeps focus status singular and readable', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#focus-bar')).toBeVisible();
+  await expect(page.locator('#focus-connection')).toBeVisible();
+  await expect(page.locator('header #conn-txt')).toBeHidden();
+  const dailyLabel = page.locator('.daily12-grid small').first();
+  await expect(dailyLabel).toBeVisible();
+  const size = await dailyLabel.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(size).toBeGreaterThanOrEqual(9);
+});
+
+test('drawing tool exposes active and drag feedback classes', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Precise drawing interaction is desktop-only.');
+  await waitForChart(page);
+  await page.locator('#dt-toggle-btn').click();
+  await page.locator('.dt-btn[data-tool="trend"]').click();
+  await expect(page.locator('.dt-btn[data-tool="trend"]')).toHaveClass(/active/);
+  await expect(page.locator('.tv-wrap')).toHaveClass(/drawing-active/);
+});
