@@ -54,6 +54,35 @@
       $("l1-pnl").classList.toggle("red", pnl < 0);
     }
     if ($("l1-risk")) $("l1-risk").textContent = x.risk_status || "TRADE ALLOWED";
+
+    const trades = Array.isArray(x.trades) ? x.trades.filter(t => String(t.time || "").slice(0, 10) === String(x.today || "")) : [];
+    const wins = trades.filter(t => t.won).length;
+    const losses = trades.length - wins;
+    const staked = trades.reduce((sum, t) => sum + Number(t.stake || 0), 0);
+    let deepest = null;
+    trades.forEach(t => {
+      const rank = Number(t.tier || 0) * 100 + Number(t.step || 0);
+      if (!deepest || rank > deepest.rank) deepest = {rank, tier: t.tier, step: t.step};
+    });
+    if ($("l1r-date")) $("l1r-date").textContent = x.today || "—";
+    if ($("l1r-bets")) $("l1r-bets").textContent = fmt(trades.length);
+    if ($("l1r-wr")) $("l1r-wr").textContent = trades.length ? ((wins / trades.length) * 100).toFixed(1) + "%" : "0%";
+    if ($("l1r-pnl")) {
+      $("l1r-pnl").textContent = (pnl >= 0 ? "+" : "") + fmt(pnl) + " MMK";
+      $("l1r-pnl").classList.toggle("green", pnl > 0);
+      $("l1r-pnl").classList.toggle("red", pnl < 0);
+    }
+    if ($("l1r-staked")) $("l1r-staked").textContent = fmt(staked) + " MMK";
+    if ($("l1r-wl")) $("l1r-wl").textContent = wins + " / " + losses;
+    if ($("l1r-depth")) $("l1r-depth").textContent = deepest ? "T" + deepest.tier + "-S" + deepest.step : "—";
+    const total = Number(x.model_total_pnl || 0);
+    const milestone = Number(x.withdraw_milestone || 50000);
+    const progress = milestone > 0 ? ((total % milestone) + milestone) % milestone : 0;
+    if ($("l1r-withdraw")) $("l1r-withdraw").textContent = fmt(progress) + " / " + fmt(milestone);
+    if ($("l1r-withdraw-bar")) $("l1r-withdraw-bar").style.width = Math.max(0, Math.min(100, milestone ? progress / milestone * 100 : 0)) + "%";
+    if ($("l1r-total")) $("l1r-total").textContent = "MODEL TOTAL " + (total >= 0 ? "+" : "") + fmt(total) + " MMK";
+    const last = x.last_trade;
+    if ($("l1r-last")) $("l1r-last").textContent = last ? ("LAST " + (last.won ? "WIN" : "LOSS") + " · T" + last.tier + "-S" + last.step + " · " + fmt(last.stake)) : "NO SETTLED TRADE";
   }
 
   async function refresh() {
