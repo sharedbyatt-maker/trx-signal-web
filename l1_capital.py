@@ -12,7 +12,7 @@ import threading
 import time
 
 ENGINE_NAME = "L1 CAPITAL"
-VERSION = "1.1"
+VERSION = "1.2"
 RSI_PERIOD = 14
 OVERSOLD = 32.0
 OVERBOUGHT = 68.0
@@ -255,6 +255,55 @@ def _fmt_signal(s):
     )
 
 
+def _fmt_result(s):
+    t = s["last_trade"]
+    won = bool(t.get("won"))
+    title = "✅ WIN" if won else "❌ LOSS"
+    pnl = int(t.get("pnl") or 0)
+    next_line = "Next: WAIT — fresh L1 setup"
+    p = s.get("pending")
+    w = s.get("waiting_rule")
+    if p:
+        next_line = f"Next: {p['target']} · {int(p['stake']):,} MMK · T{p['tier']}-S{p['step']}"
+    elif w:
+        next_line = (f"Next: WAIT · {w.get('rule') or 'RULE'} · "
+                     f"{int(w.get('stake') or 0):,} MMK · "
+                     f"T{int(w.get('tier') or 0)+1}-S{int(w.get('bets') or 0)+1}")
+    return (
+        f"{title} [{ENGINE_NAME}] — RESULT\\n\\n"
+        f"🎫 Issue: {t.get('issue') or ''}\\n"
+        f"🎯 Signal: {t.get('target') or '—'} · Actual: {t.get('actual') or '—'}\\n"
+        f"💰 Stake: {int(t.get('stake') or 0):,} MMK\\n"
+        f"📶 Level: T{int(t.get('tier') or 0)}-S{int(t.get('step') or 0)}\\n"
+        f"P/L: {pnl:+,} MMK\\n"
+        f"Model Today P/L: {int(s.get('today_pnl') or 0):+,} MMK\\n"
+        f"{next_line}\\n"
+        f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}"
+    )
+
+
+def _fmt_wait(s):
+    w = s.get("waiting_rule")
+    if w:
+        return (
+            f"⏳ [{ENGINE_NAME}] — WAIT / SKIP\\n\\n"
+            f"Rule: {w.get('rule') or '—'}\\n"
+            f"Target kept: {w.get('target') or '—'}\\n"
+            f"Next stake after wait: {int(w.get('stake') or 0):,} MMK\\n"
+            f"Next level: T{int(w.get('tier') or 0)+1}-S{int(w.get('bets') or 0)+1}\\n"
+            f"Model Today P/L: {int(s.get('today_pnl') or 0):+,} MMK\\n"
+            f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}\\n\\n"
+            "No manual bet now · wait for the next L1 CAPITAL signal."
+        )
+    return (
+        f"⏳ [{ENGINE_NAME}] — WAIT\\n\\n"
+        "No actionable L1 setup right now.\\n"
+        f"Model Today P/L: {int(s.get('today_pnl') or 0):+,} MMK\\n"
+        f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}\\n\\n"
+        "No manual bet now · waiting for a fresh L1 CAPITAL setup."
+    )
+
+
 def _fmt_withdrawal_milestone(units):
     amount = int(units) * WITHDRAW_MILESTONE
     return (
@@ -271,6 +320,9 @@ class L1CapitalService:
         self._stop = threading.Event()
         self._last_alert_key = None
         self._last_withdraw_units = 0
+        self._last_result_key = None
+        self._last_wait_key = None
+        self._last_mode = None
         self._state_file = (os.path.join(getattr(core, "BASE_DIR", "."), "l1_capital_runtime.json")
                             if state_file is None else state_file)
         self.snapshot = {"ready": False, "engine": ENGINE_NAME, "version": VERSION}
@@ -286,6 +338,15 @@ class L1CapitalService:
             if isinstance(key, list) and len(key) == 5:
                 self._last_alert_key = tuple(key)
             self._last_withdraw_units = max(0, int(saved.get("last_withdraw_units") or 0))
+            result_key = saved.get("last_result_key")
+            if isinstance(result_key, list) and len(result_key) == 6:
+                self._last_result_key = tuple(result_key)
+            wait_key = saved.get("last_wait_key")
+            if isinstance(wait_key, list) and len(wait_key) == 5:
+                self._last_wait_key = tuple(wait_key)
+            mode = saved.get("last_mode")
+            if mode in ("SIGNAL", "WAIT_RULE", "WAIT"):
+                self._last_mode = mode
         except (OSError, ValueError, TypeError):
             pass
 
@@ -298,6 +359,9 @@ class L1CapitalService:
                 json.dump({
                     "last_alert_key": list(self._last_alert_key) if self._last_alert_key else None,
                     "last_withdraw_units": self._last_withdraw_units,
+                    "last_result_key": list(self._last_result_key) if self._last_result_key else None,
+                    "last_wait_key": list(self._last_wait_key) if self._last_wait_key else None,
+                    "last_mode": self._last_mode,
                 }, handle)
             os.replace(tmp, self._state_file)
         except OSError:
@@ -335,13 +399,47 @@ class L1CapitalService:
         if snap.get("pending") and next_issue:
             snap["pending"]["issue"] = str(next_issue)
         self.snapshot = snap
+        # Lifecycle notifications are observational only. They never mutate
+        # frozen L1 signal/stake/risk state and all reuse the legacy tg_notify queue.
+        last_trade = snap.get("last_trade")
+        if last_trade:
+            result_key = (
+                str(last_trade.get("issue") or ""), str(last_trade.get("target") or ""),
+                int(last_trade.get("stake") or 0), int(last_trade.get("tier") or 0),
+                int(last_trade.get("step") or 0), bool(last_trade.get("won")),
+            )
+            if result_key != self._last_result_key:
+                self.core.tg_notify(_fmt_result(snap))
+                self._last_result_key = result_key
+                self._save_runtime_state()
+
         p = snap.get("pending")
+        wait = snap.get("waiting_rule")
         if p and p.get("issue"):
             key = (str(p["issue"]), p["target"], int(p["stake"]), int(p["tier"]), int(p["step"]))
             if key != self._last_alert_key:
                 self.core.tg_notify(_fmt_signal(snap))
                 self._last_alert_key = key
-                self._save_runtime_state()
+            self._last_mode = "SIGNAL"
+            self._last_wait_key = None
+            self._save_runtime_state()
+        elif wait:
+            wait_key = (
+                str(wait.get("rule") or ""), str(wait.get("target") or ""),
+                int(wait.get("stake") or 0), int(wait.get("tier") or 0),
+                int(wait.get("bets") or 0),
+            )
+            if self._last_mode != "WAIT_RULE" or wait_key != self._last_wait_key:
+                self.core.tg_notify(_fmt_wait(snap))
+                self._last_wait_key = wait_key
+            self._last_mode = "WAIT_RULE"
+            self._save_runtime_state()
+        elif self._last_mode != "WAIT":
+            self.core.tg_notify(_fmt_wait(snap))
+            self._last_mode = "WAIT"
+            self._last_wait_key = None
+            self._save_runtime_state()
+
         units = int(snap.get("withdraw_milestones_reached") or 0)
         if units > self._last_withdraw_units:
             for milestone in range(self._last_withdraw_units + 1, units + 1):
