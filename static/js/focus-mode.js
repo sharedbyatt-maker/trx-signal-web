@@ -42,7 +42,7 @@
     const stepTarget = text("st-pending", "WAITING");
     paintState("focus-step", "12-STEP", /BIG|SMALL/i.test(stepTarget) ? stepTarget : stepMode);
 
-    paintState("focus-robust", "ROBUST", text("rb-status", "NO TRADE"));
+    paintState("focus-l1", "L1 CAPITAL", text("l1-status", "WAITING"));
 
     const conn = $("focus-connection");
     if (conn) {
@@ -57,7 +57,7 @@
   // Observe only source elements. Observing document.body made sync() react to
   // its own focus-bar writes and could create a MutationObserver feedback loop.
   const observer = new MutationObserver(sync);
-  ["tk-issue", "ctb-next", "st-status", "st-pending", "rb-status", "conn-txt", "dot"].forEach((id) => {
+  ["tk-issue", "ctb-next", "st-status", "st-pending", "l1-status", "conn-txt", "dot"].forEach((id) => {
     const el = $(id);
     if (el) observer.observe(el, { childList: true, subtree: true, characterData: true, attributes: id === "dot", attributeFilter: id === "dot" ? ["class"] : undefined });
   });
