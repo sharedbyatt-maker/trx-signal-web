@@ -25,6 +25,7 @@ from app_core import *  # noqa: F401,F403 - preserve existing public module API
 from decision import decide_signal
 from robust_integration import install_robust_routes
 from drawings_persistence import install_drawings_persistence
+from l1_capital import install_l1_capital
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +507,8 @@ robust_service = install_robust_routes(core)
 # Phase 8: token-protected, additive server persistence for manual chart drawings.
 # This does not mutate legacy/Robust/feed state.
 drawings_store = install_drawings_persistence(core.app)
+# Frozen L1 CAPITAL observer: Telegram/manual execution only; no bet placement.
+l1_capital_service = install_l1_capital(core)
 
 # Restore caller intent and start only after all decision paths/routes are wired.
 if _engine_disabled_by_caller:
@@ -514,15 +517,18 @@ else:
     os.environ.pop("TRX_NO_ENGINE", None)
     core.start_engine()
     robust_service.start()
+    l1_capital_service.start()
 
 
 if __name__ == "__main__":
     core.start_engine()
     robust_service.start()
+    l1_capital_service.start()
     print("=" * 52, flush=True)
     print("📈 FOREX-STYLE CONFLUENCE ENGINE — SHARED DECISION POLICY", flush=True)
     print("   Live + Backtest → decision.decide_signal()", flush=True)
     print("   Robust Engine → independent frozen causal strategy", flush=True)
+    print("   L1 CAPITAL → frozen manual-execution Telegram observer", flush=True)
     print("   Open: http://127.0.0.1:5000", flush=True)
     print("=" * 52, flush=True)
     port = int(os.environ.get("PORT", 10000))
