@@ -501,7 +501,7 @@ STATE = core.STATE
 start_engine = core.start_engine
 
 # Phase 8: token-protected, additive server persistence for manual chart drawings.
-# This does not mutate legacy/Robust/feed state.
+# This does not mutate legacy/L1/feed state.
 drawings_store = install_drawings_persistence(core.app)
 # Frozen L1 CAPITAL observer: Telegram/manual execution only; no bet placement.
 l1_capital_service = install_l1_capital(core)
