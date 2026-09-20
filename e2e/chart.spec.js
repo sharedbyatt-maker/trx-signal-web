@@ -229,8 +229,11 @@ test('digit distribution is removed and desktop chart gets analysis space', asyn
   const chart = page.locator('#tv-chart');
   await expect(chart).toBeVisible();
   const desktopBox = await chart.boundingBox();
-  expect(desktopBox.height).toBeGreaterThanOrEqual(680);
-  expect(desktopBox.height).toBeLessThanOrEqual(850);
+  expect(desktopBox.height).toBeGreaterThanOrEqual(900);
+  expect(desktopBox.height).toBeLessThanOrEqual(1300);
+  const chartCardBox = await page.locator('#chart-card').boundingBox();
+  const sideBox = await page.locator('.side-stack').boundingBox();
+  expect(Math.abs(chartCardBox.height - sideBox.height)).toBeLessThanOrEqual(3);
   await expect(page.locator('#rsi-pane')).toBeVisible();
   await expect(page.locator('.chart-toolbar')).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);

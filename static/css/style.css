@@ -150,12 +150,15 @@ header #conn-txt { display: none; }
   color:#8391a8;font-size:8.5px;font-weight:700;letter-spacing:.04em;
 }
 
-/* Desktop chart now consumes the vertical space previously left unused below RSI. */
+/* Desktop chart consumes the full sidebar row, removing the abandoned space
+   below RSI without adding a replacement panel. */
 @media (min-width:1101px) {
-  #tv-chart { height:max(620px,calc(100vh - 300px)); }
-}
-@media (min-width:1381px) {
-  #tv-chart { height:max(680px,calc(100vh - 280px)); }
+  .layout-grid { align-items:stretch; }
+  .primary-stack,
+  #chart-card { height:100%; }
+  #chart-card { display:flex;flex-direction:column; }
+  #chart-card .tv-wrap { flex:1 1 auto;min-height:680px; }
+  #tv-chart { height:100%; }
 }
 @media (max-width:1100px) {
   .side-stack {
