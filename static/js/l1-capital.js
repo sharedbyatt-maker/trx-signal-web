@@ -77,7 +77,13 @@
     if ($("l1r-depth")) $("l1r-depth").textContent = deepest ? "T" + deepest.tier + "-S" + deepest.step : "—";
     const total = Number(x.model_total_pnl || 0);
     const milestone = Number(x.withdraw_milestone || 50000);
-    const progress = milestone > 0 ? ((total % milestone) + milestone) % milestone : 0;
+    const reachedFromTotal = milestone > 0 ? Math.floor(Math.max(0, total) / milestone) : 0;
+    const reached = Math.max(0, Number.isFinite(Number(x.withdraw_milestones_reached))
+      ? Number(x.withdraw_milestones_reached)
+      : reachedFromTotal);
+    const progress = milestone > 0
+      ? Math.max(0, Math.min(milestone, Math.max(0, total) - reached * milestone))
+      : 0;
     if ($("l1r-withdraw")) $("l1r-withdraw").textContent = fmt(progress) + " / " + fmt(milestone);
     if ($("l1r-withdraw-bar")) $("l1r-withdraw-bar").style.width = Math.max(0, Math.min(100, milestone ? progress / milestone * 100 : 0)) + "%";
     if ($("l1r-total")) $("l1r-total").textContent = "MODEL TOTAL " + (total >= 0 ? "+" : "") + fmt(total) + " MMK";

@@ -23,7 +23,8 @@ test('loads the real chart UI without browser runtime errors', async ({ page }) 
   await waitForChart(page);
   await expect(page.locator('#lg-tf')).toHaveText('1m');
   await expect(page.locator('#lg-ohlc')).not.toHaveText('');
-  await expect(page.locator('#ctx-rsi30')).toContainText('L');
+  await expect(page.locator('#rsi-pane')).toBeVisible();
+  await expect(page.locator('#context-card')).toHaveCount(0);
   await expect(page.locator('#history-range-select')).toHaveValue('10');
   await page.waitForTimeout(700);
   expect(errors).toEqual([]);
@@ -159,6 +160,66 @@ test('L1 CAPITAL card and focus status render without Robust remnants', async ({
   expect(errors).toEqual([]);
 });
 
+test('sidebar order and L1 daily report calculations match existing API state', async ({ page }) => {
+  const errors = watchRuntimeErrors(page);
+  await page.goto('/');
+  const cards = page.locator('.side-stack > section');
+  await expect(cards).toHaveCount(4);
+  await expect(cards.nth(0)).toHaveAttribute('id', 'l1-capital-card');
+  await expect(cards.nth(1)).toHaveAttribute('id', 'l1-report-card');
+  await expect(cards.nth(2)).toHaveAttribute('id', 'stake-card');
+  await expect(cards.nth(3)).toHaveAttribute('id', 'daily12-card');
+  await expect(page.locator('#context-card')).toHaveCount(0);
+  await expect(page.getByText('MARKET CONTEXT')).toHaveCount(0);
+  await expect(page.getByText('ROBUST SIGNAL ENGINE')).toHaveCount(0);
+
+  await expect(page.locator('#l1r-bets')).toHaveText('5');
+  await expect(page.locator('#l1r-wr')).toHaveText('60.0%');
+  await expect(page.locator('#l1r-pnl')).toHaveText('+7,730 MMK');
+  await expect(page.locator('#l1r-staked')).toHaveText('23,250 MMK');
+  await expect(page.locator('#l1r-wl')).toHaveText('3 / 2');
+  await expect(page.locator('#l1r-depth')).toHaveText('T2-S2');
+  await expect(page.locator('#l1r-withdraw')).toHaveText('42,600 / 50,000');
+  await expect(page.locator('#l1r-withdraw-bar')).toHaveCSS('width', /.+/);
+  const progress = await page.locator('#l1r-withdraw-bar').evaluate(el => parseFloat(el.style.width));
+  expect(progress).toBeCloseTo(85.2, 1);
+  await expect(page.locator('#l1r-total')).toHaveText('MODEL TOTAL +92,600 MMK');
+  await expect(page.locator('#l1r-last')).toHaveText('LAST WIN · T1-S4 · 3,000');
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+  expect(overflow).toBeFalsy();
+  const reportOverflow = await page.locator('#l1-report-card').evaluate(el => el.scrollWidth > el.clientWidth + 1);
+  expect(reportOverflow).toBeFalsy();
+  await page.waitForTimeout(300);
+  expect(errors).toEqual([]);
+});
+
+test('withdrawal progress targets the next 50,000 milestone at boundary values', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Calculation boundaries are viewport-independent and covered once on desktop.');
+  const cases = [
+    [0, 0, '0 / 50,000', 0],
+    [49999, 0, '49,999 / 50,000', 99.998],
+    [50000, 1, '0 / 50,000', 0],
+    [50001, 1, '1 / 50,000', 0.002],
+    [92600, 1, '42,600 / 50,000', 85.2],
+    [100000, 2, '0 / 50,000', 0],
+  ];
+  let current = cases[0];
+  await page.route('**/api/l1-capital', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.model_total_pnl = current[0];
+    body.withdraw_milestones_reached = current[1];
+    await route.fulfill({response, json: body});
+  });
+  for (const item of cases) {
+    current = item;
+    await page.goto('/');
+    await expect(page.locator('#l1r-withdraw')).toHaveText(item[2]);
+    const width = await page.locator('#l1r-withdraw-bar').evaluate(el => parseFloat(el.style.width));
+    expect(width).toBeCloseTo(item[3], 2);
+  }
+});
+
 
 test('digit distribution is removed and desktop chart gets analysis space', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only chart workspace assertion.');
@@ -168,7 +229,12 @@ test('digit distribution is removed and desktop chart gets analysis space', asyn
   const chart = page.locator('#tv-chart');
   await expect(chart).toBeVisible();
   const desktopBox = await chart.boundingBox();
-  expect(desktopBox.height).toBeGreaterThanOrEqual(540);
+  expect(desktopBox.height).toBeGreaterThanOrEqual(680);
+  expect(desktopBox.height).toBeLessThanOrEqual(850);
+  await expect(page.locator('#rsi-pane')).toBeVisible();
+  await expect(page.locator('.chart-toolbar')).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+  expect(overflow).toBeFalsy();
 });
 
 test('mobile chart remains usable after digit panel removal', async ({ page }, testInfo) => {

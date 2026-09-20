@@ -175,6 +175,29 @@ def api_l1_capital():
             "working_bankroll": 100000,
             "daily_tp": 5000,
             "daily_sl": 50000,
+            "today": "2026-09-20",
+            "withdraw_milestone": 50000,
+            "withdraw_milestones_reached": 1,
+            "model_total_pnl": 92600,
+            "last_trade": {
+                "time": "2026-09-20 14:04:00",
+                "issue": "20260920103019998",
+                "target": "BIG",
+                "actual": "BIG",
+                "stake": 3000,
+                "tier": 1,
+                "step": 4,
+                "won": True,
+                "pnl": 2880,
+            },
+            "trades": [
+                {"time": "2026-09-19 23:59:00", "stake": 500, "tier": 1, "step": 1, "won": True},
+                {"time": "2026-09-20 14:00:00", "stake": 500, "tier": 1, "step": 1, "won": False},
+                {"time": "2026-09-20 14:01:00", "stake": 1000, "tier": 1, "step": 2, "won": True},
+                {"time": "2026-09-20 14:02:00", "stake": 6250, "tier": 2, "step": 1, "won": False},
+                {"time": "2026-09-20 14:03:00", "stake": 12500, "tier": 2, "step": 2, "won": True},
+                {"time": "2026-09-20 14:04:00", "stake": 3000, "tier": 1, "step": 4, "won": True},
+            ],
         }
     )
 
