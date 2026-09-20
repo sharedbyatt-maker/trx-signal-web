@@ -381,6 +381,25 @@ def run_backtest(parsed):
     for i, v in enumerate(typ):
         pref[i + 1] = pref[i] + (1 if v == "BIG" else 0)
 
+    # Exact causal equivalent of mtf_confluence(m[:i]) for every prefix, but
+    # computed once in O(n). The previous per-row slicing + full EMA replay was
+    # O(n²) and could block the live polling thread for minutes on cold start.
+    def mtf_prefix_signs(step):
+        groups = [sum(m[k:k + step]) for k in range(0, len(m) - step + 1, step)]
+        fast = core.ema_series(groups, core.FAST_EMA)
+        slow = core.ema_series(groups, core.SLOW_EMA)
+        signs = [0] * (len(m) + 1)
+        for prefix_len in range(step * core.SLOW_EMA, len(m) + 1):
+            group_index = prefix_len // step - 1
+            f = fast[group_index]
+            s = slow[group_index]
+            if f is not None and s is not None:
+                signs[prefix_len] = 1 if f > s else -1
+        return signs
+
+    mtf5 = mtf_prefix_signs(5)
+    mtf15 = mtf_prefix_signs(15)
+
     comps = {k: [0, 0] for k in ("EMA", "MOM", "RSI", "FADE", "GAP", "S/R")}
     buckets = {"trade": [0, 0], "watch": [0, 0]}
     guards = {"reversal": 0, "mtf": 0}
@@ -440,7 +459,7 @@ def run_backtest(parsed):
 
         # Causal MTF state: m[:i] ends at i-1, exactly the latest round known
         # when predicting target round i.
-        mtf = core.mtf_confluence(m[:i])
+        mtf = {"x5": mtf5[i], "x15": mtf15[i]}
         decision = decide_signal(
             score,
             td,
