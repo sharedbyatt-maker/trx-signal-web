@@ -237,6 +237,20 @@ class L1CapitalTests(unittest.TestCase):
             self.assertEqual(len([m for m in first.messages if "— WAIT" in m]), 1)
             self.assertEqual(second.messages, [])
 
+    def test_lifecycle_formatters_use_real_newlines_not_literal_escape_text(self):
+        win = {
+            "last_trade": {"issue": "101", "target": "BIG", "actual": "BIG", "stake": 500,
+                           "tier": 1, "step": 1, "pnl": 480, "won": True},
+            "pending": None, "waiting_rule": None, "today_pnl": 480,
+            "risk_status": "TRADE ALLOWED",
+        }
+        wait = dict(win, last_trade=None)
+        for message in (l1._fmt_result(win), l1._fmt_wait(wait)):
+            self.assertNotIn(r"\\n", message)
+            self.assertIn("\n", message)
+        self.assertIn("\n🎫 Issue: 101\n", l1._fmt_result(win))
+        self.assertIn("\n\nNO BET", l1._fmt_wait(wait))
+
     def test_signal_dedupe_survives_service_restart(self):
         rows = make_rows(18)
         rsi = [50.0] * 18
