@@ -8,6 +8,6 @@ for token in [
 ]: assert token in s, token
 assert 'DT ▼' not in s[s.index('function detectPatterns'):s.index('Auto Support / Resistance v2')]
 assert 'DB ▲' not in s[s.index('function detectPatterns'):s.index('Auto Support / Resistance v2')]
-for f in ['decision.py','robust_engine.py','app_core.py','drawings_persistence.py']:
+for f in ['decision.py','l1_capital.py','app_core.py','drawings_persistence.py']:
     assert Path(f).exists()
 print('Pattern Engine v2 contract OK')

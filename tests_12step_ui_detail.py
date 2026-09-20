@@ -13,7 +13,8 @@ def test_js_detail_wiring():
         assert x in daily, x
 
 def test_strategy_constants_untouched():
-    s=Path('app_core.py').read_text(encoding='utf-8')
+    s=(Path('core_config.py').read_text(encoding='utf-8') +
+       Path('app_core.py').read_text(encoding='utf-8'))
     assert 'RSI_STRAT_OVERSOLD = 32.0' in s
     assert 'RSI_STRAT_OVERBOUGHT = 68.0' in s
     assert '[200, 400, 600, 1200]' in s

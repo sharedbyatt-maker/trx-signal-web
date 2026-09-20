@@ -13,6 +13,6 @@ assert ("hardBreak = 1.35" in s or "scale * 1.35" in s)
 assert ("absSlope > 0.5" in s or "absSlope > maxAbsSlope" in s)
 assert 'trendSegV2(piv.hi, curBars, "res")' in s
 assert 'trendSegV2(piv.lo, curBars, "sup")' in s
-for f in ["decision.py", "robust_engine.py", "app_core.py"]:
+for f in ["decision.py", "l1_capital.py", "app_core.py"]:
     assert Path(f).exists()
 print("Auto Trend Line v2 contract OK")

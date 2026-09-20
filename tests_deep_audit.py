@@ -130,13 +130,15 @@ def test_flask_routes_smoke():
     client = eng.app.test_client()
     for path in (
         "/", "/api/state", "/api/history", "/api/latest", "/api/backtest",
-        "/api/robust-engine/status", "/api/robust-engine/signal",
-        "/api/robust-engine/stats", "/api/robust-engine/audit",
+        "/api/l1-capital",
     ):
         response = client.get(path)
         assert response.status_code == 200, (path, response.status_code)
-    response = client.post("/api/robust-engine/audit")
-    assert response.status_code in (401, 503)
+    for path in (
+        "/api/robust-engine/status", "/api/robust-engine/signal",
+        "/api/robust-engine/stats", "/api/robust-engine/audit",
+    ):
+        assert client.get(path).status_code == 404
 
 
 if __name__ == "__main__":

@@ -14,5 +14,5 @@ for x in [
     "curStochValues = st.k.slice()",
 ]: assert x in s, x
 assert s.count("subscribeCrosshairMove") == 1, s.count("subscribeCrosshairMove")
-for f in ["decision.py","robust_engine.py","app_core.py"]: assert Path(f).exists()
+for f in ["decision.py","l1_capital.py","app_core.py"]: assert Path(f).exists()
 print("Crosshair & Pane Sync v2 contract OK")

@@ -2,7 +2,8 @@ from pathlib import Path
 
 draw = Path('static/js/draw.js').read_text(encoding='utf-8')
 chart = Path('static/js/chart.js').read_text(encoding='utf-8')
-core = Path('app_core.py').read_text(encoding='utf-8')
+core = (Path('core_config.py').read_text(encoding='utf-8') +
+        Path('app_core.py').read_text(encoding='utf-8'))
 
 # Phase 1 feature contracts
 for token in ['handleHit(', 'nearestOHLC(', 'setPointerCapture', 'pointercancel',

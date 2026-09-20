@@ -14,5 +14,5 @@ assert ("function seedLiveIndicators(closes)" in s or
 assert ("seedLiveIndicators(closes);" in s or
         "seedLiveIndicators(closes, { ema5, ema15, ema100, rsi: rsiArr, macd: macdCalc, stoch: stochCalc });" in s)
 assert "The normal /api/state refresh remains the authoritative full reconciliation" in s
-for f in ["decision.py","robust_engine.py","app_core.py"]: assert Path(f).exists()
+for f in ["decision.py","l1_capital.py","app_core.py"]: assert Path(f).exists()
 print("Fast Live Indicator Update contract OK")

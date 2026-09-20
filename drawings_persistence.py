@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Token-protected persistence for manual chart drawings.
 
-Additive only: no signal, betting, feed, Telegram, Robust, or legacy state is touched.
+Additive only: no signal, betting, feed, Telegram, L1, or legacy state is touched.
 Writes are atomic and revision-checked; bounded backups support manual restore.
 """
 from __future__ import annotations

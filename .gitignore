@@ -2,9 +2,9 @@
 __pycache__/
 *.py[cod]
 
-# Robust Engine runtime state (persisted on host, never committed)
-robust_state.json
-.robust_state.json.tmp.*
+# L1 CAPITAL notification dedupe state (persisted on host, never committed)
+l1_capital_runtime.json
+l1_capital_runtime.json.tmp.*
 
 # 12-step daily live report state
 strat_daily_reports.json

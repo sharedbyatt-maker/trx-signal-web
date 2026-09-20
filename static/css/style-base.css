@@ -815,7 +815,6 @@ footer{background:#080d16;border-top:1px solid #1e2a3e}
 .chart-toolbar{width:100%;margin-top:13px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:0 0 7px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
 .chart-toolbar>*{flex:0 0 auto}
 #tv-chart{height:clamp(500px,54vh,580px)}
-#robust-engine-slot:empty{display:none}
 @media(max-width:1380px){#tv-chart{height:520px}}
 @media(max-width:900px){
   .primary-stack{gap:12px}

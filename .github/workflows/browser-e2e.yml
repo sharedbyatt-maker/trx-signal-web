@@ -1,4 +1,4 @@
-name: Browser E2E QA
+name: CI and Browser E2E QA
 
 on:
   push:
@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  browser-e2e:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,9 +23,28 @@ jobs:
         with:
           node-version: '24'
       - name: Install Python dependencies
-        run: pip install -r requirements.txt pytest
-      - name: Run focused stability regression
-        run: pytest -q tests_drawing_smoothness_v3.py tests_deep_hardening.py tests_stability_performance_hardening.py tests_chart_latency_v2.py tests_multi_tf_normalization.py tests_engine.py tests_robust.py
+        run: pip install -r requirements.txt
+      - name: Compile Python
+        run: python -m compileall -q .
+      - name: Run complete Python regression suite
+        env:
+          TRX_NO_ENGINE: "1"
+        run: |
+          set -e
+          for test_file in tests_*.py; do
+            echo "Running $test_file"
+            python "$test_file"
+          done
+      - name: Verify application import without background engines
+        env:
+          TRX_NO_ENGINE: "1"
+        run: python -c "import app; assert app.app is not None; assert not app.l1_capital_service._thread"
+      - name: Check application JavaScript syntax
+        run: |
+          set -e
+          for js_file in static/js/*.js e2e/*.js *.js; do
+            if [ -f "$js_file" ]; then node --check "$js_file"; fi
+          done
       - name: Install Playwright
         run: |
           npm install

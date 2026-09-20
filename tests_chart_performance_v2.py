@@ -16,5 +16,5 @@ for token in [
 assert "values: curBars.map((b) => b.c)" not in s
 assert "const closes = curBars.map((b)=>b.c);" not in s
 assert "const diff = calcEma(closes, 5).at(-1) - calcEma(closes, 15).at(-1);" not in s
-for f in ["decision.py","robust_engine.py","app_core.py","drawings_persistence.py"]: assert Path(f).exists()
+for f in ["decision.py","l1_capital.py","app_core.py","drawings_persistence.py"]: assert Path(f).exists()
 print("Chart Performance v2 contract OK")

@@ -23,6 +23,6 @@ assert bucket("2026-09-13 12:29:59", 15) == "2026-09-13 12:15"
 assert bucket("2026-09-13 12:45:01", 15) == "2026-09-13 12:45"
 assert bucket("2026-09-13 12:59:59", 60) == "2026-09-13 12:00"
 assert bucket("2026-09-13 13:00:00", 60) == "2026-09-13 13:00"
-for f in ["decision.py", "robust_engine.py", "app_core.py"]:
+for f in ["decision.py", "l1_capital.py", "app_core.py"]:
     assert Path(f).exists()
 print("True Timeframe Aggregation contract OK")

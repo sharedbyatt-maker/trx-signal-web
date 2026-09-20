@@ -19,5 +19,5 @@ assert 'Math.abs(L.v-R.v)>shoulderTol*1.6' in compact
 # Breakout thresholds still use normalized near/clear values.
 assert 'pc<=res.v+breakoutNear&&c.c>res.v+breakoutClear' in compact
 assert 'pc>=sup.v-breakoutNear&&c.c<sup.v-breakoutClear' in compact
-for f in ["decision.py","robust_engine.py","app_core.py","drawings_persistence.py"]: assert Path(f).exists()
+for f in ["decision.py","l1_capital.py","app_core.py","drawings_persistence.py"]: assert Path(f).exists()
 print("Multi-TF Normalization contract OK")

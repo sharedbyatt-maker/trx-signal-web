@@ -94,5 +94,5 @@ RADAR_RESET_UP = 55.0
 # ---- 🔥 BIG/SMALL STREAK TELEGRAM ALERT ----
 # Notify once at streak 8, then again for every fresh round while the same side
 # continues (9, 10, 11, ...). This is notification-only and does not affect
-# signal generation, risk, 12-step, Robust, chart, or settlement logic.
+# signal generation, risk, 12-step, L1, chart, or settlement logic.
 TG_STREAK_ALERT_FROM = 8

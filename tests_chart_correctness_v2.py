@@ -33,6 +33,6 @@ assert 'const indToggle = $("ind-toggle-btn")' in app
 assert 'drawBar.classList.toggle("collapsed", !open)' in app
 assert 'indBar.classList.toggle("collapsed", !open)' in app
 
-for f in ["decision.py", "robust_engine.py", "app_core.py", "drawings_persistence.py"]:
+for f in ["decision.py", "l1_capital.py", "app_core.py", "drawings_persistence.py"]:
     assert Path(f).exists()
 print("Chart Correctness & Cache Fix contract OK")
