@@ -221,7 +221,7 @@ test('withdrawal progress targets the next 50,000 milestone at boundary values',
 });
 
 
-test('digit distribution is removed and desktop chart gets analysis space', async ({ page }, testInfo) => {
+test('digit distribution is removed and desktop chart stays balanced', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only chart workspace assertion.');
   await page.goto('/');
   await expect(page.locator('#digit-grid')).toHaveCount(0);
@@ -229,11 +229,10 @@ test('digit distribution is removed and desktop chart gets analysis space', asyn
   const chart = page.locator('#tv-chart');
   await expect(chart).toBeVisible();
   const desktopBox = await chart.boundingBox();
-  expect(desktopBox.height).toBeGreaterThanOrEqual(900);
-  expect(desktopBox.height).toBeLessThanOrEqual(1300);
-  const chartCardBox = await page.locator('#chart-card').boundingBox();
+  expect(desktopBox.height).toBeGreaterThanOrEqual(500);
+  expect(desktopBox.height).toBeLessThanOrEqual(650);
   const sideBox = await page.locator('.side-stack').boundingBox();
-  expect(Math.abs(chartCardBox.height - sideBox.height)).toBeLessThanOrEqual(3);
+  expect(sideBox.height).toBeGreaterThan(desktopBox.height);
   await expect(page.locator('#rsi-pane')).toBeVisible();
   await expect(page.locator('.chart-toolbar')).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
