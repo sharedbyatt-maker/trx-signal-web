@@ -270,14 +270,14 @@ def _fmt_result(s):
                      f"{int(w.get('stake') or 0):,} MMK · "
                      f"T{int(w.get('tier') or 0)+1}-S{int(w.get('bets') or 0)+1}")
     return (
-        f"{title} [{ENGINE_NAME}] — RESULT\\n\\n"
-        f"🎫 Issue: {t.get('issue') or ''}\\n"
-        f"🎯 Signal: {t.get('target') or '—'} · Actual: {t.get('actual') or '—'}\\n"
-        f"💰 Stake: {int(t.get('stake') or 0):,} MMK\\n"
-        f"📶 Level: T{int(t.get('tier') or 0)}-S{int(t.get('step') or 0)}\\n"
-        f"P/L: {pnl:+,} MMK\\n"
-        f"Model Today P/L: {int(s.get('today_pnl') or 0):+,} MMK\\n"
-        f"{next_line}\\n"
+        f"{title} [{ENGINE_NAME}] — RESULT\n\n"
+        f"🎫 Issue: {t.get('issue') or ''}\n"
+        f"🎯 Signal: {t.get('target') or '—'} · Actual: {t.get('actual') or '—'}\n"
+        f"💰 Stake: {int(t.get('stake') or 0):,} MMK\n"
+        f"📶 Level: T{int(t.get('tier') or 0)}-S{int(t.get('step') or 0)}\n"
+        f"💵 P/L: {pnl:+,} MMK\n"
+        f"📊 Today: {int(s.get('today_pnl') or 0):+,} MMK\n"
+        f"➡️ {next_line}\n"
         f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}"
     )
 
@@ -286,21 +286,20 @@ def _fmt_wait(s):
     w = s.get("waiting_rule")
     if w:
         return (
-            f"⏳ [{ENGINE_NAME}] — WAIT / SKIP\\n\\n"
-            f"Rule: {w.get('rule') or '—'}\\n"
-            f"Target kept: {w.get('target') or '—'}\\n"
-            f"Next stake after wait: {int(w.get('stake') or 0):,} MMK\\n"
-            f"Next level: T{int(w.get('tier') or 0)+1}-S{int(w.get('bets') or 0)+1}\\n"
-            f"Model Today P/L: {int(s.get('today_pnl') or 0):+,} MMK\\n"
-            f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}\\n\\n"
-            "No manual bet now · wait for the next L1 CAPITAL signal."
+            f"⏳ [{ENGINE_NAME}] — WAIT / SKIP\n\n"
+            f"Rule: {w.get('rule') or '—'}\n"
+            f"Target: {w.get('target') or '—'}\n"
+            f"Next Bet: {int(w.get('stake') or 0):,} MMK\n"
+            f"Level: T{int(w.get('tier') or 0)+1}-S{int(w.get('bets') or 0)+1}\n"
+            f"Today: {int(s.get('today_pnl') or 0):+,} MMK\n"
+            f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}\n\n"
+            "NO BET · Wait for next L1 signal."
         )
     return (
-        f"⏳ [{ENGINE_NAME}] — WAIT\\n\\n"
-        "No actionable L1 setup right now.\\n"
-        f"Model Today P/L: {int(s.get('today_pnl') or 0):+,} MMK\\n"
-        f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}\\n\\n"
-        "No manual bet now · waiting for a fresh L1 CAPITAL setup."
+        f"⏳ [{ENGINE_NAME}] — WAIT\n\n"
+        f"Today: {int(s.get('today_pnl') or 0):+,} MMK\n"
+        f"Status: {'🟢' if s.get('risk_status')=='TRADE ALLOWED' else '🟨'} {s.get('risk_status') or '—'}\n\n"
+        "NO BET · Waiting for fresh L1 setup."
     )
 
 

@@ -150,15 +150,18 @@ header #conn-txt { display: none; }
   color:#8391a8;font-size:8.5px;font-weight:700;letter-spacing:.04em;
 }
 
-/* Desktop chart consumes the full sidebar row, removing the abandoned space
-   below RSI without adding a replacement panel. */
+/* Desktop: keep the chart compact and readable. The primary column no longer
+   stretches to match the full sidebar report stack. */
 @media (min-width:1101px) {
-  .layout-grid { align-items:stretch; }
+  .layout-grid { align-items:start; }
   .primary-stack,
-  #chart-card { height:100%; }
-  #chart-card { display:flex;flex-direction:column; }
-  #chart-card .tv-wrap { flex:1 1 auto;min-height:680px; }
-  #tv-chart { height:100%; }
+  #chart-card { height:auto; }
+  #chart-card { display:block; }
+  #chart-card .tv-wrap { min-height:0; }
+  #tv-chart { height:clamp(500px, 56vh, 620px); }
+}
+@media (min-width:1381px) {
+  #tv-chart { height:clamp(520px, 58vh, 650px); }
 }
 @media (max-width:1100px) {
   .side-stack {
