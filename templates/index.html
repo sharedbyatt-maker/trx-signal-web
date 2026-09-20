@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=53">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=54">
 </head>
 <body>
 <header>
@@ -185,15 +185,48 @@
   </div>
 
   <aside class="side-stack">
-    <section class="card" id="context-card">
-      <div class="card-title-row"><div class="card-title">MARKET CONTEXT</div><span id="score-badge" class="ctx-val mono">score —</span></div>
-      <div class="ctx-grid">
-        <div><span class="ctx-label">TREND</span><span class="ctx-val mono" id="ctx-trend">—</span></div>
-        <div><span class="ctx-label">RSI 30D LOW/HIGH</span><span class="ctx-val mono" id="ctx-rsi30">—</span></div>
+    <section class="card stake-card l1-capital-card" id="l1-capital-card">
+      <div class="card-title-row">
+        <div class="card-title">L1 CAPITAL <span class="mini" title="Frozen L1 manual-execution signal engine.">ⓘ</span></div>
+        <span class="stake-mode waiting" id="l1-status">WAITING</span>
       </div>
-      <div class="gauges" id="gauges"></div>
-      <div class="reason mono" id="reason"></div>
-      <div class="ctx-chips"><span id="mtf-chip"></span><span id="mk-chip"></span></div>
+      <div class="stake-signal-hero" id="l1-signal-hero">
+        <div class="stake-hero-dir" id="l1-pending">WAITING</div>
+        <div class="stake-hero-issue mono" id="l1-target-issue">NO ACTIVE TARGET</div>
+      </div>
+      <div class="stake-meta-grid">
+        <div><span>BET</span><b class="mono" id="l1-stake">—</b></div>
+        <div><span>LEVEL</span><b><span class="stake-badge" id="l1-tier">T1</span> <span class="mono" id="l1-step">S1</span></b></div>
+        <div><span>TODAY P/L</span><b class="mono" id="l1-pnl">0 MMK</b></div>
+        <div><span>RISK</span><b id="l1-risk">TRADE ALLOWED</b></div>
+      </div>
+      <div class="stake-rule">FROZEN L1 · RSI 14 · 32/68 · Base 500 · Payout 1.96 · Manual execution only</div>
+      <div class="stake-bottom">
+        <span>TP <b>+5,000</b></span><span>SL <b>−50,000</b></span><span>BR <b>100,000</b></span>
+      </div>
+    </section>
+
+    <section class="card l1-report-card" id="l1-report-card">
+      <div class="card-title-row">
+        <div class="card-title">L1 CAPITAL DAILY REPORT</div>
+        <span class="daily12-date mono" id="l1r-date">—</span>
+      </div>
+      <div class="l1-report-grid">
+        <div><small>SETTLED BETS</small><b id="l1r-bets">0</b></div>
+        <div><small>WIN RATE</small><b id="l1r-wr">0%</b></div>
+        <div class="l1-report-focus"><small>TODAY MODEL P/L</small><b id="l1r-pnl">0 MMK</b></div>
+        <div><small>TOTAL STAKED</small><b id="l1r-staked">0 MMK</b></div>
+        <div><small>W / L</small><b id="l1r-wl">0 / 0</b></div>
+        <div><small>DEEPEST LEVEL</small><b id="l1r-depth">—</b></div>
+      </div>
+      <div class="l1-report-progress">
+        <div class="l1-report-progress-head"><span>WITHDRAWAL PROGRESS</span><b class="mono" id="l1r-withdraw">0 / 50,000</b></div>
+        <div class="l1-report-progress-track"><i id="l1r-withdraw-bar"></i></div>
+      </div>
+      <div class="l1-report-foot">
+        <span id="l1r-total">MODEL TOTAL +0 MMK</span>
+        <span id="l1r-last">NO SETTLED TRADE</span>
+      </div>
     </section>
 
     <section class="card stake-card" id="stake-card">
@@ -215,27 +248,6 @@
       <div class="stake-bottom">
         <span>LAST <b id="st-last">No settled episode yet</b></span>
         <span>BUSTS <b id="st-busts">0</b></span>
-      </div>
-    </section>
-
-    <section class="card stake-card l1-capital-card" id="l1-capital-card">
-      <div class="card-title-row">
-        <div class="card-title">L1 CAPITAL <span class="mini" title="Frozen L1 manual-execution signal engine.">ⓘ</span></div>
-        <span class="stake-mode waiting" id="l1-status">WAITING</span>
-      </div>
-      <div class="stake-signal-hero" id="l1-signal-hero">
-        <div class="stake-hero-dir" id="l1-pending">WAITING</div>
-        <div class="stake-hero-issue mono" id="l1-target-issue">NO ACTIVE TARGET</div>
-      </div>
-      <div class="stake-meta-grid">
-        <div><span>BET</span><b class="mono" id="l1-stake">—</b></div>
-        <div><span>LEVEL</span><b><span class="stake-badge" id="l1-tier">T1</span> <span class="mono" id="l1-step">S1</span></b></div>
-        <div><span>TODAY P/L</span><b class="mono" id="l1-pnl">0 MMK</b></div>
-        <div><span>RISK</span><b id="l1-risk">TRADE ALLOWED</b></div>
-      </div>
-      <div class="stake-rule">FROZEN L1 · RSI 14 · 32/68 · Base 500 · Payout 1.96 · Manual execution only</div>
-      <div class="stake-bottom">
-        <span>TP <b>+5,000</b></span><span>SL <b>−50,000</b></span><span>BR <b>100,000</b></span>
       </div>
     </section>
 
@@ -291,6 +303,6 @@
 <script src="{{ url_for('static', filename='js/app.js') }}?v=49"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=3"></script>
-<script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=2"></script>
 </body>
 </html>
