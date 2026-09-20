@@ -320,6 +320,9 @@ class L1CapitalService:
         self._stop = threading.Event()
         self._last_alert_key = None
         self._last_withdraw_units = 0
+        self._last_result_key = None
+        self._last_wait_key = None
+        self._last_mode = None
         self._state_file = (os.path.join(getattr(core, "BASE_DIR", "."), "l1_capital_runtime.json")
                             if state_file is None else state_file)
         self.snapshot = {"ready": False, "engine": ENGINE_NAME, "version": VERSION}
@@ -335,6 +338,15 @@ class L1CapitalService:
             if isinstance(key, list) and len(key) == 5:
                 self._last_alert_key = tuple(key)
             self._last_withdraw_units = max(0, int(saved.get("last_withdraw_units") or 0))
+            result_key = saved.get("last_result_key")
+            if isinstance(result_key, list) and len(result_key) == 6:
+                self._last_result_key = tuple(result_key)
+            wait_key = saved.get("last_wait_key")
+            if isinstance(wait_key, list) and len(wait_key) == 5:
+                self._last_wait_key = tuple(wait_key)
+            mode = saved.get("last_mode")
+            if mode in ("SIGNAL", "WAIT_RULE", "WAIT"):
+                self._last_mode = mode
         except (OSError, ValueError, TypeError):
             pass
 
@@ -347,6 +359,9 @@ class L1CapitalService:
                 json.dump({
                     "last_alert_key": list(self._last_alert_key) if self._last_alert_key else None,
                     "last_withdraw_units": self._last_withdraw_units,
+                    "last_result_key": list(self._last_result_key) if self._last_result_key else None,
+                    "last_wait_key": list(self._last_wait_key) if self._last_wait_key else None,
+                    "last_mode": self._last_mode,
                 }, handle)
             os.replace(tmp, self._state_file)
         except OSError:
