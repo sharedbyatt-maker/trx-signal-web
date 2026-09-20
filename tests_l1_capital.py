@@ -166,10 +166,76 @@ class L1CapitalTests(unittest.TestCase):
         with patch.object(l1, "replay_l1", return_value=snap):
             service.refresh_once()
             service.refresh_once()
-        self.assertEqual(len(core.messages), 1)
-        self.assertIn("WITHDRAWAL MILESTONE", core.messages[0])
-        self.assertIn("50,000 MMK", core.messages[0])
-        self.assertIn("withdraw manually", core.messages[0])
+        milestone_messages = [m for m in core.messages if "WITHDRAWAL MILESTONE" in m]
+        self.assertEqual(len(milestone_messages), 1)
+        self.assertIn("50,000 MMK", milestone_messages[0])
+        self.assertIn("withdraw manually", milestone_messages[0])
+
+    def test_result_win_and_loss_notifications_are_namespaced_and_deduplicated(self):
+        core = FakeCore(make_rows(18))
+        service = l1.L1CapitalService(core, state_file="")
+        base = {
+            "ready": True, "pending": None, "waiting_rule": None,
+            "withdraw_milestones_reached": 0, "today_pnl": 480,
+            "model_total_pnl": 480, "risk_status": "TRADE ALLOWED",
+        }
+        win = dict(base, last_trade={
+            "issue": "101", "target": "BIG", "actual": "BIG", "stake": 500,
+            "tier": 1, "step": 1, "pnl": 480, "won": True,
+        })
+        with patch.object(l1, "replay_l1", return_value=win):
+            service.refresh_once()
+            service.refresh_once()
+        wins = [m for m in core.messages if "— RESULT" in m]
+        self.assertEqual(len(wins), 1)
+        self.assertIn("✅ WIN [L1 CAPITAL]", wins[0])
+        self.assertIn("Issue: 101", wins[0])
+        self.assertIn("P/L: +480 MMK", wins[0])
+
+        loss = dict(base, today_pnl=-20, last_trade={
+            "issue": "102", "target": "BIG", "actual": "SMALL", "stake": 500,
+            "tier": 1, "step": 1, "pnl": -500, "won": False,
+        }, pending={"issue": "103", "target": "BIG", "stake": 1000, "tier": 1, "step": 2})
+        with patch.object(l1, "replay_l1", return_value=loss):
+            service.refresh_once()
+            service.refresh_once()
+        losses = [m for m in core.messages if "❌ LOSS [L1 CAPITAL]" in m]
+        self.assertEqual(len(losses), 1)
+        self.assertIn("Next: BIG · 1,000 MMK · T1-S2", losses[0])
+
+    def test_wait_rule_notification_only_on_state_change(self):
+        core = FakeCore(make_rows(18))
+        service = l1.L1CapitalService(core, state_file="")
+        snap = {
+            "ready": True, "pending": None, "last_trade": None,
+            "waiting_rule": {"rule": "R02", "target": "BIG", "stake": 1000, "tier": 0, "bets": 1},
+            "withdraw_milestones_reached": 0, "today_pnl": -500,
+            "model_total_pnl": -500, "risk_status": "TRADE ALLOWED",
+        }
+        with patch.object(l1, "replay_l1", return_value=snap):
+            service.refresh_once()
+            service.refresh_once()
+        waits = [m for m in core.messages if "WAIT / SKIP" in m]
+        self.assertEqual(len(waits), 1)
+        self.assertIn("Rule: R02", waits[0])
+        self.assertIn("No manual bet now", waits[0])
+
+    def test_plain_wait_is_transition_only_and_survives_restart(self):
+        snap = {
+            "ready": True, "pending": None, "last_trade": None, "waiting_rule": None,
+            "withdraw_milestones_reached": 0, "today_pnl": 0,
+            "model_total_pnl": 0, "risk_status": "TRADE ALLOWED",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = str(Path(tmp) / "l1.json")
+            first = FakeCore(make_rows(18))
+            second = FakeCore(make_rows(18))
+            with patch.object(l1, "replay_l1", return_value=snap):
+                svc = l1.L1CapitalService(first, state_file=state_file)
+                svc.refresh_once(); svc.refresh_once()
+                l1.L1CapitalService(second, state_file=state_file).refresh_once()
+            self.assertEqual(len([m for m in first.messages if "— WAIT" in m]), 1)
+            self.assertEqual(second.messages, [])
 
     def test_signal_dedupe_survives_service_restart(self):
         rows = make_rows(18)
