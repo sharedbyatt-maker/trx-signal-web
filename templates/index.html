@@ -48,7 +48,7 @@
   <div class="focus-item"><span>ISSUE</span><b class="mono" id="focus-issue">—</b></div>
   <div class="focus-item focus-countdown" title="Countdown until the next 1-minute issue"><span>NEXT IN</span><b class="mono" id="focus-next">—</b></div>
   <div class="focus-state is-waiting" id="focus-step" aria-live="polite"><span class="focus-state-icon">◷</span><span>12-STEP</span><b>WAITING</b></div>
-  <div class="focus-state is-waiting" id="focus-robust" aria-live="polite"><span class="focus-state-icon">◷</span><span>ROBUST</span><b>NO TRADE</b></div>
+  <div class="focus-state is-waiting" id="focus-l1" aria-live="polite"><span class="focus-state-icon">◷</span><span>L1 CAPITAL</span><b>WAITING</b></div>
   <div class="focus-connection is-live" id="focus-connection"><span class="focus-dot"></span><b>LIVE</b></div>
 </div>
 
@@ -181,7 +181,7 @@
       <span class="ctb-item ctb-dim" id="ctb-next">NEXT ISSUE ETA: —</span>
     </div>
   </section>
-  <div id="robust-engine-slot"></div>
+
   </div>
 
   <aside class="side-stack">
@@ -215,6 +215,27 @@
       <div class="stake-bottom">
         <span>LAST <b id="st-last">No settled episode yet</b></span>
         <span>BUSTS <b id="st-busts">0</b></span>
+      </div>
+    </section>
+
+    <section class="card stake-card l1-capital-card" id="l1-capital-card">
+      <div class="card-title-row">
+        <div class="card-title">L1 CAPITAL <span class="mini" title="Frozen L1 manual-execution signal engine.">ⓘ</span></div>
+        <span class="stake-mode waiting" id="l1-status">WAITING</span>
+      </div>
+      <div class="stake-signal-hero" id="l1-signal-hero">
+        <div class="stake-hero-dir" id="l1-pending">WAITING</div>
+        <div class="stake-hero-issue mono" id="l1-target-issue">NO ACTIVE TARGET</div>
+      </div>
+      <div class="stake-meta-grid">
+        <div><span>BET</span><b class="mono" id="l1-stake">—</b></div>
+        <div><span>LEVEL</span><b><span class="stake-badge" id="l1-tier">T1</span> <span class="mono" id="l1-step">S1</span></b></div>
+        <div><span>TODAY P/L</span><b class="mono" id="l1-pnl">0 MMK</b></div>
+        <div><span>RISK</span><b id="l1-risk">TRADE ALLOWED</b></div>
+      </div>
+      <div class="stake-rule">FROZEN L1 · RSI 14 · 32/68 · Base 500 · Payout 1.96 · Manual execution only</div>
+      <div class="stake-bottom">
+        <span>TP <b>+5,000</b></span><span>SL <b>−50,000</b></span><span>BR <b>100,000</b></span>
       </div>
     </section>
 
@@ -270,5 +291,6 @@
 <script src="{{ url_for('static', filename='js/app.js') }}?v=49"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=1"></script>
 </body>
 </html>
