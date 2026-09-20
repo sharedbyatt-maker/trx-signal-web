@@ -134,6 +134,31 @@ test('mobile layout keeps primary chart controls usable', async ({ page }, testI
   expect(overflow).toBeFalsy();
 });
 
+test('L1 CAPITAL card and focus status render without Robust remnants', async ({ page }, testInfo) => {
+  const errors = watchRuntimeErrors(page);
+  await page.goto('/');
+  const card = page.locator('#l1-capital-card');
+  await expect(card).toBeVisible();
+  await expect(page.locator('#focus-l1')).toContainText('L1 CAPITAL');
+  await expect(page.locator('#l1-status')).toHaveText('BIG');
+  await expect(page.locator('#l1-target-issue')).toContainText('03019999');
+  await expect(page.locator('#l1-stake')).toHaveText('6,250 MMK');
+  await expect(page.locator('#l1-tier')).toHaveText('T2');
+  await expect(page.locator('#l1-step')).toHaveText('S1');
+  await expect(page.locator('#l1-pnl')).toHaveText('+7,730 MMK');
+  await expect(page.locator('#l1-risk')).toContainText('OBSERVE ONLY');
+  await expect(page.getByText('ROBUST SIGNAL ENGINE')).toHaveCount(0);
+  if (testInfo.project.name.includes('mobile')) {
+    const box = await card.boundingBox();
+    expect(box).toBeTruthy();
+    expect(box.width).toBeLessThanOrEqual(412);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+    expect(overflow).toBeFalsy();
+  }
+  await page.waitForTimeout(300);
+  expect(errors).toEqual([]);
+});
+
 
 test('digit distribution is removed and desktop chart gets analysis space', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only chart workspace assertion.');

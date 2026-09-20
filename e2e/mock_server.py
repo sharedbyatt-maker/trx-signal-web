@@ -154,6 +154,31 @@ def api_daily12():
     )
 
 
+@app.get("/api/l1-capital")
+def api_l1_capital():
+    return jsonify(
+        {
+            "ready": True,
+            "engine": "L1 CAPITAL",
+            "version": "1.1",
+            "pending": {
+                "target": "BIG",
+                "issue": "20260920103019999",
+                "stake": 6250,
+                "tier": 2,
+                "step": 1,
+                "rule": None,
+            },
+            "waiting_rule": None,
+            "today_pnl": 7730,
+            "risk_status": "OBSERVE ONLY — DAILY TP REACHED",
+            "working_bankroll": 100000,
+            "daily_tp": 5000,
+            "daily_sl": 50000,
+        }
+    )
+
+
 @app.route("/api/<path:_path>", methods=["GET", "POST", "PUT"])
 def generic_api(_path):
     return jsonify({"ok": True})
