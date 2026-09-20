@@ -218,7 +218,7 @@ class L1CapitalTests(unittest.TestCase):
         waits = [m for m in core.messages if "WAIT / SKIP" in m]
         self.assertEqual(len(waits), 1)
         self.assertIn("Rule: R02", waits[0])
-        self.assertIn("No manual bet now", waits[0])
+        self.assertIn("NO BET", waits[0])
 
     def test_plain_wait_is_transition_only_and_survives_restart(self):
         snap = {
