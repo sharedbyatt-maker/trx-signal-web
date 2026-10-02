@@ -332,9 +332,9 @@ test('L1 daily report uses full daily summary beyond the 100 trade tail', async 
   await expect(page.locator('#l1r-pnl')).toHaveText('+95,040 MMK');
 });
 
-test('source delay is independent of viewer timezone', async ({ browser }) => {
+test('source delay is independent of viewer timezone', async ({ browser, baseURL }) => {
   for (const timezoneId of ['UTC', 'Asia/Bangkok']) {
-    const context = await browser.newContext({timezoneId});
+    const context = await browser.newContext({timezoneId, baseURL});
     const page = await context.newPage();
     await page.clock.setFixedTime(new Date('2026-10-02T12:00:10Z'));
     await page.route('**/api/history*', route => route.fulfill({json: {
