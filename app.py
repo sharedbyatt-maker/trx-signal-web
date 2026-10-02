@@ -240,6 +240,7 @@ def _resilient_session_get(url, *args, **kwargs):
 
 
 core.session.get = _resilient_session_get
+core.FEED_STALE_SEC = FEED_STALE_SEC
 
 
 @core.app.route("/api/health")

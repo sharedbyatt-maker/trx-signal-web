@@ -6,6 +6,7 @@ let fullRows = [];            // from /api/history ([issue, number, blockTime] t
 let fullIssueSet = new Set(); // O(1) membership for the 10-day browser buffer
 let lastHistFetch = 0;
 let mergedCount = 0;
+let lastResultUtc = null;
 let lastResultTime = "";      // server-reported blockTime of the newest round
 const HIST_REFETCH_MS = 45000;
 
@@ -52,6 +53,8 @@ async function fetchFullHistory(force) {
       // to retry the full history immediately.
       lastHistFetch = 0;
     }
+    if (data.last_time_utc) lastResultUtc = data.last_time_utc;
+    else lastResultUtc = null;
     if (data.last_time) lastResultTime = data.last_time;
     else if (fullRows.length) lastResultTime = fullRows[fullRows.length - 1].block_time;
     const metaEl = $("chart-meta");
@@ -438,6 +441,12 @@ async function refresh() {
   }
 }
 
+function sourceEpoch(value) {
+  const raw = String(value || "").trim().replace(" ", "T");
+  // TRXChart's naive blockTime is Myanmar time; never use the viewer's timezone.
+  return Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : raw + "+06:30");
+}
+
 function tickClock() {
   const now = new Date();
   const hm = now.toLocaleTimeString("en-GB");
@@ -448,13 +457,13 @@ function tickClock() {
   const delayEl = $("ctb-delay");
   let interval = 60;
   for (let i = fullRows.length - 1; i >= Math.max(1, fullRows.length - 10); i--) {
-    const a = Date.parse((fullRows[i - 1].block_time || "").replace(" ", "T"));
-    const b = Date.parse((fullRows[i].block_time || "").replace(" ", "T"));
+    const a = sourceEpoch(fullRows[i - 1].block_time);
+    const b = sourceEpoch(fullRows[i].block_time);
     if (!isNaN(a) && !isNaN(b) && b > a && b - a < 600000) { interval = Math.round((b - a) / 1000); break; }
   }
   if (lastResultTime) {
     setTxt("ctb-last", lastResultTime.replace("T", " "));
-    const last = Date.parse(lastResultTime.replace(" ", "T"));
+    const last = sourceEpoch(lastResultUtc || lastResultTime);
     if (!isNaN(last)) {
       /* upstream feed lag: newest blockTime vs local clock */
       const delaySec = Math.max(0, Math.round((now.getTime() - last) / 1000 - interval));
@@ -588,6 +597,7 @@ async function pollLatest() {
       if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
       rebuildFullIssueSet();
       if (rd.block_time) lastResultTime = rd.block_time;
+      lastResultUtc = rd.block_time_utc || null;
       const newest = fullRows[fullRows.length - 1];
       const fast = window.TRXChart && TRXChart.appendLatest
         ? TRXChart.appendLatest(newest)
@@ -668,3 +678,4 @@ if (tgBtn) {
     setTimeout(() => { tgBtn.textContent = "📡"; }, 3000);
   });
 }
+

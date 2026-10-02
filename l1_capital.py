@@ -210,6 +210,16 @@ def replay_l1(rows):
     today = str(cur.get("block_time") or "")[:10]
     today_trades = [t for t in trades if str(t.get("time") or "")[:10] == today]
     day_pnl = sum(t["pnl"] for t in today_trades)
+    day_wins = sum(1 for t in today_trades if t["won"])
+    deepest = max(today_trades, key=lambda t: (t["tier"], t["step"]), default=None)
+    daily_summary = {
+        "bets": len(today_trades), "wins": day_wins,
+        "losses": len(today_trades) - day_wins,
+        "win_rate": round(100 * day_wins / len(today_trades), 1) if today_trades else 0,
+        "staked": sum(t["stake"] for t in today_trades), "pnl": day_pnl,
+        "max_tier": deepest["tier"] if deepest else None,
+        "max_step": deepest["step"] if deepest else None,
+    }
     total_pnl = sum(t["pnl"] for t in trades)
     risk = "TRADE ALLOWED"
     if day_pnl >= DAILY_TP:
@@ -228,6 +238,7 @@ def replay_l1(rows):
         "pending": pending, "waiting_rule": dict(wait) if wait else None,
         "last_rule": last_rule, "trades": trades[-100:],
         "today": today, "today_pnl": day_pnl, "model_total_pnl": total_pnl,
+        "daily_summary": daily_summary,
         "working_bankroll": WORKING_BANKROLL, "daily_tp": DAILY_TP,
         "daily_sl": DAILY_SL, "withdraw_milestone": WITHDRAW_MILESTONE,
         "withdraw_milestones_reached": withdraw_units, "risk_status": risk,
@@ -393,11 +404,15 @@ class L1CapitalService:
             rows = list(self.core.STATE.get("full_history") or self.core.STATE.get("history") or [])
             next_issue = self.core.STATE.get("next_issue")
         if not rows:
-            return self.snapshot
+            return self.public_snapshot()
         snap = replay_l1(rows)
+        snap["source_issue"] = str(rows[-1]["issue"])
         if snap.get("pending") and next_issue:
             snap["pending"]["issue"] = str(next_issue)
         self.snapshot = snap
+        published = self.public_snapshot()
+        if not published.get("ready"):
+            return published
         # Lifecycle notifications are observational only. They never mutate
         # frozen L1 signal/stake/risk state and all reuse the legacy tg_notify queue.
         last_trade = snap.get("last_trade")
@@ -408,16 +423,17 @@ class L1CapitalService:
                 int(last_trade.get("step") or 0), bool(last_trade.get("won")),
             )
             if result_key != self._last_result_key:
-                self.core.tg_notify(_fmt_result(snap))
-                self._last_result_key = result_key
-                self._save_runtime_state()
+                if self.core.tg_notify(_fmt_result(snap)):
+                    self._last_result_key = result_key
+                    self._save_runtime_state()
 
         p = snap.get("pending")
         wait = snap.get("waiting_rule")
         if p and p.get("issue"):
             key = (str(p["issue"]), p["target"], int(p["stake"]), int(p["tier"]), int(p["step"]))
             if key != self._last_alert_key:
-                self.core.tg_notify(_fmt_signal(snap))
+                if not self.core.tg_notify(_fmt_signal(snap)):
+                    return published
                 self._last_alert_key = key
             self._last_mode = "SIGNAL"
             self._last_wait_key = None
@@ -429,12 +445,14 @@ class L1CapitalService:
                 int(wait.get("bets") or 0),
             )
             if self._last_mode != "WAIT_RULE" or wait_key != self._last_wait_key:
-                self.core.tg_notify(_fmt_wait(snap))
+                if not self.core.tg_notify(_fmt_wait(snap)):
+                    return published
                 self._last_wait_key = wait_key
             self._last_mode = "WAIT_RULE"
             self._save_runtime_state()
         elif self._last_mode != "WAIT":
-            self.core.tg_notify(_fmt_wait(snap))
+            if not self.core.tg_notify(_fmt_wait(snap)):
+                return published
             self._last_mode = "WAIT"
             self._last_wait_key = None
             self._save_runtime_state()
@@ -442,11 +460,42 @@ class L1CapitalService:
         units = int(snap.get("withdraw_milestones_reached") or 0)
         if units > self._last_withdraw_units:
             for milestone in range(self._last_withdraw_units + 1, units + 1):
-                self.core.tg_notify(_fmt_withdrawal_milestone(milestone))
-            self._last_withdraw_units = units
-            self._save_runtime_state()
+                if not self.core.tg_notify(_fmt_withdrawal_milestone(milestone)):
+                    break
+                self._last_withdraw_units = milestone
+                self._save_runtime_state()
         # A no-signal round must not erase the prior key; a future different
         # issue naturally generates a fresh alert.
+        return published
+
+    def public_snapshot(self):
+        """Recheck freshness on every API read, even if the observer thread stalls."""
+        snap = dict(self.snapshot)
+        with self.core.LOCK:
+            state = self.core.STATE
+            connected = bool(state.get("connected"))
+            health = dict(state.get("feed_health") or {})
+            received = state.get("last_result_received_mono")
+            source_delay = state.get("feed_delay")
+            rows = state.get("full_history") or state.get("history") or []
+            latest_issue = str(rows[-1]["issue"]) if rows else None
+        age = max(0, time.monotonic() - received) if received is not None else None
+        if age is not None and source_delay is not None:
+            age += max(0, source_delay)
+        status = str(health.get("status") or ("LIVE" if connected else "OFFLINE"))
+        if not connected:
+            status = "OFFLINE"
+        elif age is None or age >= getattr(self.core, "FEED_STALE_SEC", 80):
+            status = "STALE"
+        elif snap.get("source_issue") != latest_issue:
+            status = "SYNCING"
+        fresh = connected and status in ("LIVE", "DEGRADED")
+        snap.update({"feed_status": status, "age_sec": round(age, 1) if age is not None else None,
+                     "stale": not fresh})
+        if not fresh:
+            snap.update({"ready": False, "pending": None, "waiting_rule": None,
+                         "reason": "FEED " + status,
+                         "risk_status": "OBSERVE ONLY — FEED " + status})
         return snap
 
 
@@ -455,6 +504,6 @@ def install_l1_capital(core):
 
     @core.app.route("/api/l1-capital")
     def l1_capital_state():
-        return core.jsonify(service.snapshot)
+        return core.jsonify(service.public_snapshot())
 
     return service

@@ -282,3 +282,70 @@ test('focus countdown is clearly distinguished from wall clock and chart note is
   await expect(page.locator('#chart-model-note')).toHaveCount(0);
   await expect(page.locator('#chart-card > .card-title')).toHaveCount(0);
 });
+
+test('L1 clears target stake and focus status when feed becomes stale', async ({ page }) => {
+  let stale = false;
+  await page.route('**/api/l1-capital', async route => {
+    await route.fulfill({json: stale
+      ? {ready: false, stale: true, feed_status: 'STALE', pending: null}
+      : {ready: true, pending: {target: 'BIG', issue: '20261002103010700', stake: 6250, tier: 2, step: 1}, trades: []}});
+  });
+  await page.goto('/');
+  await expect(page.locator('#l1-stake')).toHaveText('6,250 MMK');
+  stale = true;
+  await expect(page.locator('#l1-status')).toHaveText('STALE');
+  await expect(page.locator('#l1-stake')).toHaveText('—');
+  await expect(page.locator('#l1-tier')).toHaveText('—');
+  await expect(page.locator('#l1-step')).toHaveText('—');
+  await expect(page.locator('#l1-target-issue')).toContainText('NO VALID SIGNAL');
+  await expect(page.locator('#focus-l1')).toContainText('STALE');
+});
+
+test('L1 clears actionable display on API network failure and recovers', async ({ page }) => {
+  let fail = false;
+  await page.route('**/api/l1-capital', async route => {
+    if (fail) return route.abort();
+    await route.fulfill({json: {ready: true, pending: {target: 'SMALL', issue: '123', stake: 500, tier: 1, step: 1}, trades: []}});
+  });
+  await page.goto('/');
+  await expect(page.locator('#l1-status')).toHaveText('SMALL');
+  fail = true;
+  await expect(page.locator('#l1-status')).toHaveText('OFFLINE');
+  await expect(page.locator('#l1-stake')).toHaveText('—');
+  fail = false;
+  await expect(page.locator('#l1-status')).toHaveText('SMALL');
+  await expect(page.locator('#l1-stake')).toHaveText('500 MMK');
+});
+
+test('L1 daily report uses full daily summary beyond the 100 trade tail', async ({ page }) => {
+  await page.route('**/api/l1-capital', async route => {
+    await route.fulfill({json: {
+      ready: true, pending: null, today: '2026-10-02', today_pnl: 95040,
+      daily_summary: {bets: 198, wins: 198, losses: 0, win_rate: 100, staked: 99000, pnl: 95040, max_tier: 1, max_step: 1},
+      trades: Array.from({length: 100}, () => ({time: '2026-10-02 12:00:00', won: true, stake: 500, tier: 1, step: 1})),
+    }});
+  });
+  await page.goto('/');
+  await expect(page.locator('#l1r-bets')).toHaveText('198');
+  await expect(page.locator('#l1r-wl')).toHaveText('198 / 0');
+  await expect(page.locator('#l1r-staked')).toHaveText('99,000 MMK');
+  await expect(page.locator('#l1r-pnl')).toHaveText('+95,040 MMK');
+});
+
+test('source delay is independent of viewer timezone', async ({ browser, baseURL }) => {
+  for (const timezoneId of ['UTC', 'Asia/Bangkok']) {
+    const context = await browser.newContext({timezoneId, baseURL});
+    const page = await context.newPage();
+    await page.clock.setFixedTime(new Date('2026-10-02T12:00:10Z'));
+    await page.route('**/api/history*', route => route.fulfill({json: {
+      history: [['20261002103010720', 8, '2026-10-02 18:29:54']],
+      last_time: '2026-10-02 18:29:54', last_time_utc: '2026-10-02T11:59:54+00:00', meta: {days: 10},
+    }}));
+    await page.route('**/api/latest', route => route.fulfill({json: {round: null}}));
+    await page.goto('/');
+    await expect(page.locator('#ctb-next')).toHaveText('NEXT ISSUE ETA: ~0:44');
+    const sourceTime = await page.evaluate(() => sourceEpoch('2026-10-02 18:29:54'));
+    expect(sourceTime).toBe(Date.parse('2026-10-02T11:59:54Z'));
+    await context.close();
+  }
+});

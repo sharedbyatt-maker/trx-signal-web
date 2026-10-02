@@ -43,5 +43,6 @@ def test_frontend_has_10day_range_and_authoritative_merge():
     assert 'fullRows = force ? mergeRows([], inc)' in js
     assert 'setHistoryRange(days = 10)' in chart
     assert '1440 / Math.max(1, group)' in chart
-    assert 'hist-range-btn active" data-days="10"' in html
+    assert '<option value="10" selected>10D</option>' in html
     assert 'id="chart-meta"' in html
+

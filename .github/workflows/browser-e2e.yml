@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest
       - name: Compile Python
         run: python -m compileall -q .
       - name: Run complete Python regression suite
@@ -35,6 +35,10 @@ jobs:
             echo "Running $test_file"
             python "$test_file"
           done
+      - name: Discover and run Python test functions
+        env:
+          TRX_NO_ENGINE: "1"
+        run: python -m pytest -q tests_*.py
       - name: Verify application import without background engines
         env:
           TRX_NO_ENGINE: "1"
@@ -61,3 +65,4 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+

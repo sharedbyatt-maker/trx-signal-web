@@ -11,5 +11,7 @@ def test_integrity_v2_contracts():
     assert 'const days = tf === 1 ? 3 : 10;' in js
     assert 'bars.slice(-structuralLookbackBars(bars.length))' in js
     assert 'n - structuralLookbackBars(n)' in js
-    assert 'NOT TRX MARKET PRICE' in html
+    assert 'Trend model: BIG -> +1 step, SMALL -> -1 step' in js
+    assert 'id="chart-model-note"' not in html
     assert 'STOCH H/L/C 14·3·3' in html
+
