@@ -164,13 +164,12 @@ test('sidebar order and L1 daily report calculations match existing API state', 
   const errors = watchRuntimeErrors(page);
   await page.goto('/');
   const cards = page.locator('.side-stack > section');
-  await expect(cards).toHaveCount(2);
+  await expect(cards).toHaveCount(4);
   await expect(cards.nth(0)).toHaveAttribute('id', 'l1-capital-card');
   await expect(cards.nth(1)).toHaveAttribute('id', 'l1-report-card');
-  const secondary = page.locator('.secondary-grid > section');
-  await expect(secondary).toHaveCount(2);
-  await expect(secondary.nth(0)).toHaveAttribute('id', 'stake-card');
-  await expect(secondary.nth(1)).toHaveAttribute('id', 'daily12-card');
+  await expect(cards.nth(2)).toHaveAttribute('id', 'stake-card');
+  await expect(cards.nth(3)).toHaveAttribute('id', 'daily12-card');
+  await expect(page.locator('.secondary-grid')).toHaveCount(0);
   await expect(page.locator('#context-card')).toHaveCount(0);
   await expect(page.getByText('MARKET CONTEXT')).toHaveCount(0);
   await expect(page.getByText('ROBUST SIGNAL ENGINE')).toHaveCount(0);
@@ -234,7 +233,7 @@ test('digit distribution is removed and desktop chart stays balanced', async ({ 
   expect(desktopBox.height).toBeGreaterThanOrEqual(320);
   expect(desktopBox.height).toBeLessThanOrEqual(650);
   const sideBox = await page.locator('.side-stack').boundingBox();
-  expect(sideBox.height).toBeLessThanOrEqual(desktopBox.height + 220);
+  expect(sideBox.height).toBeGreaterThan(desktopBox.height);
   await expect(page.locator('#rsi-pane')).toBeVisible();
   await expect(page.locator('.chart-toolbar')).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
@@ -379,7 +378,7 @@ test('focus frame stays fully below the sticky header while scrolling and resizi
   ))).toBeLessThanOrEqual(1);
 });
 
-test('RSI fits in the initial desktop workspace and details occupy both columns', async ({ page }, testInfo) => {
+test('RSI fits in the desktop workspace and all signals stay in the sidebar', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop workspace measurement.');
   for (const viewport of [{width:1920,height:921}, {width:1366,height:768}]) {
     await page.setViewportSize(viewport);
@@ -389,8 +388,10 @@ test('RSI fits in the initial desktop workspace and details occupy both columns'
     expect(rsi.y + rsi.height).toBeLessThanOrEqual(viewport.height);
     const signal = await page.locator('#stake-card').boundingBox();
     const report = await page.locator('#daily12-card').boundingBox();
-    expect(Math.abs(signal.y - report.y)).toBeLessThanOrEqual(1);
-    expect(report.x).toBeGreaterThan(signal.x + signal.width);
+    expect(Math.abs(signal.x - report.x)).toBeLessThanOrEqual(1);
+    expect(report.y).toBeGreaterThan(signal.y + signal.height);
+    expect(signal.width).toBeLessThanOrEqual(430);
+    expect(report.width).toBeLessThanOrEqual(430);
   }
 });
 
@@ -438,4 +439,36 @@ test('narrow mobile focus identifies both engines and timing values are not clip
   expect(clipped).toBeFalsy();
   await page.evaluate(() => window.scrollTo(0, 350));
   await testInfo.attach('mobile-labelled-focus', {body:await page.screenshot(),contentType:'image/png'});
+});
+
+test('desktop chart stays beside the sidebar during page scroll', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop chart pinning.');
+  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}]) {
+    await page.setViewportSize(viewport);
+    await waitForChart(page);
+    await page.evaluate(() => window.scrollTo(0, 300));
+    await expect.poll(() => page.evaluate(() => {
+      const chart = document.querySelector('#chart-card').getBoundingClientRect();
+      const focus = document.querySelector('#focus-bar').getBoundingClientRect();
+      return Math.abs(chart.top - focus.bottom - 12);
+    })).toBeLessThanOrEqual(1);
+    const card = await page.locator('#chart-card').boundingBox();
+    expect(card.y + card.height).toBeLessThanOrEqual(viewport.height - 10);
+    const signal = await page.locator('#stake-card').boundingBox();
+    expect(signal.x).toBeGreaterThan(card.x + card.width);
+    await testInfo.attach('sidebar-scroll-' + viewport.width, {body:await page.screenshot(),contentType:'image/png'});
+  }
+});
+
+test('oversized chart workspace scrolls normally to keep all controls reachable', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop sticky fallback.');
+  await page.setViewportSize({width:1366,height:650});
+  await waitForChart(page);
+  await page.locator('#ind-toggle-btn').click();
+  await page.locator('#macd-toggle').check();
+  await page.locator('#stoch-toggle').check();
+  await expect(page.locator('.primary-stack')).toHaveClass(/chart-scrolls/);
+  await expect(page.locator('.primary-stack')).toHaveCSS('position','static');
+  await page.locator('#chart-time-bar').scrollIntoViewIfNeeded();
+  await expect(page.locator('#chart-time-bar')).toBeInViewport();
 });
