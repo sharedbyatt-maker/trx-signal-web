@@ -15,12 +15,15 @@
     const focus = $("focus-l1");
 
     if (!ready) {
-      if (status) { status.textContent = "WAITING"; setState(status, "waiting"); }
-      if ($("l1-pending")) $("l1-pending").textContent = "WAITING";
-      if ($("l1-target-issue")) $("l1-target-issue").textContent = (x && x.error) ? "ENGINE ERROR" : "NO ACTIVE TARGET";
+      const label = x && x.stale ? (x.feed_status || "STALE") : "WAITING";
+      if (status) { status.textContent = label; setState(status, "waiting"); }
+      if ($("l1-pending")) $("l1-pending").textContent = label;
+      ["l1-stake", "l1-tier", "l1-step"].forEach(id => { if ($(id)) $(id).textContent = "—"; });
+      if ($("l1-risk")) $("l1-risk").textContent = "OBSERVE ONLY · " + label;
+      if ($("l1-target-issue")) $("l1-target-issue").textContent = (x && x.error) ? "ENGINE ERROR" : (x && x.stale ? "NO VALID SIGNAL · " + label : "NO ACTIVE TARGET");
       if (focus) {
         focus.className = "focus-state is-waiting";
-        const b = focus.querySelector("b"); if (b) b.textContent = "WAITING";
+        const b = focus.querySelector("b"); if (b) b.textContent = label;
       }
       return;
     }
@@ -40,7 +43,7 @@
       if (status) { status.textContent = "WAITING"; setState(status, "waiting"); }
       if ($("l1-pending")) $("l1-pending").textContent = x.waiting_rule ? "RULE WAIT" : "WAITING";
       if ($("l1-target-issue")) $("l1-target-issue").textContent = x.waiting_rule ? "FROZEN SKIP RULE ACTIVE" : "NO ACTIVE TARGET";
-      if ($("l1-stake")) $("l1-stake").textContent = "—";
+      ["l1-stake", "l1-tier", "l1-step"].forEach(id => { if ($(id)) $(id).textContent = "—"; });
       if (focus) {
         focus.className = "focus-state is-waiting";
         const b = focus.querySelector("b"); if (b) b.textContent = x.waiting_rule ? "RULE WAIT" : "WAITING";
@@ -64,17 +67,22 @@
       const rank = Number(t.tier || 0) * 100 + Number(t.step || 0);
       if (!deepest || rank > deepest.rank) deepest = {rank, tier: t.tier, step: t.step};
     });
+    const summary = x.daily_summary || {
+      bets: trades.length, wins, losses,
+      win_rate: trades.length ? wins / trades.length * 100 : 0,
+      staked, max_tier: deepest && deepest.tier, max_step: deepest && deepest.step,
+    };
     if ($("l1r-date")) $("l1r-date").textContent = x.today || "—";
-    if ($("l1r-bets")) $("l1r-bets").textContent = fmt(trades.length);
-    if ($("l1r-wr")) $("l1r-wr").textContent = trades.length ? ((wins / trades.length) * 100).toFixed(1) + "%" : "0%";
+    if ($("l1r-bets")) $("l1r-bets").textContent = fmt(summary.bets);
+    if ($("l1r-wr")) $("l1r-wr").textContent = Number(summary.bets) ? Number(summary.win_rate).toFixed(1) + "%" : "0%";
     if ($("l1r-pnl")) {
       $("l1r-pnl").textContent = (pnl >= 0 ? "+" : "") + fmt(pnl) + " MMK";
       $("l1r-pnl").classList.toggle("green", pnl > 0);
       $("l1r-pnl").classList.toggle("red", pnl < 0);
     }
-    if ($("l1r-staked")) $("l1r-staked").textContent = fmt(staked) + " MMK";
-    if ($("l1r-wl")) $("l1r-wl").textContent = wins + " / " + losses;
-    if ($("l1r-depth")) $("l1r-depth").textContent = deepest ? "T" + deepest.tier + "-S" + deepest.step : "—";
+    if ($("l1r-staked")) $("l1r-staked").textContent = fmt(summary.staked) + " MMK";
+    if ($("l1r-wl")) $("l1r-wl").textContent = summary.wins + " / " + summary.losses;
+    if ($("l1r-depth")) $("l1r-depth").textContent = summary.max_tier ? "T" + summary.max_tier + "-S" + summary.max_step : "—";
     const total = Number(x.model_total_pnl || 0);
     const milestone = Number(x.withdraw_milestone || 50000);
     const reachedFromTotal = milestone > 0 ? Math.floor(Math.max(0, total) / milestone) : 0;
@@ -91,11 +99,22 @@
     if ($("l1r-last")) $("l1r-last").textContent = last ? ("LAST " + (last.won ? "WIN" : "LOSS") + " · T" + last.tier + "-S" + last.step + " · " + fmt(last.stake)) : "NO SETTLED TRADE";
   }
 
+  let refreshing = false;
   async function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
     try {
-      const r = await fetch("/api/l1-capital", {cache: "no-store"});
-      if (r.ok) render(await r.json());
-    } catch (_) {}
+      const r = await fetch("/api/l1-capital", {cache: "no-store", signal: controller.signal});
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      render(await r.json());
+    } catch (_) {
+      render({ready: false, stale: true, feed_status: "OFFLINE"});
+    } finally {
+      clearTimeout(timeout);
+      refreshing = false;
+    }
   }
 
   refresh();

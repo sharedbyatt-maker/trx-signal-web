@@ -2,6 +2,19 @@ import os
 os.environ["TRX_NO_ENGINE"] = "1"
 import requests
 import app
+from functools import wraps
+from unittest.mock import patch
+from contextlib import ExitStack
+
+
+def isolated_feed_test(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with ExitStack() as stack:
+            for name in ("_original_session_get", "FEED_STALE_SEC", "FEED_RECOVERY_COOLDOWN_SEC", "_last_recovery_attempt"):
+                stack.enter_context(patch.object(app, name, getattr(app, name)))
+            return fn(*args, **kwargs)
+    return wrapped
 
 class Resp:
     def __init__(self, issue, status=200):
@@ -18,6 +31,7 @@ def reset():
         app._last_recovery_attempt = 0.0
 
 
+@isolated_feed_test
 def test_stale_200_recovers_newer_issue():
     reset()
     calls = []
@@ -35,6 +49,7 @@ def test_stale_200_recovers_newer_issue():
     assert any("_trx_recover=" in x for x in calls), calls
 
 
+@isolated_feed_test
 def test_timeout_attempts_recovery_before_cache():
     reset()
     calls = []
@@ -55,6 +70,7 @@ def test_timeout_attempts_recovery_before_cache():
     assert app._newest_issue_from_response(got) == "201"
 
 
+@isolated_feed_test
 def test_recovery_does_not_regress_issue():
     reset()
     app._original_session_get = lambda *a, **kw: Resp(299)
@@ -69,3 +85,4 @@ if __name__ == "__main__":
     test_timeout_attempts_recovery_before_cache()
     test_recovery_does_not_regress_issue()
     print("FEED RECOVERY TESTS: ALL PASSED")
+

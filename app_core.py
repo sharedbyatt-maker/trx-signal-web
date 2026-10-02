@@ -21,6 +21,7 @@ if sys_stdout := __import__("sys").stdout:
 # Configuration is isolated from runtime behavior; imported names remain
 # available from app_core for backward compatibility with tests and callers.
 from core_config import *  # noqa: F401,F403
+from feed_utils import next_issue_number, feed_delay_seconds, source_time_iso
 from core_notifications import consecutive_bs_streak, format_streak_telegram, rsi_alert_state
 
 session = requests.Session()
@@ -30,6 +31,7 @@ LOCK = threading.Lock()
 TG_QUEUE_MAX = max(64, min(int(os.environ.get("TRX_TG_QUEUE_MAX", "512")), 4096))
 _tg_queue = queue.Queue(maxsize=TG_QUEUE_MAX)
 _tg_drop_count = 0
+_notification_context = threading.local()
 
 _action_rate_lock = threading.Lock()
 _action_rate = {}
@@ -93,51 +95,57 @@ def load_tg_config():
     return None
 
 
+def _send_telegram(text, cfg):
+    """Bounded retries for transient failures; no retry for permanent 4xx errors."""
+    token, chat = cfg[0], cfg[1]
+    for attempt in range(3):
+        retry_delay = 2 ** attempt
+        try:
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat, "text": text}, timeout=10)
+            if response.status_code == 200:
+                return "sent" if attempt == 0 else "sent (retry)"
+            if response.status_code == 429:
+                try:
+                    retry_delay = max(1, float(response.json().get("parameters", {}).get("retry_after", 2)))
+                except (ValueError, TypeError, AttributeError):
+                    retry_delay = 3
+            elif response.status_code < 500:
+                return f"HTTP {response.status_code}"
+            failure = f"HTTP {response.status_code}"
+        except requests.RequestException as exc:
+            # RequestException can contain the bot URL/token; log only its type.
+            failure = type(exc).__name__
+        if attempt < 2:
+            time.sleep(retry_delay)
+    return "failed after 3 attempts: " + failure
+
+
 def _tg_worker():
     while True:
         text = _tg_queue.get()
-        if text is None:
-            break
-        cfg = load_tg_config()   # re-read every send → live-editable
-        if not cfg:
-            result = "skip — config မဖြည့်ရသေးပါ"
-        else:
-            token, chat = cfg[0], cfg[1]
-            result = None
-            for attempt in (1, 2):
-                try:
-                    r = requests.post(
-                        f"https://api.telegram.org/bot{token}/sendMessage",
-                        json={"chat_id": chat, "text": text}, timeout=10)
-                    if r.status_code == 200:
-                        result = "sent" if attempt == 1 else "sent (429 retry)"
-                        break
-                    if r.status_code == 429 and attempt == 1:
-                        # rate-limited: Telegram ပြောထားတဲ့ retry_after လိုက်နာပြီး ပြန်ပို့
-                        try:
-                            retry = float(r.json().get("parameters", {}).get("retry_after", 2))
-                        except (ValueError, AttributeError):
-                            retry = 3.0
-                        result = f"429 → retry {retry:.0f}s"
-                        time.sleep(min(retry, 20.0))
-                        continue
-                    result = f"HTTP {r.status_code}: {r.text[:80]}"
-                    break
-                except requests.RequestException as e:
-                    result = f"error: {e}"
-                    break
-        print(f"[TG] {result}: {text.splitlines()[0]}", flush=True)
-        with LOCK:
-            STATE["tg_last"] = {
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "msg": text.splitlines()[0],
-                "result": result,
-            }
+        try:
+            if text is None:
+                break
+            cfg = load_tg_config()
+            result = _send_telegram(text, cfg) if cfg else "skip — config မဖြည့်ရသေးပါ"
+            print(f"[TG] {result}: {text.splitlines()[0]}", flush=True)
+            with LOCK:
+                STATE["tg_last"] = {
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "msg": text.splitlines()[0], "result": result,
+                }
+        finally:
+            _tg_queue.task_done()
 
 
 def tg_notify(text):
     """Bound Telegram memory pressure. Normal operation never approaches this cap."""
     global _tg_drop_count
+    # Catch-up replay settles model history; never send expired actionable alerts.
+    if getattr(_notification_context, "historical", False):
+        return True
     try:
         _tg_queue.put_nowait(text)
         return True
@@ -946,6 +954,20 @@ def reconcile_strat_pending_issue(latest):
     return False
 
 
+def completed_prefixes(rows, previous_issue):
+    """At boot process only the latest round; after recovery process every new round."""
+    if not rows:
+        return
+    if not previous_issue:
+        yield rows
+        return
+    if issue_relation(rows[-1]["issue"], previous_issue) != "after":
+        return
+    for i, row in enumerate(rows):
+        if issue_relation(row["issue"], previous_issue) == "after":
+            yield rows[:i + 1]
+
+
 def engine_loop():
     global last_issue, pending, units, lose_streak, cooldown, unresolved_signal
     global tg_armed_up, tg_armed_down, _tg_up_ts, _tg_down_ts
@@ -963,6 +985,7 @@ def engine_loop():
     types_strat = []       # parallel types (chronological)
     while True:
         poll_started = time.monotonic()
+        _notification_context.historical = False
         try:
             # Do not rely on the upstream bare-endpoint default size. Request an
             # explicit deep snapshot so the 10-day chart cannot silently collapse
@@ -1002,403 +1025,405 @@ def engine_loop():
                     if len(all_rows) > MAX_FULL_ROWS:
                         all_rows = all_rows[-MAX_FULL_ROWS:]
                     err_streak = 0
-                    parsed_history = all_rows
+                    received_at = time.monotonic()
+                    for parsed_history in completed_prefixes(all_rows, last_issue):
+                        is_latest = parsed_history[-1]["issue"] == all_rows[-1]["issue"]
+                        _notification_context.historical = not is_latest
 
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    latest = parsed_history[-1]
-                    if latest["issue"] != last_issue:
-                        # Build the staking walk/RSI only for a fresh completed round.
-                        # Recomputing up to 30k points on every 0.5s no-change poll
-                        # adds CPU time directly to feed-detection latency.
-                        types_strat = [x["type"] for x in parsed_history]
-                        c_s = 100
-                        closes_s = []
-                        for x in parsed_history:
-                            c_s += 1 if x["type"] == "BIG" else -1
-                            closes_s.append(c_s)
-                        arr_strat = rsi_series(closes_s, RSI_STRAT_PERIOD)
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        latest = parsed_history[-1]
+                        if latest["issue"] != last_issue:
+                            # Build the staking walk/RSI only for a fresh completed round.
+                            # Recomputing up to 30k points on every 0.5s no-change poll
+                            # adds CPU time directly to feed-detection latency.
+                            types_strat = [x["type"] for x in parsed_history]
+                            c_s = 100
+                            closes_s = []
+                            for x in parsed_history:
+                                c_s += 1 if x["type"] == "BIG" else -1
+                                closes_s.append(c_s)
+                            arr_strat = rsi_series(closes_s, RSI_STRAT_PERIOD)
 
-                        current_strat_day = _strat_day_from_issue(latest["issue"])
-                        _send_previous_strat_daily_if_needed(current_strat_day)
-                        resolve_pending(latest)
+                            current_strat_day = _strat_day_from_issue(latest["issue"])
+                            if is_latest:
+                                _send_previous_strat_daily_if_needed(current_strat_day)
+                            resolve_pending(latest)
 
-                        # ---- resolve previous signal entry with actual result ----
-                        if unresolved_signal:
-                            relation = issue_relation(latest["issue"], unresolved_signal.get("issue"))
-                            if relation in ("after", "mismatch"):
-                                unresolved_signal["result_number"] = None
-                                unresolved_signal["result_type"] = None
-                                unresolved_signal["outcome"] = "MISSED"
+                            # ---- resolve previous signal entry with actual result ----
+                            if unresolved_signal:
+                                relation = issue_relation(latest["issue"], unresolved_signal.get("issue"))
+                                if relation in ("after", "mismatch"):
+                                    unresolved_signal["result_number"] = None
+                                    unresolved_signal["result_type"] = None
+                                    unresolved_signal["outcome"] = "MISSED"
+                                    append_signal_history(unresolved_signal)
+                                    unresolved_signal = None
+                            if unresolved_signal and issue_relation(latest["issue"], unresolved_signal.get("issue")) == "exact":
+                                traded = unresolved_signal["signal"] in ("BIG", "SMALL")
+                                win = latest["type"] == unresolved_signal["signal"] if traded else None
+                                unresolved_signal["result_number"] = latest["number"]
+                                unresolved_signal["result_type"] = latest["type"]
+                                unresolved_signal["outcome"] = (
+                                    "WIN" if win else "LOSS") if traded else "NO TRADE"
                                 append_signal_history(unresolved_signal)
                                 unresolved_signal = None
-                        if unresolved_signal and issue_relation(latest["issue"], unresolved_signal.get("issue")) == "exact":
-                            traded = unresolved_signal["signal"] in ("BIG", "SMALL")
-                            win = latest["type"] == unresolved_signal["signal"] if traded else None
-                            unresolved_signal["result_number"] = latest["number"]
-                            unresolved_signal["result_type"] = latest["type"]
-                            unresolved_signal["outcome"] = (
-                                "WIN" if win else "LOSS") if traded else "NO TRADE"
-                            append_signal_history(unresolved_signal)
-                            unresolved_signal = None
 
-                        last_issue = latest["issue"]
-                        next_issue = str(latest["issue_int"] + 1) if latest["issue_int"] > 0 else "NEXT"
+                            last_issue = latest["issue"]
+                            next_issue = next_issue_number(latest["issue"])
 
-                        analysis = analyze_all_in_one(parsed_history)
+                            analysis = analyze_all_in_one(parsed_history)
 
-                        # ---- 🔥 BIG/SMALL LONG-STREAK TELEGRAM ALERT ----
-                        # Notification only: 8 first, then every fresh continuation 9,10,11,...
-                        streak_type, streak_count = consecutive_bs_streak(parsed_history)
-                        if (streak_type in ("BIG", "SMALL")
-                                and streak_count >= TG_STREAK_ALERT_FROM
-                                and latest["issue"] != last_streak_alert_issue):
-                            tg_notify(format_streak_telegram(latest, streak_type, streak_count))
-                            last_streak_alert_issue = latest["issue"]
-                            print(
-                                f"[STREAK] {streak_type} x{streak_count} @ …{latest['short_issue']}",
-                                flush=True,
-                            )
+                            # ---- 🔥 BIG/SMALL LONG-STREAK TELEGRAM ALERT ----
+                            # Notification only: 8 first, then every fresh continuation 9,10,11,...
+                            streak_type, streak_count = consecutive_bs_streak(parsed_history)
+                            if (streak_type in ("BIG", "SMALL")
+                                    and streak_count >= TG_STREAK_ALERT_FROM
+                                    and latest["issue"] != last_streak_alert_issue):
+                                tg_notify(format_streak_telegram(latest, streak_type, streak_count))
+                                last_streak_alert_issue = latest["issue"]
+                                print(
+                                    f"[STREAK] {streak_type} x{streak_count} @ …{latest['short_issue']}",
+                                    flush=True,
+                                )
 
-                        # ---- ⚠️ PRE-SIGNAL RADAR (RSI 40/60 · hysteresis 45/55) ----
-                        # 33/67 trading signal မလာခင် ကြိုပြင်ဆင်ဖို့ radar။
-                        # ALERT SOURCE = chart RSI pane နှင့် တစ်တောင့်တည်းဖြစ်စေရန်
-                        # walk-closes ပေါ်မှာ တွက်တာ (digit-RSI မဟုတ်ဘူး!)
-                        # Buffer zone: 40 အောက် fire → 45 အထက် ပြန်တက်မှ reset
-                        #              60 အထက် fire → 55 အောက် ပြန်ဆင်းမှ reset
-                        # → ဇုန်စွန်းနား အတက်အဆင်းမှာ spam မဖြစ် · လွတ်မသွား
-                        c_walk = 100
-                        closes_walk = []
-                        for d in [1 if x["type"] == "BIG" else -1 for x in parsed_history]:
-                            c_walk += d
-                            closes_walk.append(c_walk)
-                        rsi_arr_chart = rsi_series(closes_walk)
-                        r_now = rsi_arr_chart[-1]
-                        if r_now is not None:
-                            # ---- oversold radar: fire <40, reset >45 ----
-                            if r_now < RADAR_DOWN and radar_armed_down:
-                                radar_armed_down = False
-                                tg_notify(
-                                    "⚠️ PRE-SIGNAL RADAR\n"
-                                    f"RSI လက်ရှိ: {r_now:.1f} — Oversold Zone (40 အောက်)\n"
-                                    f"Issue …{latest['short_issue']} · {latest['block_time']}\n"
-                                    "📌 Signal 32/68 မတိုင်မီ အဆင်သင့် ပြင်ဆင်ထားပါ")
-                                print(f"[RADAR] oversold rsi={r_now:.1f} → armed off", flush=True)
-                            elif r_now > RADAR_RESET_DOWN and not radar_armed_down:
-                                radar_armed_down = True
-                                print(f"[RADAR] oversold reset rsi={r_now:.1f} (>45)", flush=True)
-                            # ---- overbought radar: fire >60, reset <55 ----
-                            if r_now > RADAR_UP and radar_armed_up:
-                                radar_armed_up = False
-                                tg_notify(
-                                    "⚠️ PRE-SIGNAL RADAR\n"
-                                    f"RSI လက်ရှိ: {r_now:.1f} — Overbought Zone (60 အထက်)\n"
-                                    f"Issue …{latest['short_issue']} · {latest['block_time']}\n"
-                                    "📌 Signal 33/67 မတိုင်မီ အဆင်သင့် ပြင်ဆင်ထားပါ")
-                                print(f"[RADAR] overbought rsi={r_now:.1f} → armed off", flush=True)
-                            elif r_now < RADAR_RESET_UP and not radar_armed_up:
-                                radar_armed_up = True
-                                print(f"[RADAR] overbought reset rsi={r_now:.1f} (<55)", flush=True)
-
-                        # =====================================================
-                        # 12-STEP STAKING ENGINE — RSI 33/67 + Confirm-1
-                        # (strategy_test.py 90-day backtest နဲ့ အတည်ပြုထားသည်)
-                        # =====================================================
-                        # 1) signal detection: prev RSI ≤33 & cur=BIG → bet BIG
-                        #    prev RSI ≥67 & cur=SMALL → bet SMALL (next round)
-                        # 2) staking state: tier (0-2) + step (0-3)
-                        #    win → Tier1/Step1 reset · tier-loss → tier+1 (wait
-                        #    next signal, no forced bets) · tier3 loss → 12-step
-                        #    bust → Tier1 reset + alert
-                        # 3) live bet placement: လက်ရှိ armed signal ရှိရင်
-                        #    နောက်ပွဲ (next_issue) ကို လက်ရှိ tier/step stake
-                        #    နဲ့ ဆက်ထိုးမည်
-
-                        strat_signal = None
-                        if len(arr_strat) >= 2:
-                            rsi_prev_s = arr_strat[-2]
-                            t_prev_s = types_strat[-2]
-                            t_cur_s = types_strat[-1]
-                            if rsi_prev_s is not None:
-                                if rsi_prev_s <= RSI_STRAT_OVERSOLD and t_cur_s == "BIG":
-                                    strat_signal = "BIG"
-                                elif rsi_prev_s >= RSI_STRAT_OVERBOUGHT and t_cur_s == "SMALL":
-                                    strat_signal = "SMALL"
-
-                        # resolve pending strat bet with the fresh result
-                        # (ladder persistence: step-loss → pending stays armed
-                        #  for next_issue with advanced stake; only win/tier-
-                        #  loss clears it — matches strategy_test.py flow)
-                        if reconcile_strat_pending_issue(latest):
-                            sp = strat_pending
-                            won = (latest["type"] == sp["target"])
-                            sp["bets"] += 1
-                            stake_used = sp["stake"]
-                            settle_day = _strat_day_from_issue(latest["issue"])
-                            sp["staked"] += stake_used
-                            ladder_continue = False
-                            if won:
-                                payout = int(round(stake_used * STAKE_PAYOUT))
-                                sp["returned"] += payout
-                                sp["net"] += payout - stake_used
-                                sp["win_step"] = sp["bets"]
-                                sp["resolved"] = True
-                                sp["outcome"] = "WIN"
-                                strat_state["tier"] = 0
-                                strat_state["step"] = 0
-                                strat_state["pending"] = None   # ladder done — clear UI state
-                                strat_state["last_result"] = f"WIN +{payout - stake_used:,} @ step {sp['bets']}"
-                                tg_notify(
-                                    f"✅ BET WON — {sp['target']}\n"
-                                    f"Tier {sp['tier']+1} · Step {sp['bets']} · "
-                                    f"stake {stake_used:,} MMK\n"
-                                    f"Episode net: {sp['net']:+,} MMK\n"
-                                    f"System: Tier 1 / Step 1 reset\n"
-                                    f"Issue …{latest['short_issue']}")
-                                print(f"[STAKE] ✅ WIN @ step {sp['bets']} ({stake_used:,}) — Tier1 reset", flush=True)
-                            else:
-                                sp["net"] -= stake_used
-                                if sp["bets"] >= 4:
-                                    # ---- tier failed (4 ပွဲလုံး) — pause ----
-                                    sp["resolved"] = True
-                                    sp["win_step"] = None
-                                    if sp["tier"] >= 2:
-                                        strat_state["busts"] += 1
-                                        sp["outcome"] = "12-STEP BUST"
-                                        strat_state["last_result"] = "💀 12-STEP BUST — Tier1 reset"
-                                        tg_notify(
-                                            f"💀 12-STEP BUST — Tier 3 ၄ပွဲလုံး ရှုံးပါသည်\n"
-                                            f"စုစုပေါင်း အရှုံး (ဤ cycle): {sp['net']:+,} MMK\n"
-                                            f"System: Tier 1 သို့ reset ပြန်စပါမည်\n"
-                                            f"Issue …{latest['short_issue']}")
-                                        print("[STAKE] 💀 12-STEP BUST — Tier1 reset", flush=True)
-                                    else:
-                                        sp["outcome"] = "TIER-FAILED"
-                                        nxt = sp["tier"] + 1
-                                        strat_state["last_result"] = f"Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}"
-                                        tg_notify(
-                                            f"🛑 TIER FAILED (PAUSED) — Tier {sp['tier']+1}\n"
-                                            f"၄ပွဲလုံး ရှုံး · episode net: {sp['net']:+,} MMK\n"
-                                            f"နောက် Signal အသစ် ထွက်လာမှ Tier {nxt+1} Step 1 "
-                                            f"({STAKE_TIERS[nxt][0]:,} MMK) ဖြင့် ဆယ်မည်\n"
-                                            f"Issue …{latest['short_issue']}")
-                                        print(f"[STAKE] Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}", flush=True)
-                                    strat_state["tier"] = 0 if sp["tier"] >= 2 else sp["tier"] + 1
-                                    strat_state["step"] = 0
-                                    strat_state["pending"] = None   # tier paused — clear UI state
-                                else:
-                                    # ---- step lost, bets<4 — ladder continues ----
-                                    sp["outcome"] = "STEP-LOSS"
-                                    strat_state["step"] = sp["bets"]
-                                    next_stake = STAKE_TIERS[sp["tier"]][strat_state["step"]]
-                                    sp["step"] = strat_state["step"]
-                                    sp["stake"] = next_stake
-                                    sp["issue"] = next_issue
-                                    sp["short_issue"] = next_issue[-6:] if len(next_issue) >= 6 else next_issue
-                                    # keep strat_state["pending"] in sync with the
-                                    # advanced ladder (UI fallback path must stay fresh)
-                                    strat_state["pending"] = {
-                                        "target": sp["target"],
-                                        "tier": sp["tier"] + 1,
-                                        "step": strat_state["step"] + 1,
-                                        "stake": next_stake,
-                                        "issue": sp["issue"],
-                                        "trigger_rsi": sp.get("trigger_rsi"),
-                                        "trigger_rule": sp.get("trigger_rule"),
-                                        "confirm_type": sp.get("confirm_type"),
-                                        "source_issue": sp.get("source_issue"),
-                                        "source_short_issue": sp.get("source_short_issue"),
-                                        "source_time": sp.get("source_time"),
-                                        "armed_at": sp.get("armed_at"),
-                                    }
-                                    strat_state["last_result"] = (
-                                        f"Step {sp['bets']} lost → Step {sp['bets']+1} "
-                                        f"({next_stake:,} MMK) armed for …{sp['short_issue']}")
+                            # ---- ⚠️ PRE-SIGNAL RADAR (RSI 40/60 · hysteresis 45/55) ----
+                            # 33/67 trading signal မလာခင် ကြိုပြင်ဆင်ဖို့ radar။
+                            # ALERT SOURCE = chart RSI pane နှင့် တစ်တောင့်တည်းဖြစ်စေရန်
+                            # walk-closes ပေါ်မှာ တွက်တာ (digit-RSI မဟုတ်ဘူး!)
+                            # Buffer zone: 40 အောက် fire → 45 အထက် ပြန်တက်မှ reset
+                            #              60 အထက် fire → 55 အောက် ပြန်ဆင်းမှ reset
+                            # → ဇုန်စွန်းနား အတက်အဆင်းမှာ spam မဖြစ် · လွတ်မသွား
+                            c_walk = 100
+                            closes_walk = []
+                            for d in [1 if x["type"] == "BIG" else -1 for x in parsed_history]:
+                                c_walk += d
+                                closes_walk.append(c_walk)
+                            rsi_arr_chart = rsi_series(closes_walk)
+                            r_now = rsi_arr_chart[-1]
+                            if r_now is not None:
+                                # ---- oversold radar: fire <40, reset >45 ----
+                                if r_now < RADAR_DOWN and radar_armed_down:
+                                    radar_armed_down = False
                                     tg_notify(
-                                        f"⚠️ STEP LOST — ADVANCING TO STEP {sp['bets']+1}\n"
-                                        f"Target: {sp['target']} · Tier {sp['tier']+1}\n"
-                                        f"နောက်ပွဲ Stake: {next_stake:,} MMK\n"
-                                        f"Issue …{sp['short_issue']}")
-                                    print(f"[STAKE] step {sp['bets']} lost → advance step {sp['bets']+1} "
-                                          f"({next_stake:,}) @ …{sp['short_issue']}", flush=True)
-                                    ladder_continue = True
-                            bet_pnl = (int(round(stake_used * STAKE_PAYOUT)) - stake_used) if won else -stake_used
-                            returned = int(round(stake_used * STAKE_PAYOUT)) if won else 0
-                            episode_done = bool(sp.get("resolved"))
-                            _strat_daily_event(
-                                settle_day, f"bet:{latest['issue']}",
-                                settled_bets=1, bet_wins=1 if won else 0, bet_losses=0 if won else 1,
-                                total_staked=stake_used, total_returned=returned, net_pnl=bet_pnl,
-                                episodes_resolved=1 if episode_done else 0,
-                                episode_wins=1 if episode_done and sp.get("outcome") == "WIN" else 0,
-                                tier_failed=1 if episode_done and sp.get("outcome") == "TIER-FAILED" else 0,
-                                busts=1 if episode_done and sp.get("outcome") == "12-STEP BUST" else 0,
-                                max_stake=stake_used, max_tier=sp["tier"]+1, max_step=sp["bets"],
-                                last_issue=latest["issue"],
-                                event={"issue": latest["issue"], "target": sp["target"], "actual": latest["type"],
-                                       "tier": sp["tier"]+1, "step": sp["bets"], "stake": stake_used,
-                                       "outcome": "WIN" if won else "LOSS", "pnl": bet_pnl},
-                            )
-                            with LOCK:
-                                STATE["strat_last"] = {
-                                    "issue": sp["issue"], "target": sp["target"],
-                                    "tier": sp["tier"] + 1, "outcome": sp["outcome"],
-                                    "net": sp["net"], "staked": sp["staked"],
-                                    "bets": sp["bets"],
-                                    "win_step": sp.get("win_step"),
-                                }
-                                STATE["strat"] = dict(strat_state)
-                                STATE["strat_log"].insert(0, dict(STATE["strat_last"]))
-                                del STATE["strat_log"][50:]
-                            if not ladder_continue:
-                                strat_pending = None
+                                        "⚠️ PRE-SIGNAL RADAR\n"
+                                        f"RSI လက်ရှိ: {r_now:.1f} — Oversold Zone (40 အောက်)\n"
+                                        f"Issue …{latest['short_issue']} · {latest['block_time']}\n"
+                                        "📌 Signal 32/68 မတိုင်မီ အဆင်သင့် ပြင်ဆင်ထားပါ")
+                                    print(f"[RADAR] oversold rsi={r_now:.1f} → armed off", flush=True)
+                                elif r_now > RADAR_RESET_DOWN and not radar_armed_down:
+                                    radar_armed_down = True
+                                    print(f"[RADAR] oversold reset rsi={r_now:.1f} (>45)", flush=True)
+                                # ---- overbought radar: fire >60, reset <55 ----
+                                if r_now > RADAR_UP and radar_armed_up:
+                                    radar_armed_up = False
+                                    tg_notify(
+                                        "⚠️ PRE-SIGNAL RADAR\n"
+                                        f"RSI လက်ရှိ: {r_now:.1f} — Overbought Zone (60 အထက်)\n"
+                                        f"Issue …{latest['short_issue']} · {latest['block_time']}\n"
+                                        "📌 Signal 33/67 မတိုင်မီ အဆင်သင့် ပြင်ဆင်ထားပါ")
+                                    print(f"[RADAR] overbought rsi={r_now:.1f} → armed off", flush=True)
+                                elif r_now < RADAR_RESET_UP and not radar_armed_up:
+                                    radar_armed_up = True
+                                    print(f"[RADAR] overbought reset rsi={r_now:.1f} (<55)", flush=True)
 
-                        # new signal → arm next round with current tier/step stake
-                        if strat_signal is not None and strat_pending is None:
-                            stake_amt = STAKE_TIERS[strat_state["tier"]][strat_state["step"]]
-                            trigger_rsi = round(float(rsi_prev_s), 1) if rsi_prev_s is not None else None
-                            trigger_rule = (
-                                f"Prev RSI ≤ {RSI_STRAT_OVERSOLD:g} + BIG confirm"
-                                if strat_signal == "BIG" else
-                                f"Prev RSI ≥ {RSI_STRAT_OVERBOUGHT:g} + SMALL confirm"
-                            )
-                            strat_pending = {
+                            # =====================================================
+                            # 12-STEP STAKING ENGINE — RSI 33/67 + Confirm-1
+                            # (strategy_test.py 90-day backtest နဲ့ အတည်ပြုထားသည်)
+                            # =====================================================
+                            # 1) signal detection: prev RSI ≤33 & cur=BIG → bet BIG
+                            #    prev RSI ≥67 & cur=SMALL → bet SMALL (next round)
+                            # 2) staking state: tier (0-2) + step (0-3)
+                            #    win → Tier1/Step1 reset · tier-loss → tier+1 (wait
+                            #    next signal, no forced bets) · tier3 loss → 12-step
+                            #    bust → Tier1 reset + alert
+                            # 3) live bet placement: လက်ရှိ armed signal ရှိရင်
+                            #    နောက်ပွဲ (next_issue) ကို လက်ရှိ tier/step stake
+                            #    နဲ့ ဆက်ထိုးမည်
+
+                            strat_signal = None
+                            if len(arr_strat) >= 2:
+                                rsi_prev_s = arr_strat[-2]
+                                t_prev_s = types_strat[-2]
+                                t_cur_s = types_strat[-1]
+                                if rsi_prev_s is not None:
+                                    if rsi_prev_s <= RSI_STRAT_OVERSOLD and t_cur_s == "BIG":
+                                        strat_signal = "BIG"
+                                    elif rsi_prev_s >= RSI_STRAT_OVERBOUGHT and t_cur_s == "SMALL":
+                                        strat_signal = "SMALL"
+
+                            # resolve pending strat bet with the fresh result
+                            # (ladder persistence: step-loss → pending stays armed
+                            #  for next_issue with advanced stake; only win/tier-
+                            #  loss clears it — matches strategy_test.py flow)
+                            if reconcile_strat_pending_issue(latest):
+                                sp = strat_pending
+                                won = (latest["type"] == sp["target"])
+                                sp["bets"] += 1
+                                stake_used = sp["stake"]
+                                settle_day = _strat_day_from_issue(latest["issue"])
+                                sp["staked"] += stake_used
+                                ladder_continue = False
+                                if won:
+                                    payout = int(round(stake_used * STAKE_PAYOUT))
+                                    sp["returned"] += payout
+                                    sp["net"] += payout - stake_used
+                                    sp["win_step"] = sp["bets"]
+                                    sp["resolved"] = True
+                                    sp["outcome"] = "WIN"
+                                    strat_state["tier"] = 0
+                                    strat_state["step"] = 0
+                                    strat_state["pending"] = None   # ladder done — clear UI state
+                                    strat_state["last_result"] = f"WIN +{payout - stake_used:,} @ step {sp['bets']}"
+                                    tg_notify(
+                                        f"✅ BET WON — {sp['target']}\n"
+                                        f"Tier {sp['tier']+1} · Step {sp['bets']} · "
+                                        f"stake {stake_used:,} MMK\n"
+                                        f"Episode net: {sp['net']:+,} MMK\n"
+                                        f"System: Tier 1 / Step 1 reset\n"
+                                        f"Issue …{latest['short_issue']}")
+                                    print(f"[STAKE] ✅ WIN @ step {sp['bets']} ({stake_used:,}) — Tier1 reset", flush=True)
+                                else:
+                                    sp["net"] -= stake_used
+                                    if sp["bets"] >= 4:
+                                        # ---- tier failed (4 ပွဲလုံး) — pause ----
+                                        sp["resolved"] = True
+                                        sp["win_step"] = None
+                                        if sp["tier"] >= 2:
+                                            strat_state["busts"] += 1
+                                            sp["outcome"] = "12-STEP BUST"
+                                            strat_state["last_result"] = "💀 12-STEP BUST — Tier1 reset"
+                                            tg_notify(
+                                                f"💀 12-STEP BUST — Tier 3 ၄ပွဲလုံး ရှုံးပါသည်\n"
+                                                f"စုစုပေါင်း အရှုံး (ဤ cycle): {sp['net']:+,} MMK\n"
+                                                f"System: Tier 1 သို့ reset ပြန်စပါမည်\n"
+                                                f"Issue …{latest['short_issue']}")
+                                            print("[STAKE] 💀 12-STEP BUST — Tier1 reset", flush=True)
+                                        else:
+                                            sp["outcome"] = "TIER-FAILED"
+                                            nxt = sp["tier"] + 1
+                                            strat_state["last_result"] = f"Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}"
+                                            tg_notify(
+                                                f"🛑 TIER FAILED (PAUSED) — Tier {sp['tier']+1}\n"
+                                                f"၄ပွဲလုံး ရှုံး · episode net: {sp['net']:+,} MMK\n"
+                                                f"နောက် Signal အသစ် ထွက်လာမှ Tier {nxt+1} Step 1 "
+                                                f"({STAKE_TIERS[nxt][0]:,} MMK) ဖြင့် ဆယ်မည်\n"
+                                                f"Issue …{latest['short_issue']}")
+                                            print(f"[STAKE] Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}", flush=True)
+                                        strat_state["tier"] = 0 if sp["tier"] >= 2 else sp["tier"] + 1
+                                        strat_state["step"] = 0
+                                        strat_state["pending"] = None   # tier paused — clear UI state
+                                    else:
+                                        # ---- step lost, bets<4 — ladder continues ----
+                                        sp["outcome"] = "STEP-LOSS"
+                                        strat_state["step"] = sp["bets"]
+                                        next_stake = STAKE_TIERS[sp["tier"]][strat_state["step"]]
+                                        sp["step"] = strat_state["step"]
+                                        sp["stake"] = next_stake
+                                        sp["issue"] = next_issue
+                                        sp["short_issue"] = next_issue[-6:] if len(next_issue) >= 6 else next_issue
+                                        # keep strat_state["pending"] in sync with the
+                                        # advanced ladder (UI fallback path must stay fresh)
+                                        strat_state["pending"] = {
+                                            "target": sp["target"],
+                                            "tier": sp["tier"] + 1,
+                                            "step": strat_state["step"] + 1,
+                                            "stake": next_stake,
+                                            "issue": sp["issue"],
+                                            "trigger_rsi": sp.get("trigger_rsi"),
+                                            "trigger_rule": sp.get("trigger_rule"),
+                                            "confirm_type": sp.get("confirm_type"),
+                                            "source_issue": sp.get("source_issue"),
+                                            "source_short_issue": sp.get("source_short_issue"),
+                                            "source_time": sp.get("source_time"),
+                                            "armed_at": sp.get("armed_at"),
+                                        }
+                                        strat_state["last_result"] = (
+                                            f"Step {sp['bets']} lost → Step {sp['bets']+1} "
+                                            f"({next_stake:,} MMK) armed for …{sp['short_issue']}")
+                                        tg_notify(
+                                            f"⚠️ STEP LOST — ADVANCING TO STEP {sp['bets']+1}\n"
+                                            f"Target: {sp['target']} · Tier {sp['tier']+1}\n"
+                                            f"နောက်ပွဲ Stake: {next_stake:,} MMK\n"
+                                            f"Issue …{sp['short_issue']}")
+                                        print(f"[STAKE] step {sp['bets']} lost → advance step {sp['bets']+1} "
+                                              f"({next_stake:,}) @ …{sp['short_issue']}", flush=True)
+                                        ladder_continue = True
+                                bet_pnl = (int(round(stake_used * STAKE_PAYOUT)) - stake_used) if won else -stake_used
+                                returned = int(round(stake_used * STAKE_PAYOUT)) if won else 0
+                                episode_done = bool(sp.get("resolved"))
+                                _strat_daily_event(
+                                    settle_day, f"bet:{latest['issue']}",
+                                    settled_bets=1, bet_wins=1 if won else 0, bet_losses=0 if won else 1,
+                                    total_staked=stake_used, total_returned=returned, net_pnl=bet_pnl,
+                                    episodes_resolved=1 if episode_done else 0,
+                                    episode_wins=1 if episode_done and sp.get("outcome") == "WIN" else 0,
+                                    tier_failed=1 if episode_done and sp.get("outcome") == "TIER-FAILED" else 0,
+                                    busts=1 if episode_done and sp.get("outcome") == "12-STEP BUST" else 0,
+                                    max_stake=stake_used, max_tier=sp["tier"]+1, max_step=sp["bets"],
+                                    last_issue=latest["issue"],
+                                    event={"issue": latest["issue"], "target": sp["target"], "actual": latest["type"],
+                                           "tier": sp["tier"]+1, "step": sp["bets"], "stake": stake_used,
+                                           "outcome": "WIN" if won else "LOSS", "pnl": bet_pnl},
+                                )
+                                with LOCK:
+                                    STATE["strat_last"] = {
+                                        "issue": sp["issue"], "target": sp["target"],
+                                        "tier": sp["tier"] + 1, "outcome": sp["outcome"],
+                                        "net": sp["net"], "staked": sp["staked"],
+                                        "bets": sp["bets"],
+                                        "win_step": sp.get("win_step"),
+                                    }
+                                    STATE["strat"] = dict(strat_state)
+                                    STATE["strat_log"].insert(0, dict(STATE["strat_last"]))
+                                    del STATE["strat_log"][50:]
+                                if not ladder_continue:
+                                    strat_pending = None
+
+                            # new signal → arm next round with current tier/step stake
+                            if strat_signal is not None and strat_pending is None:
+                                stake_amt = STAKE_TIERS[strat_state["tier"]][strat_state["step"]]
+                                trigger_rsi = round(float(rsi_prev_s), 1) if rsi_prev_s is not None else None
+                                trigger_rule = (
+                                    f"Prev RSI ≤ {RSI_STRAT_OVERSOLD:g} + BIG confirm"
+                                    if strat_signal == "BIG" else
+                                    f"Prev RSI ≥ {RSI_STRAT_OVERBOUGHT:g} + SMALL confirm"
+                                )
+                                strat_pending = {
+                                    "issue": next_issue,
+                                    "short_issue": next_issue[-6:] if len(next_issue) >= 6 else next_issue,
+                                    "target": strat_signal,
+                                    "tier": strat_state["tier"],
+                                    "step": strat_state["step"],
+                                    "stake": stake_amt,
+                                    "bets": 0, "staked": 0, "returned": 0,
+                                    "net": 0, "win_step": None, "resolved": False,
+                                    "outcome": "PENDING",
+                                    # Display-only setup context; strategy logic above is unchanged.
+                                    "trigger_rsi": trigger_rsi,
+                                    "trigger_rule": trigger_rule,
+                                    "confirm_type": t_cur_s,
+                                    "source_issue": latest["issue"],
+                                    "source_short_issue": latest["short_issue"],
+                                    "source_time": latest.get("block_time", ""),
+                                    "armed_at": now,
+                                }
+                                strat_state["signals"] += 1
+                                signal_day = _strat_day_from_issue(next_issue)
+                                _strat_daily_event(
+                                    signal_day, f"signal:{next_issue}", signals=1, max_stake=stake_amt,
+                                    max_tier=strat_state["tier"]+1, max_step=strat_state["step"]+1,
+                                    last_issue=latest["issue"],
+                                    event={"issue": next_issue, "target": strat_signal, "tier": strat_state["tier"]+1,
+                                           "step": strat_state["step"]+1, "stake": stake_amt, "outcome": "SIGNAL",
+                                           "trigger_rsi": trigger_rsi, "source_issue": latest["issue"]},
+                                )
+                                strat_state["pending"] = {
+                                    "target": strat_signal,
+                                    "tier": strat_state["tier"] + 1,
+                                    "step": strat_state["step"] + 1,
+                                    "stake": stake_amt,
+                                    "issue": strat_pending["issue"],
+                                    "trigger_rsi": trigger_rsi,
+                                    "trigger_rule": trigger_rule,
+                                    "confirm_type": t_cur_s,
+                                    "source_issue": latest["issue"],
+                                    "source_short_issue": latest["short_issue"],
+                                    "source_time": latest.get("block_time", ""),
+                                    "armed_at": now,
+                                }
+                                tg_notify(
+                                    f"🎯 12-STEP SIGNAL — {strat_signal}\n\n"
+                                    f"Target Issue: …{strat_pending['short_issue']}\n"
+                                    f"Tier {strat_state['tier']+1} · Step {strat_state['step']+1}\n"
+                                    f"Stake: {stake_amt:,} MMK\n"
+                                    f"Trigger RSI: {trigger_rsi:.1f}\n"
+                                    f"Setup: {trigger_rule}\n"
+                                    f"Confirmed By: …{latest['short_issue']} · {latest['type']}\n"
+                                    f"Source Time: {latest.get('block_time','')}\n\n"
+                                    "Status: 🟢 ARMED — waiting for target issue settlement")
+                                print(f"[STAKE] signal {strat_signal} T{strat_state['tier']+1}"
+                                      f"S{strat_state['step']+1} stake={stake_amt:,}", flush=True)
+
+                            # ---- record this round's signal for next issue ----
+                            new_entry = {
+                                "time": datetime.now().strftime("%H:%M:%S"),
                                 "issue": next_issue,
                                 "short_issue": next_issue[-6:] if len(next_issue) >= 6 else next_issue,
-                                "target": strat_signal,
-                                "tier": strat_state["tier"],
-                                "step": strat_state["step"],
-                                "stake": stake_amt,
-                                "bets": 0, "staked": 0, "returned": 0,
-                                "net": 0, "win_step": None, "resolved": False,
+                                "signal": analysis["signal"],
+                                "score": analysis.get("score", 0.0),
+                                "result_number": None,
+                                "result_type": None,
                                 "outcome": "PENDING",
-                                # Display-only setup context; strategy logic above is unchanged.
-                                "trigger_rsi": trigger_rsi,
-                                "trigger_rule": trigger_rule,
-                                "confirm_type": t_cur_s,
-                                "source_issue": latest["issue"],
-                                "source_short_issue": latest["short_issue"],
-                                "source_time": latest.get("block_time", ""),
-                                "armed_at": now,
                             }
-                            strat_state["signals"] += 1
-                            signal_day = _strat_day_from_issue(next_issue)
-                            _strat_daily_event(
-                                signal_day, f"signal:{next_issue}", signals=1, max_stake=stake_amt,
-                                max_tier=strat_state["tier"]+1, max_step=strat_state["step"]+1,
-                                last_issue=latest["issue"],
-                                event={"issue": next_issue, "target": strat_signal, "tier": strat_state["tier"]+1,
-                                       "step": strat_state["step"]+1, "stake": stake_amt, "outcome": "SIGNAL",
-                                       "trigger_rsi": trigger_rsi, "source_issue": latest["issue"]},
-                            )
-                            strat_state["pending"] = {
-                                "target": strat_signal,
-                                "tier": strat_state["tier"] + 1,
-                                "step": strat_state["step"] + 1,
-                                "stake": stake_amt,
-                                "issue": strat_pending["issue"],
-                                "trigger_rsi": trigger_rsi,
-                                "trigger_rule": trigger_rule,
-                                "confirm_type": t_cur_s,
-                                "source_issue": latest["issue"],
-                                "source_short_issue": latest["short_issue"],
-                                "source_time": latest.get("block_time", ""),
-                                "armed_at": now,
-                            }
-                            tg_notify(
-                                f"🎯 12-STEP SIGNAL — {strat_signal}\n\n"
-                                f"Target Issue: …{strat_pending['short_issue']}\n"
-                                f"Tier {strat_state['tier']+1} · Step {strat_state['step']+1}\n"
-                                f"Stake: {stake_amt:,} MMK\n"
-                                f"Trigger RSI: {trigger_rsi:.1f}\n"
-                                f"Setup: {trigger_rule}\n"
-                                f"Confirmed By: …{latest['short_issue']} · {latest['type']}\n"
-                                f"Source Time: {latest.get('block_time','')}\n\n"
-                                "Status: 🟢 ARMED — waiting for target issue settlement")
-                            print(f"[STAKE] signal {strat_signal} T{strat_state['tier']+1}"
-                                  f"S{strat_state['step']+1} stake={stake_amt:,}", flush=True)
+                            signal_history.append(new_entry)
+                            if len(signal_history) > SIGNALS_KEEP:
+                                del signal_history[:len(signal_history) - SIGNALS_KEEP]
+                            unresolved_signal = new_entry
 
-                        # ---- record this round's signal for next issue ----
-                        new_entry = {
-                            "time": datetime.now().strftime("%H:%M:%S"),
-                            "issue": next_issue,
-                            "short_issue": next_issue[-6:] if len(next_issue) >= 6 else next_issue,
-                            "signal": analysis["signal"],
-                            "score": analysis.get("score", 0.0),
-                            "result_number": None,
-                            "result_type": None,
-                            "outcome": "PENDING",
-                        }
-                        signal_history.append(new_entry)
-                        if len(signal_history) > SIGNALS_KEEP:
-                            del signal_history[:len(signal_history) - SIGNALS_KEEP]
-                        unresolved_signal = new_entry
+                            block = risk_check()
+                            # feed-delay auto-standby: stale state → no new bets
+                            feed_delay = feed_delay_seconds(latest.get("block_time"))
+                            if block is None and feed_delay is not None and feed_delay > FEED_DELAY_STANDBY_SEC:
+                                block = f"⏳ Feed Delayed {feed_delay // 60}m {feed_delay % 60}s — Auto-Standby"
+                            entry = None
+                            if not block and analysis["signal"] in ("BIG", "SMALL"):
+                                # score-tiered + rolling-confidence staking
+                                tier = 1.25 if abs(analysis.get("score", 0)) >= STAKE_TIER_HIGH_SCORE else 1.0
+                                conf = 1.0
+                                if len(recent_results) >= ROLLING_MIN_FOR_CONF:
+                                    p = sum(recent_results) / len(recent_results)
+                                    conf = (0.75 if p < 0.45
+                                            else 1.25 if (p > 0.55 and len(recent_results) >= 20) else 1.0)
+                                stake = int(round(BET_SIZE * tier * conf))
+                                entry = {"issue": next_issue,
+                                         "short_issue": next_issue[-6:] if len(next_issue) >= 6 else next_issue,
+                                         "signal": analysis["signal"],
+                                         "score": analysis.get("score", 0),
+                                         "stake": stake}
+                                pending = entry
 
-                        block = risk_check()
-                        # feed-delay auto-standby: stale state → no new bets
-                        try:
-                            bt_dt = datetime.strptime(latest["block_time"], "%Y-%m-%d %H:%M:%S")
-                            feed_delay = max(0, int((datetime.now() - bt_dt).total_seconds()))
-                        except (ValueError, TypeError):
-                            feed_delay = None
-                        if block is None and feed_delay is not None and feed_delay > FEED_DELAY_STANDBY_SEC:
-                            block = f"⏳ Feed Delayed {feed_delay // 60}m {feed_delay % 60}s — Auto-Standby"
-                        entry = None
-                        if not block and analysis["signal"] in ("BIG", "SMALL"):
-                            # score-tiered + rolling-confidence staking
-                            tier = 1.25 if abs(analysis.get("score", 0)) >= STAKE_TIER_HIGH_SCORE else 1.0
-                            conf = 1.0
-                            if len(recent_results) >= ROLLING_MIN_FOR_CONF:
-                                p = sum(recent_results) / len(recent_results)
-                                conf = (0.75 if p < 0.45
-                                        else 1.25 if (p > 0.55 and len(recent_results) >= 20) else 1.0)
-                            stake = int(round(BET_SIZE * tier * conf))
-                            entry = {"issue": next_issue,
-                                     "short_issue": next_issue[-6:] if len(next_issue) >= 6 else next_issue,
-                                     "signal": analysis["signal"],
-                                     "score": analysis.get("score", 0),
-                                     "stake": stake}
-                            pending = entry
-
-                        with LOCK:
-                            full_hist = trim_full_history(parsed_history)
-                            hist_meta = {
-                                "days": FULL_HISTORY_DAYS,
-                                "count": len(full_hist),
-                                "from": full_hist[0]["issue"] if full_hist else None,
-                                "to": full_hist[-1]["issue"] if full_hist else None,
-                            }
-                            STATE.update({
-                                "connected": True,
-                                "error": None,
-                                "last_update": now,
-                                "history": parsed_history[-HISTORY_KEEP:],
-                                "full_history": full_hist,
-                                "hist_meta": hist_meta,
-                                "analysis": analysis,
-                                "next_issue": next_issue,
-                                "pending": dict(pending) if pending else None,
-                                "risk_block": block,
-                                "units": units,
-                                "lose_streak": lose_streak,
-                                "cooldown": cooldown,
-                                "stats": dict(stats),
-                                "rolling": {"n": len(recent_results), "w": sum(recent_results)},
-                                "feed_delay": feed_delay,
-                                "markov": markov_prob(parsed_history),
-                                "strat": dict(strat_state),
-                                "strat_pending": dict(strat_pending) if strat_pending else None,
-                            })
-                        # ---- backtest: once on first data, then daily re-calibration ----
-                        if STATE.get("backtest") is None or _bt_day != latest["day_int"]:
-                            _bt_day = latest["day_int"]
-                            bt_result = run_backtest(parsed_history)
                             with LOCK:
-                                STATE["backtest"] = bt_result
-                            if bt_result:
-                                print(f"[BT] calibrated on {bt_result['rounds_tested']} rounds · "
-                                      f"trade-wr {bt_result['buckets']['trade']['wr']}", flush=True)
-                        print(f"[{now}] Issue {latest['short_issue']} -> {latest['number']} "
-                              f"({analysis['signal']} {analysis['score']:+.0f})", flush=True)
+                                full_hist = trim_full_history(parsed_history)
+                                hist_meta = {
+                                    "days": FULL_HISTORY_DAYS,
+                                    "count": len(full_hist),
+                                    "from": full_hist[0]["issue"] if full_hist else None,
+                                    "to": full_hist[-1]["issue"] if full_hist else None,
+                                }
+                                STATE.update({
+                                    "connected": is_latest,
+                                    "last_result_received_mono": received_at,
+                                    "error": None,
+                                    "last_update": now,
+                                    "history": parsed_history[-HISTORY_KEEP:],
+                                    "full_history": full_hist,
+                                    "hist_meta": hist_meta,
+                                    "analysis": analysis,
+                                    "next_issue": next_issue,
+                                    "pending": dict(pending) if pending else None,
+                                    "risk_block": block,
+                                    "units": units,
+                                    "lose_streak": lose_streak,
+                                    "cooldown": cooldown,
+                                    "stats": dict(stats),
+                                    "rolling": {"n": len(recent_results), "w": sum(recent_results)},
+                                    "feed_delay": feed_delay,
+                                    "markov": markov_prob(parsed_history),
+                                    "strat": dict(strat_state),
+                                    "strat_pending": dict(strat_pending) if strat_pending else None,
+                                })
+                            # ---- backtest: once on first data, then daily re-calibration ----
+                            if is_latest and (STATE.get("backtest") is None or _bt_day != latest["day_int"]):
+                                _bt_day = latest["day_int"]
+                                bt_result = run_backtest(parsed_history)
+                                with LOCK:
+                                    STATE["backtest"] = bt_result
+                                if bt_result:
+                                    print(f"[BT] calibrated on {bt_result['rounds_tested']} rounds · "
+                                          f"trade-wr {bt_result['buckets']['trade']['wr']}", flush=True)
+                            print(f"[{now}] Issue {latest['short_issue']} -> {latest['number']} "
+                                  f"({analysis['signal']} {analysis['score']:+.0f})", flush=True)
+                    _notification_context.historical = False
             else:
                 err_streak += 1
                 if have_full and err_streak >= 5:
@@ -1482,6 +1507,7 @@ def api_history():
         "incremental": bool(since),
         "meta": meta,
         "last_time": rows[-1]["block_time"] if rows else None,
+        "last_time_utc": source_time_iso(rows[-1].get("block_time")) if rows else None,
         "history": payload,
     })
 
@@ -1550,6 +1576,7 @@ def api_latest():
         "number": r["number"],
         "type": r["type"],
         "block_time": r.get("block_time", ""),
+        "block_time_utc": source_time_iso(r.get("block_time")),
     }})
 
 

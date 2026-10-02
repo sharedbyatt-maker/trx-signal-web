@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,11 +31,14 @@ def replay(rows, rsi):
 class FakeCore:
     def __init__(self, rows, next_issue="20260920999999999"):
         self.LOCK = threading.Lock()
-        self.STATE = {"full_history": rows, "next_issue": next_issue}
+        self.STATE = {"full_history": rows, "next_issue": next_issue, "connected": True,
+                      "last_result_received_mono": time.monotonic(), "feed_delay": 0,
+                      "feed_health": {"status": "LIVE"}}
         self.messages = []
 
     def tg_notify(self, message):
         self.messages.append(message)
+        return True
 
 
 class L1CapitalTests(unittest.TestCase):
