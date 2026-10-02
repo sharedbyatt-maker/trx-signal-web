@@ -343,7 +343,9 @@ test('source delay is independent of viewer timezone', async ({ browser, baseURL
     }}));
     await page.route('**/api/latest', route => route.fulfill({json: {round: null}}));
     await page.goto('/');
-    await expect(page.locator('#ctb-delay')).toContainText('FEED LIVE');
+    await expect(page.locator('#ctb-next')).toHaveText('NEXT ISSUE ETA: ~0:44');
+    const sourceTime = await page.evaluate(() => sourceEpoch('2026-10-02 18:29:54'));
+    expect(sourceTime).toBe(Date.parse('2026-10-02T11:59:54Z'));
     await context.close();
   }
 });
