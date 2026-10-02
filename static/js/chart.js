@@ -89,6 +89,18 @@ window.TRXChart = (() => {
 
   const $ = (id) => document.getElementById(id);
 
+  // Presentation only: keep source-wall-clock aggregation and drawing anchors
+  // intact, while rendering chart labels in the same timezone as the UI clock.
+  function localTimeLabel(value, withDate = false) {
+    const raw = String(value || "").trim().replace(" ", "T");
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(raw)) return String(value || "");
+    const stamp = Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : raw + "+06:30");
+    if (!Number.isFinite(stamp)) return String(value || "");
+    const date = new Date(stamp);
+    const hm = pad2(date.getHours()) + ":" + pad2(date.getMinutes());
+    return withDate ? date.getFullYear() + "-" + pad2(date.getMonth() + 1) + "-" + pad2(date.getDate()) + " " + hm + " (local)" : hm;
+  }
+
   /* ================= indicator math ================= */
   function calcEma(values, period) {
     const out = new Array(values.length).fill(null);
@@ -959,8 +971,9 @@ window.TRXChart = (() => {
       ` C ${s}${bar.c.toFixed(1)}</b>`;
     if (tmEl) {
       const tm = curTimes[bar.time - 1] || "";
-      const hm = tm.length >= 16 ? tm.slice(11, 16) : tm;
+      const hm = localTimeLabel(tm);
       tmEl.textContent = hm ? `🕒 ${hm}` : "";
+      tmEl.title = localTimeLabel(tm, true);
     }
     if (bar.o !== bar.c) {
       const pct = ((bar.c - bar.o) / bar.o) * 100;
@@ -1116,7 +1129,7 @@ window.TRXChart = (() => {
         tickMarkMaxCharacterLength: 5,
         tickMarkFormatter: (t) => {
           const tm = curTimes[t - 1] || "";
-          const hm = tm.length >= 16 ? tm.slice(11, 16) : tm;
+          const hm = localTimeLabel(tm);
           return hm || curLabels[t - 1] || "";
         },
       },
@@ -1124,7 +1137,7 @@ window.TRXChart = (() => {
         timeFormatter: (t) => {
           const lb = curLabels[t - 1] || "";
           const tm = curTimes[t - 1] || "";
-          return [tm ? `🕒 ${tm}` : null, lb ? `Issue …${lb}` : null].filter(Boolean).join("\n") || "";
+          return [tm ? `🕒 ${localTimeLabel(tm, true)}` : null, lb ? `Issue …${lb}` : null].filter(Boolean).join("\n") || "";
         },
       },
     });
