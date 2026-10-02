@@ -164,11 +164,13 @@ test('sidebar order and L1 daily report calculations match existing API state', 
   const errors = watchRuntimeErrors(page);
   await page.goto('/');
   const cards = page.locator('.side-stack > section');
-  await expect(cards).toHaveCount(4);
+  await expect(cards).toHaveCount(2);
   await expect(cards.nth(0)).toHaveAttribute('id', 'l1-capital-card');
   await expect(cards.nth(1)).toHaveAttribute('id', 'l1-report-card');
-  await expect(cards.nth(2)).toHaveAttribute('id', 'stake-card');
-  await expect(cards.nth(3)).toHaveAttribute('id', 'daily12-card');
+  const secondary = page.locator('.secondary-grid > section');
+  await expect(secondary).toHaveCount(2);
+  await expect(secondary.nth(0)).toHaveAttribute('id', 'stake-card');
+  await expect(secondary.nth(1)).toHaveAttribute('id', 'daily12-card');
   await expect(page.locator('#context-card')).toHaveCount(0);
   await expect(page.getByText('MARKET CONTEXT')).toHaveCount(0);
   await expect(page.getByText('ROBUST SIGNAL ENGINE')).toHaveCount(0);
@@ -229,10 +231,10 @@ test('digit distribution is removed and desktop chart stays balanced', async ({ 
   const chart = page.locator('#tv-chart');
   await expect(chart).toBeVisible();
   const desktopBox = await chart.boundingBox();
-  expect(desktopBox.height).toBeGreaterThanOrEqual(500);
+  expect(desktopBox.height).toBeGreaterThanOrEqual(320);
   expect(desktopBox.height).toBeLessThanOrEqual(650);
   const sideBox = await page.locator('.side-stack').boundingBox();
-  expect(sideBox.height).toBeGreaterThan(desktopBox.height);
+  expect(sideBox.height).toBeLessThanOrEqual(desktopBox.height + 220);
   await expect(page.locator('#rsi-pane')).toBeVisible();
   await expect(page.locator('.chart-toolbar')).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
@@ -346,6 +348,80 @@ test('source delay is independent of viewer timezone', async ({ browser, baseURL
     await expect(page.locator('#ctb-next')).toHaveText('NEXT ISSUE ETA: ~0:44');
     const sourceTime = await page.evaluate(() => sourceEpoch('2026-10-02 18:29:54'));
     expect(sourceTime).toBe(Date.parse('2026-10-02T11:59:54Z'));
+    await context.close();
+  }
+});
+
+test('focus frame stays fully below the sticky header while scrolling and resizing', async ({ page }, testInfo) => {
+  await waitForChart(page);
+  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}, {width:980,height:720}, {width:390,height:844}]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo(0, 350));
+    await expect.poll(() => page.evaluate(() => {
+      const header = document.querySelector('header');
+      const bar = document.querySelector('#focus-bar');
+      const expected = getComputedStyle(header).position === 'sticky' ? header.getBoundingClientRect().bottom : 0;
+      return Math.abs(bar.getBoundingClientRect().top - expected);
+    })).toBeLessThanOrEqual(1);
+    const visible = await page.locator('#focus-l1').evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return !!document.elementFromPoint(box.x + box.width / 2, box.y + 2)?.closest('#focus-bar');
+    });
+    expect(visible).toBeTruthy();
+    await testInfo.attach('focus-scroll-' + viewport.width, {body: await page.screenshot(), contentType:'image/png'});
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+  }
+  // Simulate wrapping/font scaling changing the header after layout.
+  await page.setViewportSize({width:1366,height:768});
+  await page.locator('header').evaluate(el => el.style.minHeight = '104px');
+  await expect.poll(() => page.evaluate(() => Math.abs(
+    document.querySelector('#focus-bar').getBoundingClientRect().top - document.querySelector('header').getBoundingClientRect().bottom
+  ))).toBeLessThanOrEqual(1);
+});
+
+test('RSI fits in the initial desktop workspace and details occupy both columns', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop workspace measurement.');
+  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}]) {
+    await page.setViewportSize(viewport);
+    await waitForChart(page);
+    await testInfo.attach('workspace-' + viewport.width, {body: await page.screenshot(), contentType:'image/png'});
+    const rsi = await page.locator('#rsi-pane').boundingBox();
+    expect(rsi.y + rsi.height).toBeLessThanOrEqual(viewport.height);
+    const signal = await page.locator('#stake-card').boundingBox();
+    const report = await page.locator('#daily12-card').boundingBox();
+    expect(Math.abs(signal.y - report.y)).toBeLessThanOrEqual(1);
+    expect(report.x).toBeGreaterThan(signal.x + signal.width);
+  }
+});
+
+test('drawing cursor instructions stay hidden until drawing tools are opened', async ({ page }) => {
+  await waitForChart(page);
+  await expect(page.locator('.draw-hint')).toBeHidden();
+  await page.locator('#dt-toggle-btn').click();
+  await expect(page.locator('.draw-hint')).toBeVisible();
+});
+
+test('risk remains distinct from feed state and rules are available on demand', async ({ page }) => {
+  await waitForChart(page);
+  await expect(page.locator('#l1-risk')).toHaveClass(/is-observe/);
+  await expect(page.locator('#focus-connection b')).toHaveText('LIVE');
+  await expect(page.locator('#l1-status')).toBeHidden();
+  await expect(page.locator('#l1-capital-card .stake-rule')).toBeHidden();
+  await page.locator('.terminal-details summary').click();
+  await expect(page.locator('#l1-capital-card .stake-rule')).toContainText('Skip R02/R03/R05/R06');
+});
+
+test('last result uses the viewer clock with a labelled timezone and elapsed age', async ({ browser, baseURL }) => {
+  for (const [timezoneId, clock, label] of [['UTC','11:59:54','UTC+00:00'], ['Asia/Bangkok','18:59:54','UTC+07:00']]) {
+    const context = await browser.newContext({timezoneId, baseURL});
+    const page = await context.newPage();
+    await page.clock.setFixedTime(new Date('2026-10-02T12:00:10Z'));
+    await page.route('**/api/history*', route => route.fulfill({json:{history:[['20261002103010720',8,'2026-10-02 18:29:54']],last_time:'2026-10-02 18:29:54',last_time_utc:'2026-10-02T11:59:54+00:00',meta:{days:10}}}));
+    await page.route('**/api/latest', route => route.fulfill({json:{round:null}}));
+    await page.goto('/');
+    await expect(page.locator('#ctb-last')).toHaveText(clock);
+    await expect(page.locator('#ctb-zone')).toContainText(label);
+    await expect(page.locator('#ctb-age')).toHaveText('AGE: 16s');
     await context.close();
   }
 });

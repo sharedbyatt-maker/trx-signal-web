@@ -9,7 +9,7 @@ import statistics
 import threading
 import time
 from collections import Counter, deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 from flask import Flask, jsonify, render_template, request
@@ -1483,6 +1483,10 @@ def api_state():
         # TRADE LOG panel removed — ship a small tail for future use only
         snap["log"] = list(reversed(STATE["log"]))[:20]
         snap["server_now"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        updated = snap.get("last_update")
+        # The legacy timestamp is server-local. Send an explicit UTC value for
+        # display so a viewer never has to guess the server's timezone.
+        snap["last_update_utc"] = datetime.fromisoformat(updated).astimezone(timezone.utc).isoformat() if updated else None
     return jsonify(snap)
 
 

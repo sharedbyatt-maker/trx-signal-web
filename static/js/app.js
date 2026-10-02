@@ -409,8 +409,7 @@ function render(s, merged) {
   safeRender(renderHistory, s);
   safeRender(renderDigitDist, s);
   if (window.TRXChart) TRXChart.update({ ...s, history: merged || s.history });
-  setTxt("last-fetch", "Last update: " + (s.last_update || "—"));
-  tickServerUpdate(s.last_update);
+  tickServerUpdate(s.last_update_utc || (s.last_update ? s.last_update.replace(" ", "T") + "Z" : null));
 }
 
 let refreshing = false;
@@ -451,6 +450,10 @@ function tickClock() {
   const now = new Date();
   const hm = now.toLocaleTimeString("en-GB");
   $("clock").textContent = hm;
+  const offset = -now.getTimezoneOffset();
+  const zone = "UTC" + (offset >= 0 ? "+" : "−") + String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0") + ":" + String(Math.abs(offset) % 60).padStart(2, "0");
+  $("clock").title = "Local time · " + zone;
+  setTxt("ctb-zone", "LOCAL " + zone);
 
   /* chart bottom time bar */
   setTxt("ctb-clock", hm);
@@ -462,9 +465,11 @@ function tickClock() {
     if (!isNaN(a) && !isNaN(b) && b > a && b - a < 600000) { interval = Math.round((b - a) / 1000); break; }
   }
   if (lastResultTime) {
-    setTxt("ctb-last", lastResultTime.replace("T", " "));
     const last = sourceEpoch(lastResultUtc || lastResultTime);
     if (!isNaN(last)) {
+      setTxt("ctb-last", new Date(last).toLocaleTimeString("en-GB"));
+      const age = Math.max(0, Math.round((now.getTime() - last) / 1000));
+      setTxt("ctb-age", "AGE: " + (age < 60 ? age + "s" : Math.floor(age / 60) + "m " + age % 60 + "s"));
       /* upstream feed lag: newest blockTime vs local clock */
       const delaySec = Math.max(0, Math.round((now.getTime() - last) / 1000 - interval));
       if (delaySec >= 90 && delayEl) {
@@ -485,12 +490,18 @@ function tickClock() {
     }
   } else {
     setTxt("ctb-last", "—");
+    setTxt("ctb-age", "AGE: —");
     setTxt("ctb-next", "NEXT ISSUE ETA: —");
     if (delayEl) { delayEl.textContent = ""; delayEl.classList.remove("warn"); }
   }
 }
 
-function tickServerUpdate(t) { setTxt("ctb-srv", t || "—"); }
+function tickServerUpdate(t) {
+  const stamp = t && Date.parse(t);
+  const value = Number.isFinite(stamp) ? new Date(stamp).toISOString().replace("T", " ").slice(0, 19) : "—";
+  setTxt("ctb-srv", value);
+  setTxt("last-fetch", "Server updated (UTC): " + value);
+}
 
 /* fullscreen chart mode */
 const fsBtn = $("fs-btn");
@@ -678,4 +689,3 @@ if (tgBtn) {
     setTimeout(() => { tgBtn.textContent = "📡"; }, 3000);
   });
 }
-

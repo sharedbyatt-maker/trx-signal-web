@@ -8,18 +8,26 @@
     el.classList.add(kind);
   }
 
+  function paintRisk(value) {
+    const el = $("l1-risk");
+    if (!el) return;
+    el.textContent = value;
+    el.classList.toggle("is-observe", value !== "TRADE ALLOWED");
+  }
+
   function render(x) {
     const p = x && x.pending;
     const ready = !!(x && x.ready);
     const status = $("l1-status");
     const focus = $("focus-l1");
+    $("l1-signal-hero")?.classList.toggle("has-target", ready && !!p);
 
     if (!ready) {
       const label = x && x.stale ? (x.feed_status || "STALE") : "WAITING";
       if (status) { status.textContent = label; setState(status, "waiting"); }
       if ($("l1-pending")) $("l1-pending").textContent = label;
       ["l1-stake", "l1-tier", "l1-step"].forEach(id => { if ($(id)) $(id).textContent = "—"; });
-      if ($("l1-risk")) $("l1-risk").textContent = "OBSERVE ONLY · " + label;
+      paintRisk("OBSERVE ONLY · " + label);
       if ($("l1-target-issue")) $("l1-target-issue").textContent = (x && x.error) ? "ENGINE ERROR" : (x && x.stale ? "NO VALID SIGNAL · " + label : "NO ACTIVE TARGET");
       if (focus) {
         focus.className = "focus-state is-waiting";
@@ -56,7 +64,7 @@
       $("l1-pnl").classList.toggle("green", pnl > 0);
       $("l1-pnl").classList.toggle("red", pnl < 0);
     }
-    if ($("l1-risk")) $("l1-risk").textContent = x.risk_status || "TRADE ALLOWED";
+    paintRisk(x.risk_status || "TRADE ALLOWED");
 
     const trades = Array.isArray(x.trades) ? x.trades.filter(t => String(t.time || "").slice(0, 10) === String(x.today || "")) : [];
     const wins = trades.filter(t => t.won).length;

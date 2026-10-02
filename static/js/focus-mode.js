@@ -13,6 +13,18 @@
     if (el && el.className !== value) el.className = value;
   };
 
+  // Follow the actual header height, including wrapping, fonts and browser zoom.
+  const header = document.querySelector("header");
+  const measureHeader = () => {
+    const height = header && getComputedStyle(header).position === "sticky"
+      ? Math.ceil(header.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty("--sticky-header-height", height + "px");
+  };
+  if (header && window.ResizeObserver) new ResizeObserver(measureHeader).observe(header);
+  window.addEventListener("resize", measureHeader);
+  document.fonts?.ready.then(measureHeader);
+  measureHeader();
+
   function classify(value) {
     const v = String(value || "").toUpperCase();
     if (v.includes("BIG")) return ["is-big", "▲"];
