@@ -26,7 +26,11 @@
     document.documentElement.style.setProperty("--sticky-focus-height", focusHeight + "px");
     // Oversized workspaces (expanded drawing/indicator panes or short windows)
     // must scroll normally so every chart control remains reachable.
-    primary?.classList.toggle("chart-scrolls", !!chartCard && chartCard.getBoundingClientRect().height + height + focusHeight + 24 > window.innerHeight);
+    // Reserve the page footer too: sticky releases at the grid bottom, which
+    // otherwise pushes the toolbar underneath Focus at the final scroll position.
+    const grid = document.querySelector(".layout-grid");
+    const pageTail = grid ? Math.max(12, document.documentElement.scrollHeight - grid.getBoundingClientRect().bottom - window.scrollY) : 12;
+    primary?.classList.toggle("chart-scrolls", !!chartCard && chartCard.getBoundingClientRect().height + height + focusHeight + 12 + pageTail > window.innerHeight);
   };
   if (window.ResizeObserver) {
     const layoutObserver = new ResizeObserver(measureLayout);

@@ -380,7 +380,7 @@ test('focus frame stays fully below the sticky header while scrolling and resizi
 
 test('RSI fits in the desktop workspace and all signals stay in the sidebar', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop workspace measurement.');
-  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}]) {
+  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}, {width:1355,height:936}]) {
     await page.setViewportSize(viewport);
     await waitForChart(page);
     await testInfo.attach('workspace-' + viewport.width, {body: await page.screenshot(), contentType:'image/png'});
@@ -443,7 +443,7 @@ test('narrow mobile focus identifies both engines and timing values are not clip
 
 test('desktop chart stays beside the sidebar during page scroll', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop chart pinning.');
-  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}]) {
+  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}, {width:1355,height:936}]) {
     await page.setViewportSize(viewport);
     await waitForChart(page);
     await page.evaluate(() => window.scrollTo(0, 300));
@@ -456,6 +456,12 @@ test('desktop chart stays beside the sidebar during page scroll', async ({ page 
     expect(card.y + card.height).toBeLessThanOrEqual(viewport.height - 10);
     const signal = await page.locator('#stake-card').boundingBox();
     expect(signal.x).toBeGreaterThan(card.x + card.width);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => page.evaluate(() => {
+      const chart = document.querySelector('#chart-card').getBoundingClientRect();
+      const focus = document.querySelector('#focus-bar').getBoundingClientRect();
+      return chart.top - focus.bottom;
+    })).toBeGreaterThanOrEqual(11);
     await testInfo.attach('sidebar-scroll-' + viewport.width, {body:await page.screenshot(),contentType:'image/png'});
   }
 });
