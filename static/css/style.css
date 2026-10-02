@@ -195,10 +195,10 @@ main { padding-top:12px; }
 .side-stack { position:static; gap:12px; }
 .secondary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:14px; align-items:start; }
 .card { padding:14px 16px; }
-.chart-card { padding:0; }
+.chart-card { padding:0; isolation:isolate; }
 .chart-card>.card-title-row { padding:8px 14px 6px; }
 .chart-toolbar { margin-top:0; padding-bottom:3px; }
-#l1-status { display:none; }
+#l1-status, #st-status { display:none!important; }
 #l1-signal-hero:not(.has-target) .stake-hero-dir { font-size:13px; color:#b2bfd2; }
 #l1-signal-hero.has-target .stake-hero-dir { font-size:20px; }
 .stake-hero-issue { opacity:1; color:#a8b7cc; }
@@ -240,4 +240,18 @@ main { padding-top:12px; }
   .card { padding:12px; }
   .chart-card { padding:0; }
   .focus-connection { margin-left:auto; }
+}
+@media(max-width:600px) {
+  /* Keep both engine names and connection state legible in the sticky strip. */
+  .focus-bar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .focus-item:not(.focus-countdown) { grid-column:1; grid-row:1; width:fit-content; }
+  .focus-connection { grid-column:2; grid-row:1; justify-self:end; }
+  #focus-l1 { grid-column:1; grid-row:2; }
+  #focus-step { grid-column:2; grid-row:2; }
+  .focus-state { width:fit-content; padding-inline:6px; gap:4px; }
+  .focus-item>span, .focus-state>span:not(.focus-state-icon), .focus-connection b { display:inline; }
+  .focus-state>span:not(.focus-state-icon) { font-size:8px; }
+  .focus-state b { font-size:9px; }
+  .chart-time-bar { grid-template-columns:minmax(0,1fr); width:auto; }
+  .ctb-item, .ctb-dim { overflow:visible; white-space:normal; flex-wrap:wrap; overflow-wrap:anywhere; }
 }

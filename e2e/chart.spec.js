@@ -425,3 +425,16 @@ test('last result uses the viewer clock with a labelled timezone and elapsed age
     await context.close();
   }
 });
+
+test('narrow mobile focus identifies both engines and timing values are not clipped', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'Narrow mobile readability.');
+  await page.setViewportSize({width:390,height:844});
+  await waitForChart(page);
+  await expect(page.locator('#focus-l1 > span:not(.focus-state-icon)')).toBeVisible();
+  await expect(page.locator('#focus-step > span:not(.focus-state-icon)')).toBeVisible();
+  await expect(page.locator('#focus-connection b')).toBeVisible();
+  const clipped = await page.locator('.chart-time-bar .ctb-item').evaluateAll(items => items.some(el => el.scrollWidth > el.clientWidth + 1));
+  expect(clipped).toBeFalsy();
+  await page.evaluate(() => window.scrollTo(0, 350));
+  await testInfo.attach('mobile-labelled-focus', {body:await page.screenshot(),contentType:'image/png'});
+});
