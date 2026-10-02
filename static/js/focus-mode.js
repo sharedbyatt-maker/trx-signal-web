@@ -15,15 +15,26 @@
 
   // Follow the actual header height, including wrapping, fonts and browser zoom.
   const header = document.querySelector("header");
-  const measureHeader = () => {
+  const focusBar = $("focus-bar");
+  const primary = document.querySelector(".primary-stack");
+  const chartCard = $("chart-card");
+  const measureLayout = () => {
     const height = header && getComputedStyle(header).position === "sticky"
       ? Math.ceil(header.getBoundingClientRect().height) : 0;
     document.documentElement.style.setProperty("--sticky-header-height", height + "px");
+    const focusHeight = focusBar ? Math.ceil(focusBar.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty("--sticky-focus-height", focusHeight + "px");
+    // Oversized workspaces (expanded drawing/indicator panes or short windows)
+    // must scroll normally so every chart control remains reachable.
+    primary?.classList.toggle("chart-scrolls", !!chartCard && chartCard.getBoundingClientRect().height + height + focusHeight + 24 > window.innerHeight);
   };
-  if (header && window.ResizeObserver) new ResizeObserver(measureHeader).observe(header);
-  window.addEventListener("resize", measureHeader);
-  document.fonts?.ready.then(measureHeader);
-  measureHeader();
+  if (window.ResizeObserver) {
+    const layoutObserver = new ResizeObserver(measureLayout);
+    [header, focusBar, chartCard].filter(Boolean).forEach(el => layoutObserver.observe(el));
+  }
+  window.addEventListener("resize", measureLayout);
+  document.fonts?.ready.then(measureLayout);
+  measureLayout();
 
   function classify(value) {
     const v = String(value || "").toUpperCase();

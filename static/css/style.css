@@ -172,7 +172,7 @@ header #conn-txt { display: none; }
 
 
 /* v57: measured sticky stack, balanced reports and readable status hierarchy. */
-:root { --sticky-header-height: 72px; }
+:root { --sticky-header-height:72px; --sticky-focus-height:42px; }
 header { min-height:60px; padding:8px 20px; }
 .logo { width:38px; height:38px; font-size:24px; }
 .brand h1 { font-size:17px; }
@@ -193,7 +193,6 @@ header { min-height:60px; padding:8px 20px; }
 .tk-label { color:#a4b2c6; font-size:9px; }
 main { padding-top:12px; }
 .side-stack { position:static; gap:12px; }
-.secondary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:14px; align-items:start; }
 .card { padding:14px 16px; }
 .chart-card { padding:0; isolation:isolate; }
 .chart-card>.card-title-row { padding:8px 14px 6px; }
@@ -220,6 +219,8 @@ main { padding-top:12px; }
 /* Show drawing instructions only while tools are expanded or a tool is active. */
 .chart-card:has(.draw-tools.collapsed):not(:has(#tv-chart.drawing-active)) .draw-hint { display:none; }
 @media(min-width:1101px) {
+  .primary-stack { position:sticky; top:calc(var(--sticky-header-height) + var(--sticky-focus-height) + 12px); align-self:start; }
+  .primary-stack.chart-scrolls { position:static; }
   #tv-chart { height:clamp(320px, calc(100dvh - 390px), 620px); }
 }
 @media(min-width:601px) and (max-width:1100px) {
@@ -235,7 +236,6 @@ main { padding-top:12px; }
   .ticker { padding:7px 8px; }
   .focus-bar { padding:6px 8px; gap:6px; }
   .focus-item, .focus-state { max-width:100%; }
-  .secondary-grid { grid-template-columns:1fr; gap:12px; margin-top:12px; }
   .side-stack { display:flex; }
   .card { padding:12px; }
   .chart-card { padding:0; }
@@ -255,3 +255,7 @@ main { padding-top:12px; }
   .chart-time-bar { grid-template-columns:minmax(0,1fr); width:auto; }
   .ctb-item, .ctb-dim { overflow:visible; white-space:normal; flex-wrap:wrap; overflow-wrap:anywhere; }
 }
+
+/* Preserve the compact single-column 12-step cards in the sidebar. */
+#stake-card .stake-meta-grid { grid-template-columns:1fr; }
+#stake-card .stake-meta-grid>div { grid-template-columns:68px minmax(0,1fr); gap:10px; }
