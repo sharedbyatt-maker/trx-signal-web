@@ -420,6 +420,7 @@ test('last result uses the viewer clock with a labelled timezone and elapsed age
     await page.route('**/api/latest', route => route.fulfill({json:{round:null}}));
     await page.goto('/');
     await expect(page.locator('#ctb-last')).toHaveText(clock);
+    await expect(page.locator('#lg-time')).toContainText(clock.slice(0,5));
     await expect(page.locator('#ctb-zone')).toContainText(label);
     await expect(page.locator('#ctb-age')).toHaveText('AGE: 16s');
     await context.close();
