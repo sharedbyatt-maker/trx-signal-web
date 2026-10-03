@@ -37,6 +37,7 @@
     const set = (id, text) => { const e=$d(id); if(e) e.textContent=text; };
     set("d12-date", r.date || "—");
     set("d12-signals", r.signals || 0);
+    set("d12-bets", r.settled_bets ?? (Number(r.bet_wins || 0) + Number(r.bet_losses || 0)));
     set("d12-wl", `${r.bet_wins || 0} / ${r.bet_losses || 0}`);
     set("d12-wr", pct(r.bet_win_rate));
     set("d12-episode-wr", pct(r.episode_win_rate));

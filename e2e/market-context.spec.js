@@ -68,3 +68,10 @@ test('context uses EMA and RSI from the selected chart and shows authoritative L
   await page.locator('#market-card').scrollIntoViewIfNeeded();
   await expect(page.locator('#mc-rule')).toBeInViewport();
 });
+
+
+test('12-Step report displays the real settled-bet count', async ({page}) => {
+  await page.route('**/api/12step/daily-report**', route=>route.fulfill({json:{report:{settled_bets:49,bet_wins:24,bet_losses:25,recent_events:[]},history:[]}}));
+  await page.goto('/');
+  await expect(page.locator('#d12-bets')).toHaveText('49');
+});
