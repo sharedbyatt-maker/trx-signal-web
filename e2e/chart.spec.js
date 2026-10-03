@@ -171,7 +171,7 @@ test('sidebar order and L1 daily report calculations match existing API state', 
   await expect(cards.nth(3)).toHaveAttribute('id', 'daily12-card');
   await expect(page.locator('.secondary-grid')).toHaveCount(0);
   await expect(page.locator('#context-card')).toHaveCount(0);
-  await expect(page.getByText('MARKET CONTEXT')).toHaveCount(0);
+  await expect(page.locator('#context-tab')).toHaveText('MARKET CONTEXT');
   await expect(page.getByText('ROBUST SIGNAL ENGINE')).toHaveCount(0);
 
   await expect(page.locator('#l1r-bets')).toHaveText('5');
@@ -392,8 +392,8 @@ test('large desktop chart and RSI remain reachable with all signals in the sideb
     const report = await page.locator('#daily12-card').boundingBox();
     expect(Math.abs(signal.x - report.x)).toBeLessThanOrEqual(1);
     expect(report.y).toBeGreaterThan(signal.y + signal.height);
-    expect(signal.width).toBeLessThanOrEqual(430);
-    expect(report.width).toBeLessThanOrEqual(430);
+    expect(signal.width).toBeLessThanOrEqual(viewport.width * .28);
+    expect(report.width).toBeLessThanOrEqual(viewport.width * .28);
   }
 });
 
@@ -410,7 +410,7 @@ test('risk remains distinct from feed state and rules are available on demand', 
   await expect(page.locator('#focus-connection b')).toHaveText('LIVE');
   await expect(page.locator('#l1-status')).toBeHidden();
   await expect(page.locator('#l1-capital-card .stake-rule')).toBeHidden();
-  await page.locator('.terminal-details summary').click();
+  await page.locator('#l1-capital-card .terminal-details summary').click();
   await expect(page.locator('#l1-capital-card .stake-rule')).toContainText('Skip R02/R03/R05/R06');
 });
 
