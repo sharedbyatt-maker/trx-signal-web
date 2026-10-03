@@ -156,6 +156,10 @@ test('history expands real details, paginates and filters by viewer local date',
   await page.locator('.history-detail-button').first().click();
   await page.locator('#market-card').scrollIntoViewIfNeeded();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
+  if(testInfo.project.name.includes('mobile')) {
+    const fits=await page.evaluate(()=>{const a=document.querySelector('.history-detail-row').getBoundingClientRect(),b=document.querySelector('#market-card').getBoundingClientRect();return a.left>=b.left && a.right<=b.right;});
+    expect(fits).toBeTruthy();
+  }
   await testInfo.attach('history-upgrade-'+testInfo.project.name,{body:await page.screenshot(),contentType:'image/png'});
 });
 
@@ -172,6 +176,7 @@ test('data quality reports real coverage gaps and unknown timestamps', async ({p
   await expect(page.locator('#mc-quality-gaps')).toContainText('1 unknown timestamps');
   await expect(page.locator('#mc-quality-status')).toHaveText('CHECK GAPS');
   await page.locator('#market-card').scrollIntoViewIfNeeded();
+  await page.keyboard.press('Control+Home');
   await testInfo.attach('context-upgrade-'+testInfo.project.name,{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
 });
 
@@ -188,13 +193,16 @@ test('stale context hides timeframe values and both checklists', async ({page}) 
 });
 
 test('latest-round fast path expires targets before state reconciliation', async ({page}) => {
+  let advance=false;
   await page.route('**/api/state',async route=>{
     const response=await route.fetch(),data=await response.json();
     data.strat_pending={issue:data.next_issue,target:'BIG',stake:500,tier:0,step:0,trigger_rsi:31};
     await route.fulfill({json:data});
   });
-  await page.route('**/api/latest',route=>route.fulfill({json:{round:{issue:'20260913000000361',number:8,block_time:'2026-09-13 14:00:00'}}}));
+  await page.route('**/api/latest',route=>route.fulfill({json:{round:{issue:advance?'20260913000000361':'20260913000000360',number:8,block_time:advance?'2026-09-13 14:00:00':'2026-09-13 13:59:00'}}}));
   await page.goto('/');
+  await expect(page.locator('#check-step-status')).toHaveText('ARMED');
+  advance=true;
   await expect.poll(()=>page.evaluate(()=>window.TRXChart.getComparisons().latestIssue)).toBe('20260913000000361');
   await expect(page.locator('#check-step-status')).toHaveText('WAITING');
   await expect(page.locator('#check-step-list')).toContainText('No current target issue');

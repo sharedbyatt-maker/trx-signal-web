@@ -370,3 +370,16 @@ main { padding-top:12px; }
   .setup-check { padding:10px; }
   .history-heading { gap:9px; }
 }
+
+@media(max-width:600px) {
+  /* Settled records become readable cards so opening Details never clips fields. */
+  .signal-table:not(.timeframe-table), .signal-table:not(.timeframe-table) tbody { display:block; width:100%; white-space:normal; }
+  .signal-table:not(.timeframe-table) thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+  .signal-table .history-result { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid #263f5c; border-radius:7px; padding:7px; margin-top:9px; background:#0c1726; }
+  .signal-table .history-result td { display:block; border:0; padding:6px; min-width:0; text-align:left!important; overflow-wrap:anywhere; }
+  .signal-table .history-result td:first-child, .signal-table .history-result td:last-child { grid-column:1/-1; }
+  .history-result td[data-label]::before { content:attr(data-label); display:block; font-size:9px; color:#8fa8c8; margin-bottom:4px; }
+  .history-detail-button { width:100%; padding:9px; }
+  .signal-table .history-detail-row, .signal-table .history-detail-row td { display:block; width:100%; box-sizing:border-box; }
+  .signal-table .history-detail-row td { border:1px solid #315278; border-radius:7px; padding:12px; }
+}

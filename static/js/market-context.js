@@ -165,7 +165,7 @@ window.TRXContext = (() => {
     for(const t of tail) {
       const key=t.engine+":"+t.issue, row=body.insertRow();row.className="history-result";
       const values=[`${sourceTime(t.time)} / …${String(t.issue).slice(-8)}`,t.engine,t.target || "—",money(t.stake),t.outcome,money(t.pnl,true)];
-      values.forEach((value,i)=>{const cell=row.insertCell();cell.textContent=value;if(i===0)cell.title=sourceDateTime(t.time)+" · "+t.issue;if(i===2)cell.className=t.target==="BIG"?"tone-up":"tone-down";if(i>=4)cell.className=t.pnl>=0?"tone-up":"tone-down";});
+      values.forEach((value,i)=>{const cell=row.insertCell();cell.textContent=value;cell.dataset.label=["Time / Issue","Strategy","Signal","Stake (MMK)","Result","P/L (MMK)"][i];if(i===0)cell.title=sourceDateTime(t.time)+" · "+t.issue;if(i===2)cell.className=t.target==="BIG"?"tone-up":"tone-down";if(i>=4)cell.className=t.pnl>=0?"tone-up":"tone-down";});
       const action=row.insertCell(), button=document.createElement("button");button.type="button";button.className="history-detail-button";
       button.textContent=expandedKey===key?"Close":"View";button.setAttribute("aria-label",`Details for ${t.engine} issue ${t.issue}`);button.setAttribute("aria-expanded",String(expandedKey===key));
       button.addEventListener("click",()=>{expandedKey=expandedKey===key?"":key;renderHistory();const next=Array.from(body.querySelectorAll("[data-detail-key]")).find(b=>b.dataset.detailKey===key);next?.focus();});
