@@ -65,6 +65,8 @@ test('context uses EMA and RSI from the selected chart and shows authoritative L
   await expect(page.locator('#mc-rsi')).not.toHaveText('—');
   const current = await page.evaluate(()=>window.TRXChart.getContext());
   await expect(page.locator('#mc-rsi')).toHaveText(current.rsi.toFixed(1));
+  const direction = await page.locator('#mc-trend').textContent();
+  await expect(page.locator('#mc-trend-icon')).toHaveText(direction === 'UP' ? '↗' : direction === 'DOWN' ? '↘' : '↔');
   await page.locator('#market-card').scrollIntoViewIfNeeded();
   await expect(page.locator('#mc-rule')).toBeInViewport();
 });

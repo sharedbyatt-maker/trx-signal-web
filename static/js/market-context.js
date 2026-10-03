@@ -27,6 +27,8 @@ window.TRXContext = (() => {
     const available = fresh() && c?.count >= 15 && finite(c.rsi) && finite(c.ema5) && finite(c.ema15);
     put("mc-timeframe", `BIG/SMALL walk · ${c?.timeframe || 1}m conditions`);
     if (!available) {
+      put("mc-trend-icon", "↔", "market-icon");
+      put("mc-momentum-icon", "↔", "market-icon");
       ["mc-trend", "mc-momentum", "mc-rsi"].forEach(id => put(id, "—"));
       put("mc-trend-detail", fresh() ? "Collecting chart data" : "Feed unavailable");
       put("mc-momentum-detail", "Waiting for fresh chart data");
@@ -36,10 +38,12 @@ window.TRXContext = (() => {
       const trend = Math.abs(gap) < 0.01 ? "MIXED" : gap > 0 ? "UP" : "DOWN";
       put("mc-trend", trend, trend === "UP" ? "tone-up" : trend === "DOWN" ? "tone-down" : "");
       put("mc-trend-detail", `EMA 5 ${trend === "MIXED" ? "near" : gap > 0 ? "above" : "below"} EMA 15`);
+      put("mc-trend-icon", trend === "UP" ? "↗" : trend === "DOWN" ? "↘" : "↔", "market-icon " + (trend === "UP" ? "tone-up" : trend === "DOWN" ? "tone-down" : ""));
       const delta = finite(c.previousRsi) ? c.rsi - c.previousRsi : 0;
       const rising = delta > 0.01, falling = delta < -0.01;
       const momentum = rising ? (c.rsi <= 32 || c.previousRsi <= 32 ? "RECOVERING" : "RISING") : falling ? "FALLING" : "FLAT";
       put("mc-momentum", momentum, rising ? "tone-up" : falling ? "tone-down" : "");
+      put("mc-momentum-icon", rising ? "↗" : falling ? "↘" : "↔", "market-icon " + (rising ? "tone-up" : falling ? "tone-down" : ""));
       put("mc-momentum-detail", `RSI ${delta > 0 ? "+" : ""}${delta.toFixed(1)} vs previous bar`);
       put("mc-rsi", c.rsi.toFixed(1));
       put("mc-zone", c.rsi <= 32 ? "OVERSOLD ≤32" : c.rsi >= 68 ? "OVERBOUGHT ≥68" : "NEUTRAL · 32–68", c.rsi <= 32 || c.rsi >= 68 ? "tone-zone" : "");

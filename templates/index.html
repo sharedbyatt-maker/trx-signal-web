@@ -193,8 +193,8 @@
     </div>
     <div id="market-panel" role="tabpanel" aria-labelledby="context-tab">
       <div class="market-metrics">
-        <div><span class="market-icon tone-down" aria-hidden="true">↘</span><div><small>TREND</small><b id="mc-trend">—</b><span id="mc-trend-detail">Waiting for chart data</span></div></div>
-        <div><span class="market-icon tone-up" aria-hidden="true">↗</span><div><small>MOMENTUM</small><b id="mc-momentum">—</b><span id="mc-momentum-detail">RSI direction</span></div></div>
+        <div><span class="market-icon" id="mc-trend-icon" aria-hidden="true">↘</span><div><small>TREND</small><b id="mc-trend">—</b><span id="mc-trend-detail">Waiting for chart data</span></div></div>
+        <div><span class="market-icon" id="mc-momentum-icon" aria-hidden="true">↗</span><div><small>MOMENTUM</small><b id="mc-momentum">—</b><span id="mc-momentum-detail">RSI direction</span></div></div>
         <div><span class="market-icon tone-zone" aria-hidden="true">∿</span><div><small>RSI ZONE</small><b id="mc-rsi">—</b><span id="mc-zone">RSI 14 · thresholds 32 / 68</span></div></div>
         <div><span class="market-icon tone-setup" aria-hidden="true">▥</span><div><small>SIGNAL SETUP</small><b id="mc-setup">WAITING</b><span id="mc-setup-detail">1m engine state</span></div></div>
       </div>
@@ -335,7 +335,7 @@
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/chart.js') }}?v=53"></script>
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=44"></script>
-<script src="{{ url_for('static', filename='js/market-context.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/market-context.js') }}?v=2"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=52"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=3"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=7"></script>
