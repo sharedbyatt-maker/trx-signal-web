@@ -295,8 +295,6 @@ main { padding-top:12px; }
 .tone-down { color:#fa6389 !important; }
 .tone-zone { color:#edbe55 !important; }
 .tone-setup { color:#69a5ff !important; }
-.market-rule { display:flex; gap:12px; padding:9px; border:1px solid #294a70; border-radius:5px; margin-top:10px; font-size:10px; line-height:1.5; flex-wrap:wrap; }
-.market-rule strong { color:#69a5ff; }
 .market-note { margin:9px 0 0; color:#97aac5; font-size:10px; line-height:1.5; }
 .signal-table-wrap { overflow-x:auto; margin-top:10px; }
 .signal-table { border-collapse:collapse; width:100%; font-size:11px; white-space:nowrap; }
@@ -329,31 +327,20 @@ main { padding-top:12px; }
 }
 
 /* Context detail stays below the wide chart and collapses cleanly on phones. */
-.insight-section { margin-top:16px; padding-top:14px; border-top:1px solid #263b55; }
 .insight-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
 .insight-heading h3 { font-size:11px; letter-spacing:.6px; margin:0; color:#bbcee8; }
 .insight-heading>span { color:#98afcd; font-size:10px; }
-.setup-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .setup-check { min-width:0; padding:12px; background:#0c1726; border:1px solid #263f5c; border-radius:7px; }
-.setup-check-heading { display:flex; justify-content:space-between; gap:10px; align-items:center; }
-.setup-check-heading h4 { font-size:11px; margin:0; color:#b8cde8; }
-.setup-check-heading b { font-size:10px; color:#edbe55; }
 .setup-check ul { list-style:none; padding:0; margin:8px 0 0; }
 .setup-check li { display:flex; gap:8px; padding:7px 0; border-top:1px solid #1d3047; }
 .check-icon { font-size:15px; width:15px; flex-shrink:0; }
 .setup-check li div { min-width:0; }
 .setup-check li strong { display:block; font-size:10px; color:#bfcee3; font-weight:500; }
 .setup-check li div span { display:block; font-size:10px; color:#8fa7c6; margin-top:3px; line-height:1.5; overflow-wrap:anywhere; }
-.timeframe-table { min-width:370px; }
-.timeframe-table td:nth-child(n), .timeframe-table th:nth-child(n) { text-align:left; }
-.insight-details { padding-top:11px; margin-top:12px; border-top:1px solid #263b55; }
-.insight-details summary { font-size:11px; color:#acc2df; cursor:pointer; }
-.insight-details summary span { display:inline-block; margin-left:8px; font-size:9px; }
-.closed-bars { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:#a7bddb; }
-.quality-grid, .history-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0 0; }
-.quality-grid div, .history-detail-grid div { min-width:0; }
-.quality-grid dt, .history-detail-grid dt { color:#8fa8c8; font-size:10px; }
-.quality-grid dd, .history-detail-grid dd { margin:4px 0 0; font-size:11px; color:#c2d3ec; line-height:1.5; overflow-wrap:anywhere; white-space:normal; }
+.history-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0 0; }
+.history-detail-grid div { min-width:0; }
+.history-detail-grid dt { color:#8fa8c8; font-size:10px; }
+.history-detail-grid dd { margin:4px 0 0; font-size:11px; color:#c2d3ec; line-height:1.5; overflow-wrap:anywhere; white-space:normal; }
 .history-date-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px; font-size:11px; color:#a7bdd9; }
 .history-date-controls input, .history-date-controls button, .history-more, .history-detail-button { background:#0a192b; color:#bbd1ef; border:1px solid #315278; border-radius:5px; padding:7px 9px; font-size:11px; }
 .history-date-controls input { color-scheme:dark; max-width:100%; }
@@ -363,9 +350,8 @@ main { padding-top:12px; }
 .history-detail-button[aria-expanded="true"] { background:#194c96; }
 .history-detail-row td { background:#0b182a; white-space:normal; text-align:left!important; }
 .history-detail-grid { margin:4px 0; grid-template-columns:repeat(3,minmax(0,1fr)); }
-.history-detail-button:focus-visible, .history-more:focus-visible, .history-date-controls button:focus-visible, .history-date-controls input:focus-visible, .insight-details summary:focus-visible { outline:2px solid #8fbaff; outline-offset:2px; }
+.history-detail-button:focus-visible, .history-more:focus-visible, .history-date-controls button:focus-visible, .history-date-controls input:focus-visible { outline:2px solid #8fbaff; outline-offset:2px; }
 @media(max-width:600px) {
-  .setup-grid, .quality-grid { grid-template-columns:1fr; }
   .history-detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .setup-check { padding:10px; }
   .history-heading { gap:9px; }
@@ -373,8 +359,8 @@ main { padding-top:12px; }
 
 @media(max-width:600px) {
   /* Settled records become readable cards so opening Details never clips fields. */
-  .signal-table:not(.timeframe-table), .signal-table:not(.timeframe-table) tbody { display:block; width:100%; white-space:normal; }
-  .signal-table:not(.timeframe-table) thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+  .signal-table, .signal-table tbody { display:block; width:100%; white-space:normal; }
+  .signal-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
   .signal-table .history-result { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid #263f5c; border-radius:7px; padding:7px; margin-top:9px; background:#0c1726; }
   .signal-table .history-result td { display:block; border:0; padding:6px; min-width:0; text-align:left!important; overflow-wrap:anywhere; }
   .signal-table .history-result td:first-child, .signal-table .history-result td:last-child { grid-column:1/-1; }
@@ -382,4 +368,44 @@ main { padding-top:12px; }
   .history-detail-button { width:100%; padding:9px; }
   .signal-table .history-detail-row, .signal-table .history-detail-row td { display:block; width:100%; box-sizing:border-box; }
   .signal-table .history-detail-row td { border:1px solid #315278; border-radius:7px; padding:12px; }
+}
+
+/* Compact default context: three timeframe cards and two expandable setup rows. */
+.market-heading { margin-bottom:9px; }
+.market-card .market-metrics>div { padding:8px; gap:7px; }
+.market-card .market-metrics small { margin-bottom:3px; font-size:8px; }
+.market-card .market-metrics b { margin-bottom:3px; font-size:13px; }
+.market-card .market-metrics div span:not(.market-icon) { font-size:9px; line-height:1.4; }
+.market-card .market-icon { font-size:22px; }
+.compact-timeframes { margin-top:10px; }
+.compact-timeframes .insight-heading { margin-bottom:6px; }
+.compact-timeframes .insight-heading h3 { font-size:9px; }
+.timeframe-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.timeframe-card { min-width:0; padding:8px; border:1px solid #263f5c; border-radius:6px; background:#0c1726; }
+.timeframe-card-heading { display:flex; align-items:center; justify-content:space-between; gap:7px; margin-bottom:6px; }
+.timeframe-card-heading strong { color:#c2d5ee; font-size:11px; }
+.timeframe-card-heading span { color:#8fa8c8; font-size:8px; }
+.timeframe-card-values { display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:11px; }
+.timeframe-card-values small { font-size:8px; color:#8fa8c8; }
+.timeframe-momentum { font-size:9px; margin-left:auto; }
+.setup-status-stack { display:grid; gap:6px; margin-top:10px; }
+.setup-status-stack .setup-check { padding:0; }
+.setup-check summary { display:flex; align-items:center; gap:10px; cursor:pointer; padding:9px; list-style:none; }
+.setup-check summary::-webkit-details-marker { display:none; }
+.setup-check summary::before { content:"▸"; color:#8da7cc; flex-shrink:0; }
+.setup-check[open] summary::before { content:"▾"; }
+.setup-check summary strong { color:#b8cde8; font-size:10px; width:82px; flex-shrink:0; }
+.setup-check summary b { font-size:9px; color:#edbe55; min-width:60px; }
+.setup-reason { font-size:10px; color:#98afcd; line-height:1.4; overflow-wrap:anywhere; }
+.setup-check ul { padding:0 12px 9px; margin:0; }
+.setup-check summary:focus-visible { outline:2px solid #8fbaff; outline-offset:2px; border-radius:6px; }
+@media(max-width:600px) {
+  .timeframe-cards { grid-template-columns:1fr; }
+  .timeframe-card { display:flex; align-items:center; gap:12px; padding:9px; }
+  .timeframe-card-heading { margin:0; min-width:100px; }
+  .timeframe-card-values { flex:1; justify-content:space-between; gap:7px; }
+  .timeframe-momentum { margin-left:0; }
+  .setup-check summary { flex-wrap:wrap; gap:6px 9px; }
+  .setup-check summary b { margin-left:auto; min-width:0; }
+  .setup-reason { flex-basis:100%; padding-left:18px; }
 }

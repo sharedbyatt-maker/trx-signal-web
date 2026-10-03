@@ -3,7 +3,7 @@ window.TRXContext = (() => {
   const $ = id => document.getElementById(id);
   let state = null, l1 = null, daily = null, filter = "all";
   let l1Trades = [], dailyEvents = [], l1Unavailable = true, dailyUnavailable = true;
-  let historySignature = "", historyDate = "", visibleLimit = 20, expandedKey = "";
+  let historySignature = "", historyDate = "", visibleLimit = 5, expandedKey = "";
   let stateReceived = 0, l1Received = 0, historyRows = [], setupSignature = "", frameSignature = "";
   const finite = v => typeof v === "number" && Number.isFinite(v);
   const put = (id, value, tone = "") => {
@@ -60,10 +60,8 @@ window.TRXContext = (() => {
     const l1Armed = l1Ready() && validTarget(l1.pending);
     put("mc-setup", !fresh() ? "UNAVAILABLE" : stepArmed || l1Armed ? "ARMED" : "WAITING", stepArmed || l1Armed ? "tone-up" : "tone-setup");
     put("mc-setup-detail", !fresh() ? "Waiting for fresh engine data" : `L1: ${l1Ready() ? l1Armed ? l1.pending.target : l1.waiting_rule ? "RULE WAIT" : "WAITING" : "SYNCING"} · 12-Step: ${stepArmed ? p.target : "WAITING"}`);
-    put("mc-rule", !l1Ready() ? "Engine unavailable · no valid setup" : l1.waiting_rule ? `${l1.waiting_rule.rule || "Skip rule"} · waiting rounds` : l1Armed ? "No rule wait · engine signal armed" : "No rule wait · awaiting 1m RSI / confirmation");
     renderChecklists(p);
     renderComparisons();
-    renderQuality();
   }
 
   const trendOf = c => !finite(c?.ema5) || !finite(c?.ema15) ? "—" : Math.abs(c.ema5-c.ema15)<0.01 ? "MIXED" : c.ema5>c.ema15 ? "UP" : "DOWN";
@@ -90,6 +88,9 @@ window.TRXContext = (() => {
     const mode=!fresh() ? "UNAVAILABLE" : !ready ? "SYNCING" : l1.waiting_rule ? "RULE WAIT" : lp ? "ARMED" : "WAITING";
     const smode=!fresh() ? "UNAVAILABLE" : sp ? "ARMED" : "WAITING";
     put("check-l1-status",mode,toneOf(mode)); put("check-step-status",smode,toneOf(smode));
+    const observe=ready && /OBSERVE ONLY/.test(l1.risk_status || "") ? " · observe only" : "";
+    put("mc-rule",!ready ? "Engine unavailable · no valid setup" : l1.waiting_rule ? `${l1.waiting_rule.rule || "Skip rule"} · waiting rounds` : lp ? `${lp.target} → …${String(lp.issue).slice(-8)}${observe}` : `Waiting for RSI / confirmation${observe}`);
+    put("check-step-reason",!fresh() ? "Waiting for fresh engine data" : sp ? `${sp.target} → …${String(sp.issue).slice(-8)}` : "Waiting for RSI + confirmation");
     const key=JSON.stringify([mode,smode,lp,sp,ready?l1.waiting_rule:null,ready?l1.risk_status:null]);
     if(key===setupSignature) return; setupSignature=key;
     const trigger=x=>finite(x?.trigger_rsi) ? `Engine trigger RSI ${x.trigger_rsi.toFixed(1)}` : "Trigger RSI not published";
@@ -113,18 +114,27 @@ window.TRXContext = (() => {
     const snap=window.TRXChart?.getComparisons();
     const frames=snap?.frames || [], available=fresh();
     const key=JSON.stringify([available,frames]); if(key===frameSignature) return; frameSignature=key;
-    const body=$("mc-timeframes"), closed=$("mc-closed-bars"); body.replaceChildren(); closed.replaceChildren();
+    const body=$("mc-timeframes"); body.replaceChildren();
     const trends=frames.map(c=>available ? trendOf(c) : "—");
     const complete=trends.length===3 && trends.every(t=>t!=="—");
     const aligned=complete && trends.every(t=>t===trends[0]) && trends[0]!=="MIXED";
     put("mc-alignment",!available ? "Feed unavailable" : !complete ? "Collecting timeframe data" : aligned ? `3 / 3 trends ${trends[0]}` : "Mixed timeframe trends",aligned?toneOf(trends[0]):"");
     for(const c of frames) {
-      const row=body.insertRow(); row.dataset.timeframe=c.timeframe;
-      const values=[`${c.timeframe}m · ${available ? c.complete ? "COMPLETE" : "FORMING" : "UNAVAILABLE"}`,available?trendOf(c):"—",available&&finite(c.rsi)?c.rsi.toFixed(1):"—",available?momentumOf(c):"—"];
-      values.forEach((v,i)=>{ const cell=row.insertCell();cell.textContent=v;cell.className=toneOf(v); if(i===2) cell.dataset.rsi="true"; });
-      const text=document.createElement("span"); text.textContent=`${c.timeframe}m: ${available?trendOf(c.closed):"—"} · RSI ${available&&finite(c.closed.rsi)?c.closed.rsi.toFixed(1):"—"}`;closed.append(text);
+      const card=document.createElement("article"), heading=document.createElement("div"), tf=document.createElement("strong"), badge=document.createElement("span"), values=document.createElement("div"), trend=document.createElement("b"), rsi=document.createElement("span"), momentum=document.createElement("span");
+      card.className="timeframe-card"; card.dataset.timeframe=c.timeframe;
+      heading.className="timeframe-card-heading"; tf.textContent=`${c.timeframe}m`;
+      badge.textContent=available ? c.complete ? "COMPLETE" : "FORMING" : "UNAVAILABLE";
+      badge.className=available&&!c.complete?"tone-zone":"";
+      badge.title="Latest chart bar · forming bars can change";
+      heading.append(tf,badge);
+      values.className="timeframe-card-values"; trend.textContent=available?trendOf(c):"—";trend.className=toneOf(trend.textContent);
+      rsi.dataset.rsi="true";rsi.textContent=available&&finite(c.rsi)?c.rsi.toFixed(1):"—";
+      const label=document.createElement("small");label.textContent="RSI ";const rsiWrap=document.createElement("span");rsiWrap.append(label,rsi);
+      momentum.textContent=available?momentumOf(c):"—";momentum.className="timeframe-momentum "+toneOf(momentum.textContent);
+      values.append(trend,rsiWrap,momentum);card.append(heading,values);body.append(card);
     }
   }
+
   function settledRows() {
     const times=new Map((state?.history || []).map(r=>[String(r.issue),r.block_time]));
     const rows=l1Trades.filter(t=>t.issue && /^(BIG|SMALL)$/.test(t.target) && typeof t.won==="boolean" && finite(t.pnl))
@@ -139,16 +149,6 @@ window.TRXContext = (() => {
         time:ev.time || times.get(key) || window.TRXChart?.getComparisons()?.times.get(key),engine:"12-STEP"});
     }
     return rows.sort((a,b)=>String(b.issue).localeCompare(String(a.issue),"en",{numeric:true}));
-  }
-  function renderQuality() {
-    const snap=window.TRXChart?.getComparisons();
-    const age=receiptAge(), sourceAge=state?.feed_health?.seconds_since_advance;
-    put("mc-quality-status",!fresh()?"UNAVAILABLE":snap?.missingMinutes || snap?.unknownTimes || snap?.irregularIntervals ? "CHECK GAPS" : "AVAILABLE",fresh()?"tone-setup":"tone-zone");
-    put("mc-quality-feed",`${!fresh()?"UNAVAILABLE":state?.feed_health?.status || "LIVE"} · received ${finite(age)?Math.floor(age)+"s ago":"—"}${finite(sourceAge)?" · last advance "+Math.round(sourceAge+age)+"s ago":""}`);
-    put("mc-quality-coverage",snap?.rows ? `${snap.rows.toLocaleString()} rounds · ${sourceDateTime(snap.first)} → ${sourceDateTime(snap.last)}` : "No loaded chart history");
-    put("mc-quality-gaps",snap ? `${snap.missingMinutes} estimated missing minutes · ${snap.unknownTimes} unknown timestamps · ${snap.irregularIntervals} irregular intervals` : "Not checked");
-    const l1Count=historyRows.filter(t=>t.engine==="L1 CAPITAL").length, stepCount=historyRows.length-l1Count;
-    put("mc-quality-history",`L1 ${l1Count} · 12-Step ${stepCount} records${l1Unavailable || dailyUnavailable ? " · source unavailable" : ""} · loaded records only`);
   }
   function renderHistory() {
     const body=$("signal-history-body"); if(!body) return;
@@ -180,11 +180,10 @@ window.TRXContext = (() => {
       }
     }
     $("history-more").hidden=tail.length>=rows.length;
-    $("history-more").textContent=`Show ${Math.min(20,rows.length-tail.length)} more`;
+    $("history-more").textContent=`Show ${Math.min(5,rows.length-tail.length)} more`;
     const unavailable=[l1Unavailable&&"L1",dailyUnavailable&&"12-Step"].filter(Boolean);
     const unknown=historyRows.filter(t=>!localDate(t.time)).length;
     put("signal-history-status",`${unavailable.length?unavailable.join(" / ")+" history temporarily unavailable · last loaded model results retained. ":"Available engine history · "}model results; actual manual execution may differ. Loaded records only.${unknown?" "+unknown+" records have no timestamp; date filters exclude them.":""}`);
-    renderQuality();
   }
 
   function selectTab(button, focus = false) {
@@ -204,13 +203,13 @@ window.TRXContext = (() => {
     });
   });
   document.querySelectorAll('.history-filters button').forEach(button => button.addEventListener("click", () => {
-    filter = button.dataset.engine; visibleLimit=20; expandedKey="";
+    filter = button.dataset.engine; visibleLimit=5; expandedKey="";
     document.querySelectorAll('.history-filters button').forEach(b => b.setAttribute("aria-pressed", String(b === button)));
     renderHistory();
   }));
-  $("history-date")?.addEventListener("change",event=>{historyDate=event.target.value;visibleLimit=20;expandedKey="";renderHistory();});
-  $("history-date-clear")?.addEventListener("click",()=>{historyDate="";$("history-date").value="";visibleLimit=20;expandedKey="";renderHistory();});
-  $("history-more")?.addEventListener("click",()=>{visibleLimit+=20;renderHistory();});
+  $("history-date")?.addEventListener("change",event=>{historyDate=event.target.value;visibleLimit=5;expandedKey="";renderHistory();});
+  $("history-date-clear")?.addEventListener("click",()=>{historyDate="";$("history-date").value="";visibleLimit=5;expandedKey="";renderHistory();});
+  $("history-more")?.addEventListener("click",()=>{visibleLimit+=5;renderHistory();});
   setInterval(renderContext, 1000);
   return {
     onState(s) { state=s; stateReceived=Date.now(); renderContext(); renderHistory(); },

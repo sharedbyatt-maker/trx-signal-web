@@ -82,6 +82,7 @@ test('setup checklist exposes engine waits and rejects expired target issues', a
   await page.route('**/api/l1-capital',route=>route.fulfill({json:{ready:true,source_issue:'20260913000000360',pending:{issue:'20260913000000359',target:'BIG',stake:500},waiting_rule:{rule:'R05'},risk_status:'OBSERVE ONLY — DAILY TP REACHED',trades:[]}}));
   await page.goto('/');
   await expect(page.locator('#check-l1-status')).toHaveText('RULE WAIT');
+  await page.locator('#setup-l1 summary').click();
   await expect(page.locator('#check-l1-list')).toContainText('R05');
   await expect(page.locator('#check-l1-list')).toContainText('No current target issue');
   await expect(page.locator('#check-l1-list')).toContainText('DAILY TP REACHED');
@@ -97,6 +98,8 @@ test('armed checklist uses real trigger/source metadata and zero-based 12-Step l
   });
   await page.goto('/');
   await expect(page.locator('#check-step-status')).toHaveText('ARMED');
+  await page.locator('#setup-step summary').click();
+  await expect(page.locator('#check-step-list')).toBeVisible();
   await expect(page.locator('#check-step-list')).toContainText('71.2');
   await expect(page.locator('#check-step-list')).toContainText('T2 / S3');
   await expect(page.locator('#check-step-list')).toContainText('SMALL at source issue');
@@ -118,17 +121,17 @@ test('timeframe comparison matches chart math and marks partial and complete buc
   });
   await page.route('**/api/latest',route=>route.fulfill({json:{round:null}}));
   await page.goto('/');
-  await expect(page.locator('#mc-timeframes tr')).toHaveCount(3);
-  await expect(page.locator('#mc-timeframes tr[data-timeframe="5"]')).toContainText('FORMING');
-  await expect(page.locator('#mc-timeframes tr[data-timeframe="15"]')).toContainText('FORMING');
+  await expect(page.locator('#mc-timeframes .timeframe-card')).toHaveCount(3);
+  await expect(page.locator('#mc-timeframes .timeframe-card[data-timeframe="5"]')).toContainText('FORMING');
+  await expect(page.locator('#mc-timeframes .timeframe-card[data-timeframe="15"]')).toContainText('FORMING');
   for(const tf of [1,5,15]) {
     await page.locator(`.tf-btn[data-g="${tf}"]`).click();
-    await expect.poll(async()=>Number(await page.locator(`#mc-timeframes tr[data-timeframe="${tf}"] [data-rsi]`).textContent())).toBeCloseTo(await page.evaluate(()=>window.TRXChart.getContext().rsi),1);
+    await expect.poll(async()=>Number(await page.locator(`#mc-timeframes .timeframe-card[data-timeframe="${tf}"] [data-rsi]`).textContent())).toBeCloseTo(await page.evaluate(()=>window.TRXChart.getContext().rsi),1);
   }
   truncate=false;
   await page.reload();
-  await expect(page.locator('#mc-timeframes tr[data-timeframe="5"]')).toContainText('COMPLETE');
-  await expect(page.locator('#mc-timeframes tr[data-timeframe="15"]')).toContainText('COMPLETE');
+  await expect(page.locator('#mc-timeframes .timeframe-card[data-timeframe="5"]')).toContainText('COMPLETE');
+  await expect(page.locator('#mc-timeframes .timeframe-card[data-timeframe="15"]')).toContainText('COMPLETE');
   await page.locator('#market-card').scrollIntoViewIfNeeded();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
 });
@@ -138,8 +141,10 @@ test('history expands real details, paginates and filters by viewer local date',
   await page.route('**/api/12step/daily-report**',route=>route.fulfill({json:{report:{recent_events:[]},history:[]}}));
   await page.goto('/');
   await page.locator('#history-tab').click();
-  await expect(page.locator('#signal-history-body .history-result')).toHaveCount(20);
+  await expect(page.locator('#signal-history-body .history-result')).toHaveCount(5);
   await page.locator('#history-more').click();
+  await expect(page.locator('#signal-history-body .history-result')).toHaveCount(10);
+  for(let i=0;i<3;i++) await page.locator('#history-more').click();
   await expect(page.locator('#signal-history-body .history-result')).toHaveCount(25);
   await expect(page.locator('#history-more')).toBeHidden();
   await page.locator('.history-detail-button').first().click();
@@ -149,7 +154,7 @@ test('history expands real details, paginates and filters by viewer local date',
   const date=await page.evaluate(()=>{const d=new Date('2026-10-02T23:50:00Z');return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;});
   await page.locator('#history-date').fill(date);
   const expected=await page.evaluate(()=>new Date('2026-10-02T23:50:00Z').getDate()===new Date('2026-10-03T12:00:00Z').getDate()?25:1);
-  await expect(page.locator('#signal-history-body .history-result')).toHaveCount(Math.min(20,expected));
+  await expect(page.locator('#signal-history-body .history-result')).toHaveCount(Math.min(5,expected));
   await expect(page.locator('.history-detail-row')).toHaveCount(0);
   await page.locator('#history-date-clear').click();
   await expect(page.locator('#history-count')).toContainText('of 25');
@@ -163,21 +168,32 @@ test('history expands real details, paginates and filters by viewer local date',
   await testInfo.attach('history-upgrade-'+testInfo.project.name,{body:await page.screenshot(),contentType:'image/png'});
 });
 
-test('data quality reports real coverage gaps and unknown timestamps', async ({page},testInfo) => {
-  await page.route('**/api/history**',async route=>{
-    const response=await route.fetch(),data=await response.json();
-    data.history.splice(10,2);data.history[30][2]='';
-    await route.fulfill({json:data});
-  });
+test('default context is compact with collapsed checklists and no Data Quality', async ({page},testInfo) => {
   await page.goto('/');
-  await page.locator('#market-quality summary').click();
-  await expect(page.locator('#mc-quality-coverage')).toContainText('358 rounds');
-  await expect(page.locator('#mc-quality-gaps')).toContainText('2 estimated missing minutes');
-  await expect(page.locator('#mc-quality-gaps')).toContainText('1 unknown timestamps');
-  await expect(page.locator('#mc-quality-status')).toHaveText('CHECK GAPS');
-  await page.locator('#market-card').scrollIntoViewIfNeeded();
+  await expect(page.locator('#mc-rsi')).not.toHaveText('—');
+  await expect(page.locator('#market-quality')).toHaveCount(0);
+  await expect(page.locator('#market-card')).not.toContainText('Data quality');
+  await expect(page.locator('#setup-l1')).toHaveJSProperty('open',false);
+  await expect(page.locator('#setup-step')).toHaveJSProperty('open',false);
+  await expect(page.locator('#check-l1-list')).toBeHidden();
+  await expect(page.locator('#check-step-list')).toBeHidden();
+  await expect(page.locator('#mc-timeframes .timeframe-card')).toHaveCount(3);
+  const geometry=await page.evaluate(()=>{
+    const rect=document.querySelector('#market-card').getBoundingClientRect();
+    return {height:rect.height,chart:document.querySelector('#tv-chart').getBoundingClientRect().height,overflow:document.documentElement.scrollWidth>innerWidth+1,
+      cards:[...document.querySelectorAll('.timeframe-card')].map(e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right};}),left:rect.left,right:rect.right};
+  });
+  expect(geometry.overflow).toBeFalsy();
+  expect(geometry.height).toBeLessThan(testInfo.project.name.includes('mobile')?680:410);
+  if(!testInfo.project.name.includes('mobile')) expect(geometry.chart).toBeGreaterThanOrEqual(500);
+  for(const r of geometry.cards){expect(r.left).toBeGreaterThanOrEqual(geometry.left);expect(r.right).toBeLessThanOrEqual(geometry.right);}
+  await page.locator('#setup-step summary').click();
+  await expect(page.locator('#check-step-list')).toBeVisible();
+  await page.locator('#setup-step summary').press('Enter');
+  await expect(page.locator('#check-step-list')).toBeHidden();
+  await page.locator('.tf-btn[data-g="1"]').focus();
   await page.keyboard.press('Control+Home');
-  await testInfo.attach('context-upgrade-'+testInfo.project.name,{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
+  await testInfo.attach('compact-context-'+testInfo.project.name,{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
 });
 
 test('stale context hides timeframe values and both checklists', async ({page}) => {
@@ -189,7 +205,7 @@ test('stale context hides timeframe values and both checklists', async ({page}) 
   await expect(page.locator('#check-step-status')).toHaveText('UNAVAILABLE');
   await expect(page.locator('#mc-timeframes')).not.toContainText('RISING');
   await expect(page.locator('#mc-timeframes')).toContainText('UNAVAILABLE');
-  await expect(page.locator('#mc-quality-status')).toHaveText('UNAVAILABLE');
+  await expect(page.locator('#mc-rule')).toContainText('no valid setup');
 });
 
 test('latest-round fast path expires targets before state reconciliation', async ({page}) => {
