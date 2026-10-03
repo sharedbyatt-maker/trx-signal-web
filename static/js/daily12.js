@@ -32,10 +32,12 @@
   }
 
   function render(d) {
+    window.TRXContext?.onDaily(d);
     const r = d.report || {};
     const set = (id, text) => { const e=$d(id); if(e) e.textContent=text; };
     set("d12-date", r.date || "—");
     set("d12-signals", r.signals || 0);
+    set("d12-bets", r.settled_bets ?? (Number(r.bet_wins || 0) + Number(r.bet_losses || 0)));
     set("d12-wl", `${r.bet_wins || 0} / ${r.bet_losses || 0}`);
     set("d12-wr", pct(r.bet_win_rate));
     set("d12-episode-wr", pct(r.episode_win_rate));
@@ -75,9 +77,11 @@
   async function refresh(){
     try {
       const x=await fetch('/api/12step/daily-report?days=7',{cache:'no-store'});
-      if(x.ok) render(await x.json());
-    } catch(_e) {}
+      if (!x.ok) throw new Error("HTTP " + x.status);
+      render(await x.json());
+    } catch(_e) { window.TRXContext?.onDailyError(); }
   }
   refresh();
   setInterval(refresh, 10000);
 })();
+

@@ -1790,7 +1790,20 @@ window.TRXChart = (() => {
     return opts.sig;
   }
 
+  // Read-only UI summary using the same selected-timeframe closes/RSI as the chart.
+  let contextKey = "", contextSnapshot = null;
+  function getContext() {
+    const key = [group, curCloses.length, curCloses.at(-1), curRsiValues.at(-1)].join(":");
+    if (key === contextKey) return contextSnapshot;
+    contextKey = key;
+    const fast = calcEma(curCloses, 5), slow = calcEma(curCloses, 15);
+    contextSnapshot = {timeframe: group, count:curCloses.length, ema5:fast.at(-1), ema15:slow.at(-1),
+      rsi:curRsiValues.at(-1), previousRsi:curRsiValues.at(-2)};
+    return contextSnapshot;
+  }
+
   return {
+    getContext,
     update, appendLatest, autoSR, toggleSignals, setHistoryRange,
     _view: () => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }

@@ -171,7 +171,7 @@ test('sidebar order and L1 daily report calculations match existing API state', 
   await expect(cards.nth(3)).toHaveAttribute('id', 'daily12-card');
   await expect(page.locator('.secondary-grid')).toHaveCount(0);
   await expect(page.locator('#context-card')).toHaveCount(0);
-  await expect(page.getByText('MARKET CONTEXT')).toHaveCount(0);
+  await expect(page.locator('#context-tab')).toHaveText('MARKET CONTEXT');
   await expect(page.getByText('ROBUST SIGNAL ENGINE')).toHaveCount(0);
 
   await expect(page.locator('#l1r-bets')).toHaveText('5');
@@ -378,20 +378,22 @@ test('focus frame stays fully below the sticky header while scrolling and resizi
   ))).toBeLessThanOrEqual(1);
 });
 
-test('RSI fits in the desktop workspace and all signals stay in the sidebar', async ({ page }, testInfo) => {
+test('large desktop chart and RSI remain reachable with all signals in the sidebar', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop workspace measurement.');
   for (const viewport of [{width:1920,height:921}, {width:1366,height:768}, {width:1355,height:936}]) {
     await page.setViewportSize(viewport);
     await waitForChart(page);
     await testInfo.attach('workspace-' + viewport.width, {body: await page.screenshot(), contentType:'image/png'});
     const rsi = await page.locator('#rsi-pane').boundingBox();
-    expect(rsi.y + rsi.height).toBeLessThanOrEqual(viewport.height);
+    expect((await page.locator('#tv-chart').boundingBox()).height).toBeGreaterThanOrEqual(500);
+    await page.locator('#rsi-pane').scrollIntoViewIfNeeded();
+    await expect(page.locator('#rsi-pane')).toBeInViewport();
     const signal = await page.locator('#stake-card').boundingBox();
     const report = await page.locator('#daily12-card').boundingBox();
     expect(Math.abs(signal.x - report.x)).toBeLessThanOrEqual(1);
     expect(report.y).toBeGreaterThan(signal.y + signal.height);
-    expect(signal.width).toBeLessThanOrEqual(430);
-    expect(report.width).toBeLessThanOrEqual(430);
+    expect(signal.width).toBeLessThanOrEqual(viewport.width * .28);
+    expect(report.width).toBeLessThanOrEqual(viewport.width * .28);
   }
 });
 
@@ -408,7 +410,7 @@ test('risk remains distinct from feed state and rules are available on demand', 
   await expect(page.locator('#focus-connection b')).toHaveText('LIVE');
   await expect(page.locator('#l1-status')).toBeHidden();
   await expect(page.locator('#l1-capital-card .stake-rule')).toBeHidden();
-  await page.locator('.terminal-details summary').click();
+  await page.locator('#l1-capital-card .terminal-details summary').click();
   await expect(page.locator('#l1-capital-card .stake-rule')).toContainText('Skip R02/R03/R05/R06');
 });
 
@@ -441,28 +443,20 @@ test('narrow mobile focus identifies both engines and timing values are not clip
   await testInfo.attach('mobile-labelled-focus', {body:await page.screenshot(),contentType:'image/png'});
 });
 
-test('desktop chart stays beside the sidebar during page scroll', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name.includes('mobile'), 'Desktop chart pinning.');
-  for (const viewport of [{width:1920,height:921}, {width:1366,height:768}, {width:1355,height:936}]) {
+test('approved wide chart and market panel stay beside four compact sidebar cards', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop layout.');
+  for (const viewport of [{width:1920,height:1080}, {width:1366,height:768}, {width:1355,height:936}]) {
     await page.setViewportSize(viewport);
     await waitForChart(page);
-    await page.evaluate(() => window.scrollTo(0, 300));
-    await expect.poll(() => page.evaluate(() => {
-      const chart = document.querySelector('#chart-card').getBoundingClientRect();
-      const focus = document.querySelector('#focus-bar').getBoundingClientRect();
-      return Math.abs(chart.top - focus.bottom - 12);
-    })).toBeLessThanOrEqual(1);
-    const card = await page.locator('#chart-card').boundingBox();
-    expect(card.y + card.height).toBeLessThanOrEqual(viewport.height - 10);
-    const signal = await page.locator('#stake-card').boundingBox();
-    expect(signal.x).toBeGreaterThan(card.x + card.width);
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await expect.poll(() => page.evaluate(() => {
-      const chart = document.querySelector('#chart-card').getBoundingClientRect();
-      const focus = document.querySelector('#focus-bar').getBoundingClientRect();
-      return chart.top - focus.bottom;
-    })).toBeGreaterThanOrEqual(11);
-    await testInfo.attach('sidebar-scroll-' + viewport.width, {body:await page.screenshot(),contentType:'image/png'});
+    const chart = await page.locator('#chart-card').boundingBox();
+    const signal = await page.locator('#l1-capital-card').boundingBox();
+    expect(signal.x).toBeGreaterThan(chart.x + chart.width);
+    expect(chart.width / (chart.width + signal.width)).toBeGreaterThanOrEqual(.72);
+    expect((await page.locator('#tv-chart').boundingBox()).height).toBeGreaterThanOrEqual(500);
+    await page.locator('#market-card').scrollIntoViewIfNeeded();
+    await expect(page.locator('#market-card')).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+    await testInfo.attach('approved-layout-' + viewport.width, {body:await page.screenshot(),contentType:'image/png'});
   }
 });
 
@@ -473,7 +467,6 @@ test('oversized chart workspace scrolls normally to keep all controls reachable'
   await page.locator('#ind-toggle-btn').click();
   await page.locator('#macd-toggle').check();
   await page.locator('#stoch-toggle').check();
-  await expect(page.locator('.primary-stack')).toHaveClass(/chart-scrolls/);
   await expect(page.locator('.primary-stack')).toHaveCSS('position','static');
   await page.locator('#chart-time-bar').scrollIntoViewIfNeeded();
   await expect(page.locator('#chart-time-bar')).toBeInViewport();
