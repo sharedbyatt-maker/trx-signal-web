@@ -1828,19 +1828,7 @@ window.TRXChart = (() => {
       const closes=bars.map(b=>b.close);
       return {...summarize(closes,tf), complete, closed:summarize(complete ? closes : closes.slice(0,-1),tf)};
     });
-    let missingMinutes=0, unknownTimes=0, irregularIntervals=0, previous=null;
-    for (const row of rows) {
-      const t=parseWallClock(row);
-      if(!t) {unknownTimes++; previous=null; continue;}
-      const now=Date.UTC(t.year,t.month-1,t.day,t.hour,t.minute,t.second);
-      if(previous !== null) {
-        const minutes=(now-previous)/60000;
-        if(minutes > 1.5) missingMinutes += Math.max(0,Math.round(minutes)-1);
-        else if(minutes < 0.5) irregularIntervals++;
-      }
-      previous=now;
-    }
-    comparisonSnapshot = {frames, times:new Map(rows.map(r=>[String(r.issue),r.block_time])), missingMinutes, unknownTimes, irregularIntervals, rows:rows.length, first:rows[0]?.block_time, last:rows.at(-1)?.block_time,
+    comparisonSnapshot = {frames, times:new Map(rows.map(r=>[String(r.issue),r.block_time])),
       latestIssue:String(rows.at(-1)?.issue || "")};
     return comparisonSnapshot;
   }
