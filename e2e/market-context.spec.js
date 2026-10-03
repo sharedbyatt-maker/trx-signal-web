@@ -186,3 +186,16 @@ test('stale context hides timeframe values and both checklists', async ({page}) 
   await expect(page.locator('#mc-timeframes')).toContainText('UNAVAILABLE');
   await expect(page.locator('#mc-quality-status')).toHaveText('UNAVAILABLE');
 });
+
+test('latest-round fast path expires targets before state reconciliation', async ({page}) => {
+  await page.route('**/api/state',async route=>{
+    const response=await route.fetch(),data=await response.json();
+    data.strat_pending={issue:data.next_issue,target:'BIG',stake:500,tier:0,step:0,trigger_rsi:31};
+    await route.fulfill({json:data});
+  });
+  await page.route('**/api/latest',route=>route.fulfill({json:{round:{issue:'20260913000000361',number:8,block_time:'2026-09-13 14:00:00'}}}));
+  await page.goto('/');
+  await expect.poll(()=>page.evaluate(()=>window.TRXChart.getComparisons().latestIssue)).toBe('20260913000000361');
+  await expect(page.locator('#check-step-status')).toHaveText('WAITING');
+  await expect(page.locator('#check-step-list')).toContainText('No current target issue');
+});

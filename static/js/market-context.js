@@ -55,10 +55,9 @@ window.TRXContext = (() => {
       put("mc-rsi", c.rsi.toFixed(1));
       put("mc-zone", c.rsi <= 32 ? "OVERSOLD ≤32" : c.rsi >= 68 ? "OVERBOUGHT ≥68" : "NEUTRAL · 32–68", c.rsi <= 32 || c.rsi >= 68 ? "tone-zone" : "");
     }
-    const currentIssue = String(state?.history?.at(-1)?.issue || "");
     const p = state?.strat_pending || state?.strat?.pending;
-    const stepArmed = validTarget(p, currentIssue);
-    const l1Armed = l1Ready() && validTarget(l1.pending, currentIssue);
+    const stepArmed = validTarget(p);
+    const l1Armed = l1Ready() && validTarget(l1.pending);
     put("mc-setup", !fresh() ? "UNAVAILABLE" : stepArmed || l1Armed ? "ARMED" : "WAITING", stepArmed || l1Armed ? "tone-up" : "tone-setup");
     put("mc-setup-detail", !fresh() ? "Waiting for fresh engine data" : `L1: ${l1Ready() ? l1Armed ? l1.pending.target : l1.waiting_rule ? "RULE WAIT" : "WAITING" : "SYNCING"} · 12-Step: ${stepArmed ? p.target : "WAITING"}`);
     put("mc-rule", !l1Ready() ? "Engine unavailable · no valid setup" : l1.waiting_rule ? `${l1.waiting_rule.rule || "Skip rule"} · waiting rounds` : l1Armed ? "No rule wait · engine signal armed" : "No rule wait · awaiting 1m RSI / confirmation");
@@ -70,7 +69,10 @@ window.TRXContext = (() => {
   const trendOf = c => !finite(c?.ema5) || !finite(c?.ema15) ? "—" : Math.abs(c.ema5-c.ema15)<0.01 ? "MIXED" : c.ema5>c.ema15 ? "UP" : "DOWN";
   const momentumOf = c => !finite(c?.rsi) || !finite(c?.previousRsi) ? "—" : Math.abs(c.rsi-c.previousRsi)<0.01 ? "FLAT" : c.rsi>c.previousRsi ? "RISING" : "FALLING";
   const toneOf = text => /^(UP|RISING|ARMED)$/.test(text) ? "tone-up" : /^(DOWN|FALLING)$/.test(text) ? "tone-down" : "";
-  const currentIssue = () => String(state?.history?.at(-1)?.issue || "");
+  const currentIssue = () => {
+    const engine=String(state?.history?.at(-1)?.issue || ""), chart=window.TRXChart?.getComparisons()?.latestIssue || "";
+    return chart>engine ? chart : engine;
+  };
   const l1Ready = () => fresh() && l1?.ready && Date.now()-l1Received<15000 && (!l1.source_issue || String(l1.source_issue)===currentIssue());
   const validTarget = (p, issue=currentIssue()) => fresh() && /^(BIG|SMALL)$/.test(p?.target || "") &&
     !!issue && String(p.issue || "") > issue && (!state?.next_issue || String(p.issue)===String(state.next_issue));
