@@ -80,6 +80,7 @@ window.TRXChart = (() => {
   let lastLen = 0;
   let lastKey = "";
   let lastState = null;
+  let contextRows = [], contextRevision = 0;
   let rangeLock = false;
   let crosshairLock = false;
   let curRsiValues = [];
@@ -404,7 +405,7 @@ window.TRXChart = (() => {
     return { key, labelTime };
   }
 
-  function buildBars(rows) {
+  function buildBars(rows, tfMinutes = group) {
     const bars = [];
     const labels = [];
     const times = [];
@@ -418,7 +419,7 @@ window.TRXChart = (() => {
       const close = price + dir;
       const hi = Math.max(open, close);
       const lo = Math.min(open, close);
-      const bucket = timeframeBucket(item, group, idx);
+      const bucket = timeframeBucket(item, tfMinutes, idx);
       let slot = bucketSlots.get(bucket.key);
       if (slot == null) {
         slot = bars.length;
@@ -1508,6 +1509,8 @@ window.TRXChart = (() => {
     const key = `${hist.length}:${lastIssue}:${tailFingerprint}:${group}:${viewMode}:${JSON.stringify(opts)}:${(s.log || []).length}`;
     if (!force && key === lastKey) return;
     lastKey = key;
+    contextRows = hist.slice();
+    contextRevision++;
 
     // capture current view so setData() cannot scroll/zoom the chart
     const prevRange = (() => {
@@ -1761,6 +1764,8 @@ window.TRXChart = (() => {
     if (!(curLabelMap instanceof Map)) curLabelMap = new Map();
     curLabelMap.set(issue, time);
     lastLen = curBars.length;
+    contextRows.push(row);
+    contextRevision++;
     // Incremental indicator state is exact for a newly closed 1m bar. Higher-TF
     // in-progress bars are reconciled by the normal /api/state refresh.
     if (group === 1) {
@@ -1790,20 +1795,58 @@ window.TRXChart = (() => {
     return opts.sig;
   }
 
-  // Read-only UI summary using the same selected-timeframe closes/RSI as the chart.
-  let contextKey = "", contextSnapshot = null;
+  // Read-only summaries: same source-wall-clock buckets and indicator math as the chart.
+  // Cache once per chart revision; changing tabs never changes chart data or engine state.
+  let contextKey = "", contextSnapshot = null, comparisonRevision = -1, comparisonSnapshot = null;
+  function summarize(closes, timeframe) {
+    const fast = calcEma(closes, 5), slow = calcEma(closes, 15), rsi = calcRsi(closes, 14);
+    return {timeframe, count:closes.length, ema5:fast.at(-1), ema15:slow.at(-1),
+      rsi:rsi.at(-1), previousRsi:rsi.at(-2)};
+  }
   function getContext() {
-    const key = [group, curCloses.length, curCloses.at(-1), curRsiValues.at(-1)].join(":");
+    const key = [contextRevision, group, curCloses.length, curCloses.at(-1), curRsiValues.at(-1)].join(":");
     if (key === contextKey) return contextSnapshot;
     contextKey = key;
-    const fast = calcEma(curCloses, 5), slow = calcEma(curCloses, 15);
-    contextSnapshot = {timeframe: group, count:curCloses.length, ema5:fast.at(-1), ema15:slow.at(-1),
-      rsi:curRsiValues.at(-1), previousRsi:curRsiValues.at(-2)};
+    contextSnapshot = {...summarize(curCloses, group), rsi:curRsiValues.at(-1), previousRsi:curRsiValues.at(-2)};
     return contextSnapshot;
+  }
+  function getComparisons() {
+    if (comparisonRevision === contextRevision) return comparisonSnapshot;
+    comparisonRevision = contextRevision;
+    const rows = contextRows;
+    const frames = [1,5,15].map(tf => {
+      const {bars} = buildBars(rows, tf);
+      const last = rows.at(-1), wc = parseWallClock(last);
+      // A higher-timeframe bar is complete only when every minute of its bucket exists.
+      const lastBucket = last ? timeframeBucket(last, tf, rows.length-1).key : "";
+      const minutes = new Set();
+      for (let i=rows.length-1; i>=0; i--) {
+        if (timeframeBucket(rows[i],tf,i).key !== lastBucket) break;
+        const t=parseWallClock(rows[i]); if(t) minutes.add(t.minute);
+      }
+      const complete = tf===1 ? !!last : !!wc && wc.minute % tf === tf-1 && minutes.size === tf;
+      const closes=bars.map(b=>b.close);
+      return {...summarize(closes,tf), complete, closed:summarize(complete ? closes : closes.slice(0,-1),tf)};
+    });
+    let missingMinutes=0, unknownTimes=0, irregularIntervals=0, previous=null;
+    for (const row of rows) {
+      const t=parseWallClock(row);
+      if(!t) {unknownTimes++; previous=null; continue;}
+      const now=Date.UTC(t.year,t.month-1,t.day,t.hour,t.minute,t.second);
+      if(previous !== null) {
+        const minutes=(now-previous)/60000;
+        if(minutes > 1.5) missingMinutes += Math.max(0,Math.round(minutes)-1);
+        else if(minutes < 0.5) irregularIntervals++;
+      }
+      previous=now;
+    }
+    comparisonSnapshot = {frames, times:new Map(rows.map(r=>[String(r.issue),r.block_time])), missingMinutes, unknownTimes, irregularIntervals, rows:rows.length, first:rows[0]?.block_time, last:rows.at(-1)?.block_time,
+      latestIssue:String(rows.at(-1)?.issue || "")};
+    return comparisonSnapshot;
   }
 
   return {
-    getContext,
+    getContext, getComparisons,
     update, appendLatest, autoSR, toggleSignals, setHistoryRange,
     _view: () => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
