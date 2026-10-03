@@ -16,6 +16,7 @@
   }
 
   function render(x) {
+    window.TRXContext?.onL1(x);
     const p = x && x.pending;
     const ready = !!(x && x.ready);
     const status = $("l1-status");

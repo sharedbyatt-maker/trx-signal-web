@@ -16,25 +16,17 @@
   // Follow the actual header height, including wrapping, fonts and browser zoom.
   const header = document.querySelector("header");
   const focusBar = $("focus-bar");
-  const primary = document.querySelector(".primary-stack");
-  const chartCard = $("chart-card");
   const measureLayout = () => {
     const height = header && getComputedStyle(header).position === "sticky"
       ? Math.ceil(header.getBoundingClientRect().height) : 0;
     document.documentElement.style.setProperty("--sticky-header-height", height + "px");
     const focusHeight = focusBar ? Math.ceil(focusBar.getBoundingClientRect().height) : 0;
     document.documentElement.style.setProperty("--sticky-focus-height", focusHeight + "px");
-    // Oversized workspaces (expanded drawing/indicator panes or short windows)
-    // must scroll normally so every chart control remains reachable.
-    // Reserve the page footer too: sticky releases at the grid bottom, which
-    // otherwise pushes the toolbar underneath Focus at the final scroll position.
-    const grid = document.querySelector(".layout-grid");
-    const pageTail = grid ? Math.max(12, document.documentElement.scrollHeight - grid.getBoundingClientRect().bottom - window.scrollY) : 12;
-    primary?.classList.toggle("chart-scrolls", !!chartCard && chartCard.getBoundingClientRect().height + height + focusHeight + 12 + pageTail > window.innerHeight);
+
   };
   if (window.ResizeObserver) {
     const layoutObserver = new ResizeObserver(measureLayout);
-    [header, focusBar, chartCard].filter(Boolean).forEach(el => layoutObserver.observe(el));
+    [header, focusBar].filter(Boolean).forEach(el => layoutObserver.observe(el));
   }
   window.addEventListener("resize", measureLayout);
   document.fonts?.ready.then(measureLayout);

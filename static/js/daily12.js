@@ -32,6 +32,7 @@
   }
 
   function render(d) {
+    window.TRXContext?.onDaily(d);
     const r = d.report || {};
     const set = (id, text) => { const e=$d(id); if(e) e.textContent=text; };
     set("d12-date", r.date || "—");
@@ -75,9 +76,11 @@
   async function refresh(){
     try {
       const x=await fetch('/api/12step/daily-report?days=7',{cache:'no-store'});
-      if(x.ok) render(await x.json());
-    } catch(_e) {}
+      if (!x.ok) throw new Error("HTTP " + x.status);
+      render(await x.json());
+    } catch(_e) { window.TRXContext?.onDailyError(); }
   }
   refresh();
   setInterval(refresh, 10000);
 })();
+

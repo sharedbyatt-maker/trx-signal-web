@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=59">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=60">
 </head>
 <body>
 <header>
@@ -183,6 +183,30 @@
     </div>
   </section>
 
+  <section class="card market-card" id="market-card" aria-label="Market context and signal history">
+    <div class="market-heading">
+      <div class="market-tabs" role="tablist" aria-label="Chart insights">
+        <button id="context-tab" role="tab" aria-selected="true" aria-controls="market-panel" tabindex="0">MARKET CONTEXT</button>
+        <button id="history-tab" role="tab" aria-selected="false" aria-controls="signal-history-panel" tabindex="-1">SIGNAL HISTORY</button>
+      </div>
+      <span id="mc-timeframe">BIG/SMALL walk · 1m conditions</span>
+    </div>
+    <div id="market-panel" role="tabpanel" aria-labelledby="context-tab">
+      <div class="market-metrics">
+        <div><span class="market-icon tone-down" aria-hidden="true">↘</span><div><small>TREND</small><b id="mc-trend">—</b><span id="mc-trend-detail">Waiting for chart data</span></div></div>
+        <div><span class="market-icon tone-up" aria-hidden="true">↗</span><div><small>MOMENTUM</small><b id="mc-momentum">—</b><span id="mc-momentum-detail">RSI direction</span></div></div>
+        <div><span class="market-icon tone-zone" aria-hidden="true">∿</span><div><small>RSI ZONE</small><b id="mc-rsi">—</b><span id="mc-zone">RSI 14 · thresholds 32 / 68</span></div></div>
+        <div><span class="market-icon tone-setup" aria-hidden="true">▥</span><div><small>SIGNAL SETUP</small><b id="mc-setup">WAITING</b><span id="mc-setup-detail">1m engine state</span></div></div>
+      </div>
+      <div class="market-rule"><strong>L1 RULE STATUS</strong><span id="mc-rule">Waiting for engine data</span></div>
+      <p class="market-note">Recent round conditions only · not a next-round guarantee. Setup uses the frozen 1m engines.</p>
+    </div>
+    <div id="signal-history-panel" role="tabpanel" aria-labelledby="history-tab" hidden>
+      <div class="history-heading"><span>Last 5 settled model bets · local time · MMK</span><div class="history-filters" role="group" aria-label="History strategy"><button data-engine="all" aria-pressed="true">All</button><button data-engine="L1 CAPITAL" aria-pressed="false">L1 CAPITAL</button><button data-engine="12-STEP" aria-pressed="false">12-STEP</button></div></div>
+      <div class="signal-table-wrap"><table class="signal-table"><caption class="sr-only">Settled signal model history</caption><thead><tr><th>Time / Issue</th><th>Strategy</th><th>Signal</th><th>Stake</th><th>Result</th><th>P/L</th></tr></thead><tbody id="signal-history-body"><tr><td colspan="6">Loading settled history…</td></tr></tbody></table></div>
+      <p id="signal-history-status" class="market-note">Model results; actual manual execution may differ.</p>
+    </div>
+  </section>
   </div>
 
   <aside class="side-stack">
@@ -220,6 +244,9 @@
         <div><small>WIN RATE</small><b id="l1r-wr">0%</b></div>
         <div class="l1-report-focus"><small>TODAY MODEL P/L</small><b id="l1r-pnl">0 MMK</b></div>
         <div><small>TOTAL STAKED</small><b id="l1r-staked">0 MMK</b></div>
+      </div>
+      <details class="terminal-details report-details"><summary>Details</summary>
+      <div class="l1-report-grid">
         <div><small>W / L</small><b id="l1r-wl">0 / 0</b></div>
         <div><small>DEEPEST LEVEL</small><b id="l1r-depth">—</b></div>
       </div>
@@ -231,6 +258,7 @@
         <span id="l1r-total">MODEL TOTAL +0 MMK</span>
         <span id="l1r-last">NO SETTLED TRADE</span>
       </div>
+      </details>
     </section>
 
     <section class="card stake-card" id="stake-card">
@@ -246,13 +274,16 @@
         <div><span>STAKE</span><b class="mono" id="st-stake">—</b></div>
         <div><span>LEVEL</span><b><span class="stake-badge" id="st-tier">T1</span> <span class="mono" id="st-step">S1</span></b></div>
         <div><span>TRIGGER</span><b id="st-trigger">Prev RSI ≤32 + BIG / ≥68 + SMALL</b></div>
-        <div><span>SOURCE</span><b id="st-source">waiting for confirmation round…</b></div>
+
       </div>
 
+      <details class="terminal-details"><summary>Signal details</summary>
+      <div class="stake-rule" id="st-source">waiting for confirmation round…</div>
       <div class="stake-bottom">
         <span>LAST <b id="st-last">No settled episode yet</b></span>
         <span>BUSTS <b id="st-busts">0</b></span>
       </div>
+      </details>
     </section>
 
     <section class="card daily12-card" id="daily12-card">
@@ -262,16 +293,16 @@
       </div>
       <div class="daily12-body">
         <div class="daily12-grid daily12-summary-grid">
-          <div><small>SIGNALS</small><b id="d12-signals">0</b></div>
           <div><small>SETTLED BETS</small><b id="d12-bets">0</b></div>
           <div><small>BET WIN RATE</small><b id="d12-wr">0%</b></div>
           <div class="daily12-focus"><small>NET P/L</small><b id="d12-pnl">0 MMK</b></div>
           <div><small>TOTAL STAKED</small><b id="d12-staked">0</b></div>
-          <div><small>OPEN EPISODES</small><b id="d12-open">0</b></div>
         </div>
         <details class="daily12-details">
           <summary><span>SESSION DETAILS</span><span class="daily12-chevron">⌄</span></summary>
           <div class="daily12-grid daily12-extra-grid">
+            <div><small>SIGNALS</small><b id="d12-signals">0</b></div>
+            <div><small>OPEN EPISODES</small><b id="d12-open">0</b></div>
             <div><small>BET W / L</small><b id="d12-wl">0 / 0</b></div>
             <div><small>EPISODE WR</small><b id="d12-episode-wr">0%</b></div>
             <div><small>ROI ON STAKED</small><b id="d12-roi">0%</b></div>
@@ -302,12 +333,13 @@
 </footer>
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=52"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=53"></script>
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=44"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=51"></script>
-<script src="{{ url_for('static', filename='js/daily12.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=6"></script>
-<script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=5"></script>
+<script src="{{ url_for('static', filename='js/market-context.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=52"></script>
+<script src="{{ url_for('static', filename='js/daily12.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=7"></script>
+<script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=6"></script>
 </body>
 </html>
 

@@ -409,6 +409,7 @@ function render(s, merged) {
   safeRender(renderHistory, s);
   safeRender(renderDigitDist, s);
   if (window.TRXChart) TRXChart.update({ ...s, history: merged || s.history });
+  window.TRXContext?.onState(s);
   tickServerUpdate(s.last_update_utc || (s.last_update ? s.last_update.replace(" ", "T") + "Z" : null));
 }
 
