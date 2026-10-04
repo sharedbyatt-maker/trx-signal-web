@@ -21,6 +21,8 @@ window.TRXStudy = (() => {
     return String(a.issue).endsWith('1440')&&String(b.issue).endsWith('0001')&&dt>=55000&&dt<=65000;
   }
   function outcome(e,s){
+    // A confirmed prospective live outcome stays settled through stale/partial refreshes.
+    if(e.mode==='live'&&s.mode==='live'&&e.provenance==='recorded'&&e.actual&&e.resultIssue)return {actual:e.actual,issue:e.resultIssue,text:e.actual===e.expected?'MATCH':'MISS'};
     const at=s.rows.findIndex(r=>String(r.issue)===e.issue);
     if(at<0)return e.actual&&e.resultIssue&&e.provenance==='recorded'&&s.mode==='live'?{actual:e.actual,text:e.actual===e.expected?'MATCH':'MISS'}:{actual:null,text:'Outside loaded history'};
     const next=s.rows[at+1];

@@ -5,6 +5,11 @@ const study=p=>p.evaluate(()=>{const s=TRXChart.studyInfo();return {...s,rows:s.
 async function ready(page){await page.addInitScript(()=>localStorage.setItem('trx_draw_v2_prefs',JSON.stringify({magnet:false})));await page.goto('/');await expect.poll(async()=>(await dbg(page)).apiReady).toBe(true);await page.locator('#dt-toggle-btn').click();}
 async function shape(page,type='hline',touch=false){await page.locator(`[data-tool="${type}"]`).click();await page.locator("#tv-chart").scrollIntoViewIfNeeded();const b=await page.locator('#tv-chart').boundingBox();const a={x:b.x+b.width*.27,y:b.y+b.height*.78},z={x:b.x+b.width*.58,y:b.y+b.height*.58};if(touch){await page.touchscreen.tap(a.x,a.y);if(type==='fib')await page.touchscreen.tap(z.x,z.y);}else{await page.mouse.click(a.x,a.y);if(type==='fib')await page.mouse.click(z.x,z.y);}await expect.poll(async()=>(await dbg(page)).count).toBe(1);return {a,z};}
 async function practice(page){await page.locator('#study-toggle').click();await page.locator('#replay-start').click();await expect(page.locator('#replay-controls')).toBeVisible();await expect.poll(async()=>(await study(page)).mode).toBe('replay');}
+async function freezeFixture(page){
+ // These tests inject chart ticks directly; stop the static HTTP fixture replacing them.
+ for(const path of ['state','latest','history**'])await page.route('**/api/'+path,route=>route.abort());
+ await page.waitForTimeout(500); // Drain any fixture response already in flight.
+}
 test('full undo/redo restores style, deleted object, hidden state and clears redo on a new edit',async({page},info)=>{
  await ready(page);await shape(page,'hline',info.project.name.includes('mobile'));const original=await rows(page);
  await page.locator('#dt-v2-width').selectOption('4');await page.locator('#dt-undo').click();expect(await rows(page)).toEqual(original);
@@ -39,9 +44,9 @@ test('replay hides future bars and indicators, isolates drawings and returns to 
  await page.locator('#replay-live').click();expect((await study(page)).mode).toBe('live');expect((await study(page)).issue).toBe(live.issue);expect(await rows(page)).toEqual(before);expect((await dbg(page)).count).toBe(1);
 });
 test('replay remains frozen when new live data arrives; returning live catches up',async({page})=>{
- await ready(page);await practice(page);const old=await study(page);
+ await ready(page);await freezeFixture(page);await practice(page);const old=await study(page);
  await page.evaluate(()=>{const s=TRXChart.studyInfo();const row={issue:String(BigInt('20260913000000360')+1n),number:8,type:'BIG',block_time:'2026-09-13 14:00:00'};TRXChart.appendLatest(row);});
- expect((await study(page)).issue).toBe(old.issue);await page.locator('#replay-live').click();expect((await study(page)).issue).toBe('20260913000000361');
+ expect((await study(page)).issue).toBe(old.issue);await page.locator('#replay-live').click();await expect.poll(async()=>(await study(page)).issue).toBe('20260913000000361');
 });
 test('replay seek, play, pause and end-of-history controls are deterministic',async({page})=>{
  await ready(page);await practice(page);await page.locator('#replay-position').selectOption('1');expect((await study(page)).rows).toHaveLength(1);await page.locator('#replay-position').selectOption('20');const start=await study(page);expect(start.position).toBe(20);
