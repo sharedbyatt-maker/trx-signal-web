@@ -17,4 +17,5 @@ def test_one_point_tools_have_live_hover_preview():
     assert 'id:"_hover"' in SRC
 
 def test_new_drawing_asset_is_cache_busted():
-    assert "js/draw.js') }}?v=44" in HTML
+    assert "js/draw.js') }}?v=45" in HTML
+

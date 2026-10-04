@@ -23,7 +23,18 @@ function mergeRows(a, b) {
   return [...m.values()].sort((x, y) => (x.issue < y.issue ? -1 : x.issue > y.issue ? 1 : 0));
 }
 
+let historyRequest = null;
 async function fetchFullHistory(force) {
+  if (historyRequest) {
+    await historyRequest;
+    if (force) return fetchFullHistory(true);
+    return;
+  }
+  historyRequest = loadFullHistory(force);
+  try { await historyRequest; }
+  finally { historyRequest = null; }
+}
+async function loadFullHistory(force) {
   if (!force && Date.now() - lastHistFetch < HIST_REFETCH_MS) return;
   lastHistFetch = Date.now();
   try {
@@ -31,9 +42,11 @@ async function fetchFullHistory(force) {
     const since = (!force && fullRows.length)
       ? `?since=${encodeURIComponent(fullRows[fullRows.length - 1].issue)}`
       : "";
-    const r = await fetch("/api/history" + since, { cache: "no-store" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const data = await r.json();
+    const data = await TRXNet.run(async signal => {
+      const r = await fetch("/api/history" + since, { cache: "no-store", signal });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }, 12000);
     const inc = (data.history || []).map(([issue, number, btime]) => ({
       issue: String(issue),
       short_issue: String(issue).slice(-6),
@@ -65,6 +78,7 @@ async function fetchFullHistory(force) {
     }
   } catch (e) {
     /* keep old buffer on failure */
+    lastHistFetch = 0;
   }
 }
 
@@ -180,7 +194,10 @@ function renderAnalytics(s) {
     }
     if (stepEl) stepEl.textContent = "S" + ((st.step || 0) + 1);
 
-    const pend = s.strat_pending || st.pending;
+    const candidate = s.strat_pending || st.pending;
+    const fresh = window.TRXContext?.isFresh() ?? !!s.connected;
+    const pend = fresh && window.TRXContext?.isValidTarget(candidate) ? candidate : null;
+    const unavailable = !fresh;
     const modeEl = $("st-status");
     const pEl = $("st-pending");
     const issueEl = $("st-target-issue");
@@ -190,6 +207,7 @@ function renderAnalytics(s) {
     const hero = $("st-signal-hero");
 
     if (pend) {
+      window.TRXAlerts?.signal("12-STEP", pend);
       if (modeEl) { modeEl.textContent = "ARMED"; modeEl.className = "stake-mode active"; }
       if (pEl) {
         pEl.textContent = pend.target || "—";
@@ -208,9 +226,9 @@ function renderAnalytics(s) {
       }
       if (hero) hero.className = "stake-signal-hero armed";
     } else {
-      if (modeEl) { modeEl.textContent = "WAITING"; modeEl.className = "stake-mode waiting"; }
-      if (pEl) { pEl.textContent = "WAITING"; pEl.className = "stake-hero-dir"; }
-      if (issueEl) issueEl.textContent = "NO ACTIVE TARGET";
+      if (modeEl) { modeEl.textContent = unavailable ? "UNAVAILABLE" : "WAITING"; modeEl.className = "stake-mode waiting"; }
+      if (pEl) { pEl.textContent = unavailable ? "UNAVAILABLE" : "WAITING"; pEl.className = "stake-hero-dir"; }
+      if (issueEl) issueEl.textContent = unavailable ? "NO VALID SIGNAL · FEED UNAVAILABLE" : "NO ACTIVE TARGET";
       if (skEl) skEl.textContent = "—";
       if (trigEl) trigEl.textContent = "Prev RSI ≤32 + BIG / ≥68 + SMALL";
       if (srcEl) srcEl.textContent = "waiting for confirmation round…";
@@ -240,9 +258,11 @@ async function fetchRsiExtremes() {
   const el = $("ctx-rsi30");
   if (!el) return;
   try {
-    const r = await fetch("/api/rsi-extremes?days=30", { cache: "no-store" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const d = await r.json();
+    const d = await TRXNet.run(async signal => {
+      const r = await fetch("/api/rsi-extremes?days=30", { cache: "no-store", signal });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }, 45000);
     if (d.error) throw new Error(d.error);
     el.innerHTML =
       `L <b class="blue">${d.min.toFixed(1)}</b>` +
@@ -402,6 +422,7 @@ function render(s, merged) {
   } else {
     setConn(true, "LIVE");
   }
+  window.TRXContext?.onState(s);
   safeRender(renderSignal, s);
   safeRender(renderAnalytics, s);
   mergedCount = merged ? merged.length : 0;
@@ -409,33 +430,43 @@ function render(s, merged) {
   safeRender(renderHistory, s);
   safeRender(renderDigitDist, s);
   if (window.TRXChart) TRXChart.update({ ...s, history: merged || s.history });
-  window.TRXContext?.onState(s);
   tickServerUpdate(s.last_update_utc || (s.last_update ? s.last_update.replace(" ", "T") + "Z" : null));
 }
 
 let refreshing = false;
 let lastState = null;
+let lastStateReceived = 0;
 let lastKnownIssue = "";
 
 async function refresh() {
   if (refreshing) return;          // guard: never overlap polls
   refreshing = true;
   try {
-    const r = await fetch("/api/state", { cache: "no-store" });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const s = await r.json();
+    const s = await TRXNet.run(async signal => {
+      const r = await fetch("/api/state", { cache: "no-store", signal });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+    if (!s || !Array.isArray(s.history)) throw new Error("Invalid state response");
     lastState = s;
+    lastStateReceived = Date.now();
 
     // refresh the 10-day chart buffer periodically or when it falls behind
     const lastLocal = fullRows.length ? fullRows[fullRows.length - 1].issue : "";
     const lastLive = s.history && s.history.length ? s.history[s.history.length - 1].issue : "";
-    if (!fullRows.length || (lastLive && lastLive > lastLocal)) await fetchFullHistory(false);
+    if (!fullRows.length || (lastLive && lastLive > lastLocal)) {
+      fetchFullHistory(false).then(() => {
+        if (lastState === s && Date.now() - lastStateReceived < 15000) {
+          if (window.TRXChart) TRXChart.update({...s, history:mergeRows(fullRows,s.history)});
+        }
+      });
+    }
 
     const merged = mergeRows(fullRows, s.history);
     render(s, merged);
   } catch (e) {
-    console.error("refresh error:", e);
     setConn(false, "Connection error: " + (e && e.message ? e.message : e));
+    if (lastState) safeRender(renderAnalytics, lastState);
   } finally {
     refreshing = false;
   }
@@ -454,6 +485,8 @@ function tickClock() {
   const offset = -now.getTimezoneOffset();
   const zone = "UTC" + (offset >= 0 ? "+" : "−") + String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0") + ":" + String(Math.abs(offset) % 60).padStart(2, "0");
   $("clock").title = "Local time · " + zone;
+  if (lastStateReceived && Date.now() - lastStateReceived >= 15000) setConn(false, "OFFLINE · state update overdue");
+  if (lastState) safeRender(renderAnalytics, lastState);
   setTxt("ctb-zone", "LOCAL " + zone);
 
   /* chart bottom time bar */
@@ -487,7 +520,9 @@ function tickClock() {
       let etaMs = (last - now.getTime()) % iv;
       if (etaMs <= 0) etaMs += iv;
       const s = Math.max(0, Math.round(etaMs / 1000));
-      setTxt("ctb-next", `NEXT ISSUE ETA: ~${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+      setTxt("ctb-next", window.TRXContext?.isFresh()
+        ? `NEXT ISSUE ETA: ~${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+        : "NEXT ISSUE ETA: —");
     }
   } else {
     setTxt("ctb-last", "—");
@@ -562,7 +597,8 @@ setInterval(refresh, 1500);
 setInterval(() => fetchFullHistory(false), HIST_REFETCH_MS);
 setInterval(tickClock, 1000);
 tickClock();
-fetchFullHistory(true).then(refresh);
+fetchFullHistory(true);
+refresh();
 
 /* ================= instant candle: /api/latest micro-poll =================
    Candle တစ်တင်တာနဲ့ chart ချက်ချင်း update — /api/state ကို မစောင့်ရတော့ဘူး */
@@ -579,10 +615,14 @@ async function pollLatest() {
   if (latestPolling) return;
   latestPolling = true;
   try {
-    const r = await fetch("/api/latest", { cache: "no-store" });
-    const d = await r.json();
+    const d = await TRXNet.run(async signal => {
+      const r = await fetch("/api/latest", { cache: "no-store", signal });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
     const rd = d.round;
     if (!rd || !rd.issue || rd.issue === lastKnownIssue) return;
+    if (lastKnownIssue && String(rd.issue) < String(lastKnownIssue)) return;
     const first = lastKnownIssue === "";
     const previousIssue = lastKnownIssue;
     lastKnownIssue = rd.issue;
@@ -618,6 +658,7 @@ async function pollLatest() {
         const merged = mergeRows(fullRows, lastState.history);
         safeRender(() => render(lastState, merged), lastState);
       }
+      if (lastState) safeRender(renderAnalytics, lastState);
     }
   } catch (e) { /* noop */ }
   finally {
@@ -631,7 +672,8 @@ fetchRsiExtremes();
 setInterval(fetchRsiExtremes, 3600000);   // 1h
 
 /* ================= alerts: sound + desktop notification ================= */
-let soundOn = localStorage.getItem("trx_sound") === "1";
+let soundOn = false;
+try { soundOn = localStorage.getItem("trx_sound") === "1"; } catch (_e) {}
 
 function beep() {
   try {
@@ -644,6 +686,7 @@ function beep() {
       o.connect(gn).connect(ctx.destination);
       o.start(); o.stop(ctx.currentTime + .17);
     }, delay));
+    setTimeout(() => { ctx.close().catch(() => {}); }, 500);
   } catch (e) { /* audio unavailable */ }
 }
 
@@ -655,15 +698,27 @@ function notifySignal(label, issue) {
   } catch (e) { /* noop */ }
 }
 
+const alertedIssues = new Map();
+window.TRXAlerts = {
+  signal(engine, pending) {
+    if (!soundOn || !pending || !window.TRXContext?.isValidTarget(pending)) return;
+    const key = String(pending.issue) + ":" + pending.target;
+    if (alertedIssues.get(engine) === key) return;
+    alertedIssues.set(engine, key);
+    beep();
+    notifySignal(engine + " " + pending.target, pending.issue);
+  },
+};
+
 const bellBtn = $("bell-btn");
 if (bellBtn) {
   bellBtn.classList.toggle("off", !soundOn);
   bellBtn.addEventListener("click", () => {
     soundOn = !soundOn;
-    localStorage.setItem("trx_sound", soundOn ? "1" : "0");
+    try { localStorage.setItem("trx_sound", soundOn ? "1" : "0"); } catch (_e) {}
     bellBtn.classList.toggle("off", !soundOn);
     if (soundOn && window.Notification && Notification.permission === "default") {
-      Notification.requestPermission();
+      Notification.requestPermission().catch(() => {});
     }
     if (soundOn) beep();   // audible confirmation
   });
@@ -673,20 +728,26 @@ if (bellBtn) {
 const tgBtn = $("tg-btn");
 if (tgBtn) {
   tgBtn.addEventListener("click", async () => {
+    if (tgBtn.disabled) return;
+    tgBtn.disabled = true;
     tgBtn.textContent = "⏳";
     try {
-      const r = await fetch("/api/telegram-test", {
+      const d = await TRXNet.run(async signal => {
+        const r = await fetch("/api/telegram-test", {
         method: "POST",
         cache: "no-store",
         headers: { "X-Requested-With": "TRX-Terminal" },
+        signal,
       });
-      const d = await r.json();
+        return r.json();
+      }, 12000);
       tgBtn.textContent = d.ok ? "✅" : "❌";
       tgBtn.title = d.ok ? "Telegram OK — test message ပို့ပြီး" : ("Telegram error: " + (d.error || "unknown"));
     } catch (e) {
       tgBtn.textContent = "❌";
       tgBtn.title = "Telegram test failed: " + (e && e.message ? e.message : e);
     }
+    tgBtn.disabled = false;
     setTimeout(() => { tgBtn.textContent = "📡"; }, 3000);
   });
 }

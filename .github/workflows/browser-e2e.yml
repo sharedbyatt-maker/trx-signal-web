@@ -49,6 +49,8 @@ jobs:
           for js_file in static/js/*.js e2e/*.js *.js; do
             if [ -f "$js_file" ]; then node --check "$js_file"; fi
           done
+      - name: Verify request timeout and recovery
+        run: node tests_transport_stability.js
       - name: Install Playwright
         run: |
           npm install

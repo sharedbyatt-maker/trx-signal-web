@@ -61,7 +61,8 @@
 
     const e=r.engine||{};
     const p=e.pending;
-    set("d12-status", p
+    const unavailable = /OFFLINE|STALE|ERROR/.test(e.status || "");
+    set("d12-status", unavailable ? "Engine unavailable · " + e.status : p
       ? `Engine ARMED · T${e.tier}/S${e.step} · ${p.target} → …${String(p.issue||"").slice(-6)} · ${money(p.stake)}${p.trigger_rsi != null ? " · Trigger RSI " + Number(p.trigger_rsi).toFixed(1) : ""}`
       : `Engine WAITING · T${e.tier||1}/S${e.step||1} · Next eligible stake ${money(e.next_eligible_stake)} · waiting for valid RSI setup`);
 
@@ -74,14 +75,24 @@
     }
   }
 
+  let refreshing = false;
   async function refresh(){
+    if (refreshing) return;
+    refreshing = true;
     try {
-      const x=await fetch('/api/12step/daily-report?days=7',{cache:'no-store'});
-      if (!x.ok) throw new Error("HTTP " + x.status);
-      render(await x.json());
-    } catch(_e) { window.TRXContext?.onDailyError(); }
+      const d = await TRXNet.run(async signal => {
+        const x=await fetch('/api/12step/daily-report?days=7',{cache:'no-store',signal});
+        if (!x.ok) throw new Error("HTTP " + x.status);
+        return x.json();
+      });
+      if (!d?.report || !Array.isArray(d.report.recent_events)) throw new Error("Invalid report response");
+      render(d);
+    } catch(_e) {
+      window.TRXContext?.onDailyError();
+      if ($d("d12-status")) $d("d12-status").textContent="Report unavailable · last loaded results retained";
+      if ($d("d12-updated")) $d("d12-updated").textContent="Update failed · retrying";
+    } finally { refreshing = false; }
   }
   refresh();
   setInterval(refresh, 10000);
 })();
-

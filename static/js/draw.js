@@ -37,6 +37,14 @@ window.TRXDraw = (() => {
   let hover = null, selectedId = null, downXY = null, drag = null, restored = false;
   let magnet = true;
   let serverRevision = null, serverConflict = false, serverSyncTimer = null, syncStatusEl = null;
+  let serverPushRequest = null, serverPushQueued = false;
+  async function syncRequest(url, options={}) {
+    return TRXNet.run(async signal => {
+      const r=await fetch(url,{...options,signal});
+      const data=await r.json();
+      return {ok:r.ok,status:r.status,data};
+    });
+  }
   let moveFrame = 0, pendingMove = null;
 
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -191,11 +199,20 @@ window.TRXDraw = (() => {
     clearTimeout(serverSyncTimer); serverSyncTimer=setTimeout(()=>pushServer(),900);
   }
   async function pushServer() {
+    if(serverPushRequest){serverPushQueued=true;return serverPushRequest;}
+    serverPushRequest=writeServer();
+    try{return await serverPushRequest;}
+    finally {
+      serverPushRequest=null;
+      if(serverPushQueued){serverPushQueued=false;queueServerSave();}
+    }
+  }
+  async function writeServer() {
     if (!syncToken() || serverRevision == null || serverConflict) return false;
     setSyncStatus("SYNCING…");
     try {
-      const r=await fetch("/api/drawings",{method:"PUT",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({expected_revision:serverRevision,drawings:serializeDrawings()})});
-      const j=await r.json().catch(()=>({}));
+      const r=await syncRequest("/api/drawings",{method:"PUT",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({expected_revision:serverRevision,drawings:serializeDrawings()})});
+      const j=r.data;
       if(r.status===401){setSyncToken("");serverRevision=null;setSyncStatus("AUTH NEEDED",true);return false;}
       if(r.status===409){backupLocalSnapshot("revision-conflict");serverConflict=true;setSyncStatus("CONFLICT · TAP SYNC",true);return false;}
       if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
@@ -203,10 +220,11 @@ window.TRXDraw = (() => {
     } catch(e){setSyncStatus("LOCAL · SERVER ERROR",true);return false;}
   }
   async function pullServer(interactive=true) {
+    if(serverPushRequest)await serverPushRequest;
     if(!syncToken()&&interactive){const t=window.prompt("Drawing Sync Token");if(!t)return false;setSyncToken(t.trim());}
     if(!syncToken())return false;setSyncStatus("LOADING…");
     try{
-      const r=await fetch("/api/drawings",{headers:authHeaders()});const j=await r.json().catch(()=>({}));
+      const r=await syncRequest("/api/drawings",{headers:authHeaders()});const j=r.data;
       if(r.status===401){setSyncToken("");serverRevision=null;setSyncStatus("AUTH NEEDED",true);return false;}
       if(r.status===503){serverRevision=null;setSyncStatus("SERVER SYNC DISABLED",true);return false;}
       if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
@@ -252,7 +270,7 @@ window.TRXDraw = (() => {
   }
   async function restoreBackup(){
     if(!syncToken()){const t=window.prompt("Drawing Sync Token");if(!t)return;setSyncToken(t.trim());}
-    try{const r=await fetch("/api/drawings/backups",{headers:authHeaders()});const j=await r.json();if(!r.ok)throw new Error();const list=j.backups||[];if(!list.length){window.alert("No server backups yet");return;}const msg=list.map(x=>`r${x.revision} · ${x.count} drawings · ${x.updated_at||""}`).join("\n");const v=window.prompt(`Restore which revision?\n\n${msg}`);if(v==null)return;const rev=Number(String(v).replace(/^r/i,""));if(!Number.isInteger(rev))return;const rr=await fetch("/api/drawings/restore",{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({revision:rev,expected_revision:serverRevision})});const jj=await rr.json();if(!rr.ok)throw new Error(jj.error||"restore failed");serverRevision=Number(jj.revision);serverConflict=false;replaceFromRows(jj.drawings||[]);saveLocal();setSyncStatus(`RESTORED → r${serverRevision}`);}catch(e){setSyncStatus("RESTORE FAILED",true);}
+    try{const r=await syncRequest("/api/drawings/backups",{headers:authHeaders()});const j=r.data;if(!r.ok)throw new Error();const list=j.backups||[];if(!list.length){window.alert("No server backups yet");return;}const msg=list.map(x=>`r${x.revision} · ${x.count} drawings · ${x.updated_at||""}`).join("\n");const v=window.prompt(`Restore which revision?\n\n${msg}`);if(v==null)return;const rev=Number(String(v).replace(/^r/i,""));if(!Number.isInteger(rev))return;const rr=await syncRequest("/api/drawings/restore",{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({revision:rev,expected_revision:serverRevision})});const jj=rr.data;if(!rr.ok)throw new Error(jj.error||"restore failed");serverRevision=Number(jj.revision);serverConflict=false;replaceFromRows(jj.drawings||[]);saveLocal();setSyncStatus(`RESTORED → r${serverRevision}`);}catch(e){setSyncStatus("RESTORE FAILED",true);}
   }
   function buildPersistenceToolbar(){
     const host=$("draw-tools");if(!host)return;const sep=document.createElement("span");sep.className="dt-sep";host.appendChild(sep);

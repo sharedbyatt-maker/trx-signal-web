@@ -212,6 +212,9 @@ window.TRXContext = (() => {
   $("history-more")?.addEventListener("click",()=>{visibleLimit+=5;renderHistory();});
   setInterval(renderContext, 1000);
   return {
+    isFresh: fresh,
+    isValidTarget: validTarget,
+    isL1Ready: l1Ready,
     onState(s) { state=s; stateReceived=Date.now(); renderContext(); renderHistory(); },
     onL1(x) { l1=x; l1Received=Date.now(); l1Unavailable=!Array.isArray(x?.trades); if (!l1Unavailable) l1Trades=x.trades; renderContext(); renderHistory(); },
     onDaily(d) { daily=d; dailyUnavailable=!d?.report || !Array.isArray(d.report.recent_events); if(!dailyUnavailable) dailyEvents=[...(d.history || []).flatMap(r=>r.recent_events || []), ...(d.report?.recent_events || [])]; renderHistory(); },
