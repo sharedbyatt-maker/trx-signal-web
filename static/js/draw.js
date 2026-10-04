@@ -567,7 +567,7 @@ window.TRXDraw = (() => {
   function fibMiniButton(text,title){const b=document.createElement("button");b.type="button";b.textContent=text;b.title=title||text;b.style.cssText="height:25px;padding:0 7px;border:1px solid #363a45;border-radius:4px;background:#1e222d;color:#d1d4dc;font:10px Consolas,monospace;cursor:pointer";return b;}
   function buildFibPanel(){
     fibPanelEl=document.createElement("div");fibPanelEl.id="fib-v2-panel";
-    fibPanelEl.style.cssText="position:absolute;z-index:26;right:8px;top:72px;display:none;min-width:280px;max-width:min(96%,520px);padding:8px;background:rgba(19,23,34,.98);border:1px solid #434651;border-radius:7px;box-shadow:0 6px 22px rgba(0,0,0,.32);color:#d1d4dc;font:11px Consolas,monospace";
+    fibPanelEl.style.cssText="position:absolute;z-index:31;right:8px;top:72px;display:none;min-width:280px;max-width:min(96%,520px);padding:8px;background:rgba(19,23,34,.98);border:1px solid #434651;border-radius:7px;box-shadow:0 6px 22px rgba(0,0,0,.32);color:#d1d4dc;font:11px Consolas,monospace";
     wrapEl.appendChild(fibPanelEl);
   }
   function updateFibPanel(){
@@ -600,7 +600,8 @@ window.TRXDraw = (() => {
     fibPanelEl.style.top=top+"px";
     fibPanelEl.style.minWidth="0";
     fibPanelEl.style.boxSizing="border-box";
-    fibPanelEl.style.maxHeight=Math.max(80,wrapEl.clientHeight-top-8)+"px";
+    const bottom=window.matchMedia("(max-width:600px)").matches&&!$("draw-tools")?.classList.contains("collapsed")?64:8;
+    fibPanelEl.style.maxHeight=Math.max(32,wrapEl.clientHeight-top-bottom)+"px";
     fibPanelEl.style.overflowY="auto";
   }
 
