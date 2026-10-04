@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """TRX Confluence Signal Engine — Web Dashboard (Flask + Background Engine)"""
 import csv
+import copy
 import gzip
 import json
 import os
@@ -322,7 +323,10 @@ def _enrich_strat_daily_report(report):
 
 
 def _strat_daily_snapshot(day=None, days=7):
-    today = day or datetime.now().strftime("%Y-%m-%d")
+    with LOCK:
+        rows = STATE.get("history") or []
+        issue_day = _strat_day_from_issue(rows[-1]["issue"]) if rows else None
+    today = day or issue_day or datetime.now().strftime("%Y-%m-%d")
     with strat_daily_lock:
         keys = sorted(strat_daily_reports.keys(), reverse=True)
         if today not in strat_daily_reports:
@@ -506,7 +510,7 @@ def parse_history(data_list):
                     "block_time": block_time,
                     "hm": block_time[11:16] if len(block_time) >= 16 else "",
                 })
-            except ValueError:
+            except (ValueError, TypeError, OverflowError):
                 continue
     parsed.sort(key=lambda x: x["issue_int"])
     return parsed
@@ -997,12 +1001,16 @@ def engine_loop():
                 headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
             if res.status_code == 200:
                 data = res.json()
-                data_list = data if isinstance(data, list) else data.get("data", [])
+                data_list = data if isinstance(data, list) else data.get("data", []) if isinstance(data, dict) else []
+                if not isinstance(data_list, list):
+                    raise ValueError("invalid feed payload")
                 # boot full snapshot: upstream ships ~187k rows (~4.5MB) —
                 # parse only the newest MAX_FULL_ROWS slice (RAM safety on 512MB hosts)
                 if not have_full and len(data_list) > MAX_FULL_ROWS:
                     data_list = newest_raw_slice(data_list, MAX_FULL_ROWS)
                 parsed = parse_history(data_list)
+                if not parsed:
+                    raise ValueError("feed contains no valid rounds")
                 if not have_full and len(parsed) > MAX_FULL_ROWS:
                     parsed = parsed[-MAX_FULL_ROWS:]
 
@@ -1025,6 +1033,12 @@ def engine_loop():
                     if len(all_rows) > MAX_FULL_ROWS:
                         all_rows = all_rows[-MAX_FULL_ROWS:]
                     err_streak = 0
+                    # A transient error may recover before another issue arrives.
+                    # Restore transport state without replaying the same round.
+                    with LOCK:
+                        if STATE.get("history"):
+                            STATE["connected"] = True
+                            STATE["error"] = None
                     received_at = time.monotonic()
                     for parsed_history in completed_prefixes(all_rows, last_issue):
                         is_latest = parsed_history[-1]["issue"] == all_rows[-1]["issue"]
@@ -1462,6 +1476,8 @@ def compress_response(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
     if (response.mimetype == "application/json"
             and response.status_code == 200
             and "gzip" in request.headers.get("Accept-Encoding", "")):
@@ -1477,7 +1493,7 @@ def compress_response(response):
 @app.route("/api/state")
 def api_state():
     with LOCK:
-        snap = {k: v for k, v in STATE.items() if k != "full_history"}
+        snap = copy.deepcopy({k: v for k, v in STATE.items() if k != "full_history"})
         snap["history"] = list(STATE["history"])
         snap["strat_log"] = list(STATE.get("strat_log") or [])[:10]
         # TRADE LOG panel removed — ship a small tail for future use only
@@ -1487,7 +1503,29 @@ def api_state():
         # The legacy timestamp is server-local. Send an explicit UTC value for
         # display so a viewer never has to guess the server's timezone.
         snap["last_update_utc"] = datetime.fromisoformat(updated).astimezone(timezone.utc).isoformat() if updated else None
+        health = public_feed_health(STATE)
+    snap["feed_health"] = health
+    if health["status"] not in ("LIVE", "DEGRADED"):
+        snap["pending"] = None
+        snap["strat_pending"] = None
+        snap["strat"] = {**(snap.get("strat") or {}), "pending": None}
     return jsonify(snap)
+
+
+def public_feed_health(state):
+    """Age public reads independently of the publisher; never mutate an engine."""
+    health = dict(state.get("feed_health") or {})
+    received = state.get("last_result_received_mono")
+    age = max(0, time.monotonic() - received) if received is not None else None
+    if age is not None:
+        age += max(0, state.get("feed_delay") or 0)
+    status = health.get("status") or ("LIVE" if state.get("connected") else "OFFLINE")
+    if not state.get("connected"):
+        status = "OFFLINE"
+    elif age is None or age >= globals().get("FEED_STALE_SEC", 80):
+        status = "STALE"
+    health.update(status=status, result_age_sec=round(age, 1) if age is not None else None)
+    return health
 
 
 @app.route("/api/history")
@@ -1533,19 +1571,28 @@ def api_telegram_test():
             timeout=10)
         if r.status_code == 200:
             return jsonify({"ok": True})
-        return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {r.text[:100]}"})
+        return jsonify({"ok": False, "error": f"Telegram HTTP {r.status_code}"})
     except requests.RequestException as e:
-        return jsonify({"ok": False, "error": str(e)[:100]})
+        return jsonify({"ok": False, "error": "Telegram unavailable: " + type(e).__name__})
 
 
 @app.route("/api/12step/daily-report")
 def api_strat_daily_report():
     days = max(1, min(request.args.get("days", default=7, type=int), 31))
     date = (request.args.get("date") or "").strip() or None
+    if date:
+        try:
+            if datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d") != date:
+                raise ValueError()
+        except ValueError:
+            return jsonify({"error": "invalid report date"}), 400
     current, history = _strat_daily_snapshot(date, days)
     with LOCK:
         st = dict(STATE.get("strat") or {})
         pend = dict(STATE.get("strat_pending") or {}) if STATE.get("strat_pending") else None
+        health = public_feed_health(STATE)
+    if health["status"] not in ("LIVE", "DEGRADED"):
+        pend = None
     tier_idx = max(0, min(int(st.get("tier", 0)), len(STAKE_TIERS) - 1))
     step_idx = max(0, min(int(st.get("step", 0)), len(STAKE_TIERS[tier_idx]) - 1))
     current["engine"] = {
@@ -1553,7 +1600,7 @@ def api_strat_daily_report():
         "step": step_idx + 1,
         "pending": pend,
         "last_result": st.get("last_result"),
-        "status": "ACTIVE" if pend else "WAITING",
+        "status": health["status"] if health["status"] not in ("LIVE", "DEGRADED") else "ACTIVE" if pend else "WAITING",
         "next_eligible_stake": int(STAKE_TIERS[tier_idx][step_idx]),
         "signals_session": int(st.get("signals", 0)),
         "busts_session": int(st.get("busts", 0)),

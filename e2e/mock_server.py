@@ -163,7 +163,7 @@ def api_l1_capital():
             "version": "1.1",
             "pending": {
                 "target": "BIG",
-                "issue": "20260920103019999",
+                "issue": str(int(ROWS[-1]["issue"]) + 1),
                 "stake": 6250,
                 "tier": 2,
                 "step": 1,
@@ -209,3 +209,4 @@ def generic_api(_path):
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=4173, debug=False, use_reloader=False)
+

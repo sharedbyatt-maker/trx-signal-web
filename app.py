@@ -254,7 +254,7 @@ def api_health():
         error = core.STATE.get("error")
         last_update = core.STATE.get("last_update")
         hist_meta = dict(core.STATE.get("hist_meta") or {})
-        feed_health = dict(core.STATE.get("feed_health") or {})
+        feed_health = core.public_feed_health(core.STATE)
         history_count = len(core.STATE.get("history") or [])
         full_history_count = len(core.STATE.get("full_history") or [])
     last_request = fh.get("last_request") or 0.0
@@ -285,6 +285,7 @@ def api_health():
         "feed": {
             "last_issue": fh.get("last_issue") or feed_health.get("last_issue"),
             "seconds_since_advance": advance_age,
+            "result_age_sec": feed_health.get("result_age_sec"),
             "seconds_since_request": request_age,
             "last_latency_ms": fh.get("last_latency_ms"),
             "last_status_code": fh.get("last_status_code"),

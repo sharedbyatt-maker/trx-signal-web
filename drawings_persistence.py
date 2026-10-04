@@ -86,7 +86,7 @@ def _sanitize_drawings(value):
             color = "#2962ff"
         try:
             width = max(1, min(4, int(row.get("width") or 2)))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             width = 2
         style = str(row.get("style") or "solid")
         if style not in _ALLOWED_STYLES:
@@ -318,10 +318,12 @@ def install_drawings_persistence(app):
         if request.content_length and request.content_length > _MAX_BODY_BYTES * 2:
             return jsonify({"ok": False, "error": "payload too large"}), 413
         body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "JSON object required"}), 400
         try:
             expected = int(body.get("expected_revision"))
             state, conflict = store.write(body.get("drawings", []), expected)
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         if conflict is not None:
             return jsonify({"ok": False, "error": "revision conflict", "revision": conflict["revision"], "updated_at": conflict["updated_at"]}), 409
@@ -340,10 +342,12 @@ def install_drawings_persistence(app):
         if err:
             return err
         body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "JSON object required"}), 400
         try:
             revision = int(body.get("revision"))
             expected = int(body.get("expected_revision"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return jsonify({"ok": False, "error": "invalid revision"}), 400
         status, data = store.restore_backup(revision, expected)
         if status == "missing":

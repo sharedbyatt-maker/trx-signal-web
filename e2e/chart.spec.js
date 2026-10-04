@@ -142,7 +142,7 @@ test('L1 CAPITAL card and focus status render without Robust remnants', async ({
   await expect(card).toBeVisible();
   await expect(page.locator('#focus-l1')).toContainText('L1 CAPITAL');
   await expect(page.locator('#l1-status')).toHaveText('BIG');
-  await expect(page.locator('#l1-target-issue')).toContainText('03019999');
+  await expect(page.locator('#l1-target-issue')).toContainText('00000361');
   await expect(page.locator('#l1-stake')).toHaveText('6,250 MMK');
   await expect(page.locator('#l1-tier')).toHaveText('T2');
   await expect(page.locator('#l1-step')).toHaveText('S1');
@@ -289,7 +289,7 @@ test('L1 clears target stake and focus status when feed becomes stale', async ({
   await page.route('**/api/l1-capital', async route => {
     await route.fulfill({json: stale
       ? {ready: false, stale: true, feed_status: 'STALE', pending: null}
-      : {ready: true, pending: {target: 'BIG', issue: '20261002103010700', stake: 6250, tier: 2, step: 1}, trades: []}});
+      : {ready: true, pending: {target: 'BIG', issue: '20260913000000361', stake: 6250, tier: 2, step: 1}, trades: []}});
   });
   await page.goto('/');
   await expect(page.locator('#l1-stake')).toHaveText('6,250 MMK');
@@ -306,7 +306,7 @@ test('L1 clears actionable display on API network failure and recovers', async (
   let fail = false;
   await page.route('**/api/l1-capital', async route => {
     if (fail) return route.abort();
-    await route.fulfill({json: {ready: true, pending: {target: 'SMALL', issue: '123', stake: 500, tier: 1, step: 1}, trades: []}});
+    await route.fulfill({json: {ready: true, pending: {target: 'SMALL', issue: '20260913000000361', stake: 500, tier: 1, step: 1}, trades: []}});
   });
   await page.goto('/');
   await expect(page.locator('#l1-status')).toHaveText('SMALL');

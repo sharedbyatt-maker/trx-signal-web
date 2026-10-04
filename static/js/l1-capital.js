@@ -15,16 +15,17 @@
     el.classList.toggle("is-observe", value !== "TRADE ALLOWED");
   }
 
-  function render(x) {
-    window.TRXContext?.onL1(x);
-    const p = x && x.pending;
-    const ready = !!(x && x.ready);
+  let lastSnapshot = null;
+  function render(x, received = true) {
+    if (received) { lastSnapshot = x; window.TRXContext?.onL1(x); }
+    const p = window.TRXContext?.isValidTarget(x?.pending) ? x.pending : null;
+    const ready = !!(x && x.ready && window.TRXContext?.isL1Ready());
     const status = $("l1-status");
     const focus = $("focus-l1");
     $("l1-signal-hero")?.classList.toggle("has-target", ready && !!p);
 
     if (!ready) {
-      const label = x && x.stale ? (x.feed_status || "STALE") : "WAITING";
+      const label = x && x.stale ? (x.feed_status || "STALE") : x?.ready ? "SYNCING" : "WAITING";
       if (status) { status.textContent = label; setState(status, "waiting"); }
       if ($("l1-pending")) $("l1-pending").textContent = label;
       ["l1-stake", "l1-tier", "l1-step"].forEach(id => { if ($(id)) $(id).textContent = "—"; });
@@ -117,7 +118,9 @@
     try {
       const r = await fetch("/api/l1-capital", {cache: "no-store", signal: controller.signal});
       if (!r.ok) throw new Error("HTTP " + r.status);
-      render(await r.json());
+      const x = await r.json();
+      if (!x || typeof x !== "object" || Array.isArray(x)) throw new Error("Invalid L1 response");
+      render(x);
     } catch (_) {
       render({ready: false, stale: true, feed_status: "OFFLINE"});
     } finally {
@@ -128,4 +131,5 @@
 
   refresh();
   setInterval(refresh, 1000);
+  setInterval(() => { if (lastSnapshot) render(lastSnapshot, false); }, 1000);
 })();
