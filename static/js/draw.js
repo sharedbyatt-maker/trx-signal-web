@@ -65,7 +65,7 @@ window.TRXDraw = (() => {
   function defaults(d) {
     return {
       ...d,
-      width: Math.max(1, Math.min(4, Number(d.width || 2))),
+      width: Number.isFinite(Number(d.width)) ? Math.max(1, Math.min(4, Number(d.width || 2))) : 2,
       style: ["solid", "dashed", "dotted"].includes(d.style) ? d.style : "solid",
       locked: !!d.locked,
       hidden: !!d.hidden,
@@ -74,7 +74,7 @@ window.TRXDraw = (() => {
       fibLevels: d.type === "fib" ? normalizeFibLevels(d.fibLevels) : d.fibLevels,
       fibReverse: d.type === "fib" ? !!d.fibReverse : false,
       fibLabelSide: d.type === "fib" && d.fibLabelSide === "right" ? "right" : "left",
-      fibFill: d.type === "fib" ? Math.max(0, Math.min(0.25, Number(d.fibFill ?? 0.06))) : 0,
+      fibFill: d.type === "fib" ? (Number.isFinite(Number(d.fibFill ?? .06)) ? Math.max(0, Math.min(0.25, Number(d.fibFill ?? .06))) : .06) : 0,
       fibExtendRight: d.type === "fib" ? !!d.fibExtendRight : false,
     };
   }
@@ -113,7 +113,7 @@ window.TRXDraw = (() => {
       const need = needPoints(row.type);
       if (!Array.isArray(row.points) || row.points.length < need || row.points.length > 2) throw new Error("Invalid drawing points");
       const points = row.points.slice(0, need).map((pt) => {
-        if (!pt || !Number.isFinite(Number(pt.p))) throw new Error("Invalid drawing point");
+        if (!pt || pt.p == null || typeof pt.p === "boolean" || !Number.isFinite(Number(pt.p))) throw new Error("Invalid drawing point");
         const t = pt.t == null ? null : Number(pt.t);
         if (t != null && (!Number.isInteger(t) || t < 1 || t > 10000000)) throw new Error("Invalid drawing time");
         const offset = pt.offset == null ? null : Number(pt.offset);
@@ -281,13 +281,15 @@ window.TRXDraw = (() => {
 
   function toXY(pt) {
     if (!api || !pt || pt.t == null || pt.t < 1) return null;
-    const x = api.chart.timeScale().timeToCoordinate(pt.t);
+    const scale=api.chart.timeScale();
+    const x = scale.timeToCoordinate(pt.t) ?? (pt.t>api.labels.length ? scale.logicalToCoordinate(pt.t-1) : null);
     const y = api.series.priceToCoordinate(pt.p);
     return x == null || y == null ? null : { x, y };
   }
   function xOnly(pt) {
     if (!api || !pt || pt.t == null || pt.t < 1) return null;
-    const x = api.chart.timeScale().timeToCoordinate(pt.t);
+    const scale=api.chart.timeScale();
+    const x = scale.timeToCoordinate(pt.t) ?? (pt.t>api.labels.length ? scale.logicalToCoordinate(pt.t-1) : null);
     return x == null ? null : { x, y: 0 };
   }
   function nearestOHLC(t, rawP, y) {
@@ -308,7 +310,8 @@ window.TRXDraw = (() => {
     if (!api || !api.labels || !api.labels.length) return null;
     const n = api.labels.length;
     const ct = api.chart.timeScale().coordinateToTime(x);
-    let t = (ct == null || isNaN(ct)) ? n : Math.round(ct);
+    const logical = ct == null ? api.chart.timeScale().coordinateToLogical(x) : null;
+    let t = ct != null && Number.isFinite(Number(ct)) ? Math.round(ct) : logical != null ? Math.round(logical)+1 : n;
     t = Math.max(1, Math.min(n + 12, t));
     let p = api.series.coordinateToPrice(y);
     if (p == null || isNaN(p)) return null;
@@ -475,7 +478,7 @@ window.TRXDraw = (() => {
 
   function commit(type,pts,c) {
     const d=defaults({id:uid(),type,color:c,points:pts,width:2,style:"solid",locked:false,hidden:false,extendLeft:false,extendRight:type==="ray",fibLevels:type==="fib"?FIB_LEVELS.map(value=>({value,enabled:true})):undefined});
-    d.points.forEach(p=>{p.lb=labelOf(p.t)||p.lb;}); drawings.push(d); selectedId=d.id; save(); updatePanel();
+    d.points.forEach(p=>{p.lb=labelOf(p.t)||p.lb;if(!p.lb&&p.t>api.fulls.length){p.anchorLb=api.fulls.at(-1);p.offset=p.t-api.fulls.length;}}); drawings.push(d); selectedId=d.id; save(); updatePanel();
   }
   function undo(){ if(placing){placing=null;redraw();return;} drawings.pop(); selectedId=null; save(); updatePanel(); redraw(); }
   function clearAll(){ drawings=[]; placing=null; selectedId=null; drag=null; save(); updatePanel(); redraw(); }
@@ -490,7 +493,7 @@ window.TRXDraw = (() => {
     if(!d||d.type!=="fib"||!Number.isFinite(Number(value)))return;
     const v=Number(value); d.fibLevels=normalizeFibLevels(d.fibLevels);
     const found=d.fibLevels.find(x=>Math.abs(x.value-v)<1e-9);
-    if(found) found.enabled=enabled; else d.fibLevels.push({value:v,enabled});
+    if(found) found.enabled=enabled; else if(d.fibLevels.length<64)d.fibLevels.push({value:v,enabled});
     d.fibLevels=normalizeFibLevels(d.fibLevels);
   }
   function setFibLevelEnabled(value,enabled){const d=selected();if(!d||d.type!=="fib")return;ensureFibLevel(d,value,enabled);save();updateFibPanel();redraw();}
@@ -521,15 +524,25 @@ window.TRXDraw = (() => {
     const customs=levels.filter(x=>!fixed.some(v=>Math.abs(v-x.value)<1e-9));
     const customRow=document.createElement("div");customRow.style.cssText="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px";
     customs.forEach((it)=>{const chip=fibMiniButton(`${it.enabled?"✓":"○"} ${it.value} ×`,`Toggle / remove custom level`);chip.addEventListener("click",(ev)=>{if(ev.shiftKey)removeCustomFibLevel(it.value);else setFibLevelEnabled(it.value,!it.enabled);});customRow.appendChild(chip);});fibPanelEl.appendChild(customRow);
-    const addRow=document.createElement("div");addRow.style.cssText="display:flex;gap:5px;margin-bottom:8px";const inp=document.createElement("input");inp.type="number";inp.step="0.001";inp.placeholder="custom e.g. 2.618";inp.style.cssText="width:145px;height:25px;background:#11151d;color:#fff;border:1px solid #363a45;border-radius:4px;padding:0 5px";const add=fibMiniButton("+ ADD","Add custom Fib level");add.addEventListener("click",()=>{const v=Number(inp.value);if(Number.isFinite(v)){ensureFibLevel(d,v,true);save();updateFibPanel();redraw();}});addRow.append(inp,add);fibPanelEl.appendChild(addRow);
+    const addRow=document.createElement("div");addRow.style.cssText="display:flex;gap:5px;margin-bottom:8px";const inp=document.createElement("input");inp.type="number";inp.step="0.001";inp.placeholder="custom e.g. 2.618";inp.style.cssText="width:145px;height:25px;background:#11151d;color:#fff;border:1px solid #363a45;border-radius:4px;padding:0 5px";const add=fibMiniButton("+ ADD","Add custom Fib level");add.addEventListener("click",()=>{const v=Number(inp.value);if(inp.value.trim()&&Number.isFinite(v)){ensureFibLevel(d,v,true);save();updateFibPanel();redraw();}});addRow.append(inp,add);fibPanelEl.appendChild(addRow);
     const opts=document.createElement("div");opts.style.cssText="display:flex;flex-wrap:wrap;gap:5px;align-items:center";
     const rev=fibMiniButton(d.fibReverse?"REVERSE ✓":"REVERSE","Reverse Fib anchors");rev.addEventListener("click",()=>setFibOption("reverse",!d.fibReverse));
     const side=fibMiniButton(`LABEL ${d.fibLabelSide==="right"?"RIGHT":"LEFT"}`,"Toggle label side");side.addEventListener("click",()=>setFibOption("label",d.fibLabelSide==="right"?"left":"right"));
     const ext=fibMiniButton(d.fibExtendRight?"EXT RIGHT ✓":"EXT RIGHT","Extend Fib levels to right edge");ext.addEventListener("click",()=>setFibOption("extendRight",!d.fibExtendRight));
-    const fill=document.createElement("input");fill.type="range";fill.min="0";fill.max="0.25";fill.step="0.01";fill.value=String(d.fibFill??.06);fill.title="Background opacity";fill.addEventListener("input",()=>setFibOption("fill",fill.value));
+    const fill=document.createElement("input");fill.type="range";fill.min="0";fill.max="0.25";fill.step="0.01";fill.value=String(d.fibFill??.06);fill.title="Background opacity";fill.addEventListener("input",()=>{d.fibFill=Number(fill.value);fillLab.textContent=`FILL ${Math.round(d.fibFill*100)}%`;save();redraw();});
     const fillLab=document.createElement("span");fillLab.textContent=`FILL ${Math.round((d.fibFill||0)*100)}%`;
     const close=fibMiniButton("DONE","Close Fib settings");close.addEventListener("click",()=>{fibPanelEl.style.display="none";});
-    opts.append(rev,side,ext,fillLab,fill,close);fibPanelEl.appendChild(opts);
+    opts.append(rev,side,ext,fillLab,fill,close);fibPanelEl.appendChild(opts);layoutFibPanel();
+  }
+
+  function layoutFibPanel(){
+    if(!fibPanelEl||!panelEl||!wrapEl)return;
+    const top=panelEl.offsetTop+panelEl.offsetHeight+8;
+    fibPanelEl.style.top=top+"px";
+    fibPanelEl.style.minWidth="0";
+    fibPanelEl.style.boxSizing="border-box";
+    fibPanelEl.style.maxHeight=Math.max(80,wrapEl.clientHeight-top-8)+"px";
+    fibPanelEl.style.overflowY="auto";
   }
 
   function panelButton(text,id,title){ const b=document.createElement("button"); b.type="button"; b.id=id; b.textContent=text; b.title=title||text; b.style.cssText="height:26px;padding:0 7px;border:1px solid #363a45;border-radius:4px;background:#1e222d;color:#d1d4dc;font:11px Consolas,monospace;cursor:pointer"; return b; }
@@ -551,6 +564,7 @@ window.TRXDraw = (() => {
     if(!(d&&d.type==="fib")&&fibPanelEl)fibPanelEl.style.display="none";
     active(q("dt-v2-left"),!!(d&&d.extendLeft)); active(q("dt-v2-right"),!!(d&&(d.type==="ray"||d.extendRight))); active(q("dt-v2-lock"),!!(d&&d.locked)); active(q("dt-v2-mag"),magnet); const sh=q("dt-v2-show");if(sh)sh.style.display=hidden?"inline-block":"none";
     if(d)setHint(`${d.type.toUpperCase()} selected${d.locked?" · LOCKED":""} · drag handles to edit endpoints · Magnet ${magnet?"ON":"OFF"}`); else setHint(HINTS[tool]||HINTS.cursor);
+    layoutFibPanel();
   }
 
   function localXY(ev){const r=canvas.getBoundingClientRect();return{x:ev.clientX-r.left,y:ev.clientY-r.top};}
@@ -558,7 +572,7 @@ window.TRXDraw = (() => {
     downXY={x,y};
     if(tool==="cursor"){
       const hh=handleHit(x,y);
-      if(hh){const d=selected();drag={id:hh.id,mode:"handle",index:hh.index};lockChart(true);ev.preventDefault();ev.stopPropagation();redraw();return;}
+      if(hh){const d=selected();drag={id:hh.id,mode:"handle",index:hh.index,origData:JSON.parse(JSON.stringify(d.points))};lockChart(true);ev.preventDefault();ev.stopPropagation();redraw();return;}
       const id=hitTest(x,y);
       if(id){selectedId=id;const d=selected();if(d&&!d.locked){const ptsPx=d.points.map(p=>d.type==="vline"?xOnly(p):toXY(p));if(ptsPx.every(Boolean)){drag={id,mode:"move",start:{x,y},origPx:ptsPx,origData:JSON.parse(JSON.stringify(d.points))};lockChart(true);ev.preventDefault();}}ev.stopPropagation();updatePanel();redraw();}
       else if(selectedId){selectedId=null;updatePanel();redraw();}
@@ -587,11 +601,14 @@ window.TRXDraw = (() => {
   }
 
   function bindEvents(){
-    wrapEl.addEventListener("pointerdown",ev=>{if(ev.button!==0)return;const p=localXY(ev);if(tool!=="cursor"||handleHit(p.x,p.y)||hitTest(p.x,p.y)){try{wrapEl.setPointerCapture(ev.pointerId);}catch(_e){} ev.stopPropagation();}onDown(p.x,p.y,ev);},true);
+    const control=ev=>!!ev.target.closest?.('#draw-v2-panel,#fib-v2-panel,button,input,select,textarea,a');
+    const clearMove=()=>{if(moveFrame)cancelAnimationFrame(moveFrame);moveFrame=0;pendingMove=null;};
+    wrapEl.addEventListener("pointerdown",ev=>{if(ev.button!==0||control(ev))return;const p=localXY(ev);if(tool!=="cursor"||handleHit(p.x,p.y)||hitTest(p.x,p.y)){try{wrapEl.setPointerCapture(ev.pointerId);}catch(_e){} ev.stopPropagation();}onDown(p.x,p.y,ev);},true);
     // Coalesce high-frequency mouse/stylus events to one drawing update per
     // animation frame. This removes redundant coordinate conversion + full
     // overlay redraws while preserving the latest pointer position.
     wrapEl.addEventListener("pointermove",ev=>{
+      if(control(ev)&&!drag)return;
       pendingMove=localXY(ev);
       if(moveFrame)return;
       moveFrame=requestAnimationFrame(()=>{
@@ -600,19 +617,20 @@ window.TRXDraw = (() => {
         if(p)onMove(p.x,p.y);
       });
     }, {passive:true});
-    const finish=(ev)=>{const p=localXY(ev);if(tool==="cursor"&&drag)ev.stopPropagation();onUp(p.x,p.y);try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}};
-    wrapEl.addEventListener("pointerup",finish,true);wrapEl.addEventListener("pointercancel",ev=>{drag=null;downXY=null;placing=null;placeStage=0;lockChart(false);try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}redraw();},true);
-    wrapEl.addEventListener("pointerleave",()=>{hover=null;});wrapEl.addEventListener("contextmenu",ev=>{if(tool!=="cursor"){ev.preventDefault();setTool("cursor");}});
+    const finish=(ev)=>{if(control(ev)&&!drag)return;clearMove();const p=localXY(ev);if(tool==="cursor"&&drag){ev.stopPropagation();onMove(p.x,p.y);}onUp(p.x,p.y);try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}};
+    wrapEl.addEventListener("pointerup",finish,true);wrapEl.addEventListener("pointercancel",ev=>{clearMove();if(drag){const d=selected();if(d&&drag.origData)d.points=drag.origData;}drag=null;downXY=null;placing=null;placeStage=0;setTool("cursor");try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}redraw();},true);
+    wrapEl.addEventListener("pointerleave",()=>{if(!drag){clearMove();hover=null;redraw();}});wrapEl.addEventListener("contextmenu",ev=>{if(tool!=="cursor"){ev.preventDefault();setTool("cursor");}});
     document.querySelectorAll(".dt-btn[data-tool]").forEach(btn=>btn.addEventListener("click",()=>setTool(btn.dataset.tool)));
     document.querySelectorAll(".dt-swatch").forEach(sw=>sw.addEventListener("click",()=>{color=sw.dataset.color;document.querySelectorAll(".dt-swatch").forEach(s=>s.classList.toggle("active",s.dataset.color===color));const d=selected();if(d){d.color=color;save();redraw();}if(placing)placing.color=color;}));
     const bind=(id,fn)=>{const el=$(id);if(el)el.addEventListener("click",fn);};bind("dt-undo",undo);bind("dt-clear",clearAll);bind("dt-del",deleteSelected);
     document.addEventListener("keydown",ev=>{if(/input|textarea|select/i.test((document.activeElement||{}).tagName||""))return;if((ev.key==="Delete"||ev.key==="Backspace")&&selectedId&&!drag){ev.preventDefault();deleteSelected();}if(ev.key==="Escape")setTool("cursor");if((ev.key==="z"||ev.key==="Z")&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();undo();}const hotkeys={t:"trend",r:"ray",h:"hline",v:"vline",b:"rect",f:"fib"};const k=ev.key.toLowerCase();if(hotkeys[k]&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey)setTool(hotkeys[k]);});
-    new ResizeObserver(resize).observe(wrapEl);
+    new ResizeObserver(()=>{resize();layoutFibPanel();}).observe(wrapEl);
+    new ResizeObserver(layoutFibPanel).observe(panelEl);
   }
 
   function onData(next){
     const newLabels=next.labels||[];const map=next.labelMap instanceof Map&&next.labelMap.size?next.labelMap:(next.fulls&&next.fulls.length?new Map(next.fulls.map((lb,i)=>[lb,i+1]).filter(x=>x[0])):new Map(newLabels.map((lb,i)=>[lb,i+1])));
-    if(drawings.length)drawings.forEach(d=>d.points.forEach(p=>{if(p.lb!=null)p.t=map.has(p.lb)?map.get(p.lb):null;else if(p.t==null||p.t<1)p.t=null;}));
+    if(drawings.length)drawings.forEach(d=>d.points.forEach(p=>{if(p.lb!=null)p.t=map.has(p.lb)?map.get(p.lb):null;else if(p.anchorLb!=null)p.t=map.has(p.anchorLb)?map.get(p.anchorLb)+Number(p.offset||0):null;else if(p.t==null||p.t<1)p.t=null;}));
     api=next;if(!restored)restore();updatePanel();redraw();
   }
   function init(){

@@ -8,7 +8,7 @@ def test_pointer_moves_are_animation_frame_coalesced():
     assert 'pendingMove=localXY(ev)' in SRC
 
 def test_drag_locks_native_chart_interaction():
-    assert 'mode:"handle",index:hh.index};lockChart(true)' in SRC
+    assert 'mode:"handle",index:hh.index,origData:JSON.parse(JSON.stringify(d.points))};lockChart(true)' in SRC
     assert 'origData:JSON.parse(JSON.stringify(d.points))};lockChart(true)' in SRC
     assert 'drag=null;downXY=null;lockChart(false)' in SRC
 
@@ -17,5 +17,4 @@ def test_one_point_tools_have_live_hover_preview():
     assert 'id:"_hover"' in SRC
 
 def test_new_drawing_asset_is_cache_busted():
-    assert "js/draw.js') }}?v=45" in HTML
-
+    assert "js/draw.js') }}?v=46" in HTML
