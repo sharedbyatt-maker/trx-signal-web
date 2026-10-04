@@ -45,7 +45,7 @@ window.TRXChart = (() => {
   let viewMode = "candles";   // candles | line
   let opts = {
     ema: true, sma: false, bb: false, rsi: true, sig: false,
-    pat: false, hss: false, sr: false, tl: false, macd: false, stoch: false,
+    pat: false, sr: false, tl: false, hss: false, macd: false, stoch: false,
   };
 
   /* S/R level cache — levels must NOT drift on every data tick */
@@ -863,7 +863,10 @@ window.TRXChart = (() => {
   }
 
   function srLevels(bars, maxLevels = 6, tfMinutes = group) {
-    const lim = bars.slice(-structuralLookbackBars(bars.length, tfMinutes));
+    const lookback = tfMinutes === group
+      ? structuralLookbackBars(bars.length)
+      : structuralLookbackBars(bars.length, tfMinutes);
+    const lim = bars.slice(-lookback);
     if (lim.length < 25) return [];
     const close = lim[lim.length - 1].c;
     const tol = srAdaptiveTolerance(lim);
