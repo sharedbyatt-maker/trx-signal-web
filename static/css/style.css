@@ -328,6 +328,7 @@ main { padding-top:12px; }
 
 /* Context detail stays below the wide chart and collapses cleanly on phones. */
 .insight-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.chart-toggle-note { color:#8fa8c8; font-size:9px; margin-left:2px; }
 .insight-heading h3 { font-size:11px; letter-spacing:.6px; margin:0; color:#bbcee8; }
 .insight-heading>span { color:#98afcd; font-size:10px; }
 .setup-check { min-width:0; padding:12px; background:#0c1726; border:1px solid #263f5c; border-radius:7px; }
