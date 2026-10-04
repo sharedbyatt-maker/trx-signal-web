@@ -86,6 +86,22 @@ test('Fibonacci settings remain clickable and persist every option',async({page}
   await page.reload();await expect.poll(async()=> (await debug(page)).count).toBe(1);
   expect((await rows(page))[0]).toEqual(before);
 });
+test('price-axis scaling redraws drawing geometry while preserving its saved price',async({page})=>{
+  await ready(page);await create(page,'hline');
+  await page.locator('[data-color="#e0e3eb"]').click();
+  const original=await rows(page);
+  const lineY=()=>page.locator('.draw-overlay').evaluate(c=>{
+    const x=Math.round(6*devicePixelRatio),pixels=c.getContext('2d').getImageData(x,0,1,c.height).data,ys=[];
+    for(let y=0;y<c.height;y++){const i=y*4;if(pixels[i]>180&&pixels[i+1]>180&&pixels[i+2]>180&&pixels[i+3]>60)ys.push(y);}
+    return ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:null;
+  });
+  const before=await lineY();expect(before).not.toBe(null);
+  const b=await page.locator('#tv-chart').boundingBox(),x=b.x+b.width-18;
+  await page.mouse.move(x,b.y+b.height*.35);await page.mouse.down();
+  await page.mouse.move(x,b.y+b.height*.7,{steps:15});await page.mouse.up();
+  await expect.poll(async()=>Math.abs((await lineY())-before)).toBeGreaterThan(2);
+  expect(await rows(page)).toEqual(original);
+});
 test('drawing panel fits a narrow phone without covering its own controls',async({page},info)=>{
   test.skip(!info.project.name.includes('mobile'),'Phone geometry');
   await page.setViewportSize({width:320,height:740});await ready(page);await create(page,'fib',true);

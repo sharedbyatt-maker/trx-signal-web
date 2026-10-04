@@ -594,6 +594,7 @@ window.TRXDraw = (() => {
     }
     if(placing&&placing.points.length===1)redraw();
     else if(tool==="hline"||tool==="vline")redraw();
+    else if(tool==="cursor")redraw();
   }
   function finishTwoPoint(pt){placing.points.push({...pt,lb:labelOf(pt.t)});commit(placing.type,placing.points,placing.color);placing=null;placeStage=0;setTool("cursor");redraw();}
   function onUp(x,y){
@@ -621,7 +622,7 @@ window.TRXDraw = (() => {
         if(p)onMove(p.x,p.y);
       });
     }, {passive:true});
-    const finish=(ev)=>{if(control(ev)&&!drag)return;clearMove();const p=localXY(ev);if(tool==="cursor"&&drag){ev.stopPropagation();onMove(p.x,p.y);}onUp(p.x,p.y);try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}};
+    const finish=(ev)=>{if(control(ev)&&!drag)return;clearMove();const p=localXY(ev);if(tool==="cursor"&&drag){ev.stopPropagation();onMove(p.x,p.y);}onUp(p.x,p.y);redraw();try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}};
     wrapEl.addEventListener("pointerup",finish,true);wrapEl.addEventListener("pointercancel",ev=>{clearMove();if(drag){const d=selected();if(d&&drag.origData)d.points=drag.origData;}drag=null;downXY=null;placing=null;placeStage=0;setTool("cursor");try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}redraw();},true);
     wrapEl.addEventListener("pointerleave",()=>{if(!drag){clearMove();hover=null;redraw();}});wrapEl.addEventListener("contextmenu",ev=>{if(tool!=="cursor"){ev.preventDefault();setTool("cursor");}});
     document.querySelectorAll(".dt-btn[data-tool]").forEach(btn=>btn.addEventListener("click",()=>setTool(btn.dataset.tool)));
