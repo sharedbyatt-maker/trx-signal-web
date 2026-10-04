@@ -35,7 +35,7 @@ def _utc_now():
 def _finite(v):
     try:
         return math.isfinite(float(v))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False
 
 
@@ -61,7 +61,7 @@ def _sanitize_drawings(value):
             if t is not None:
                 try:
                     t = int(t)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
                     raise ValueError("invalid point time")
                 if t < 1 or t > 10_000_000:
                     raise ValueError("invalid point time")
@@ -75,7 +75,7 @@ def _sanitize_drawings(value):
             if offset is not None:
                 try:
                     offset = int(offset)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
                     raise ValueError("invalid future offset")
                 if offset < 0 or offset > _MAX_FUTURE_OFFSET:
                     raise ValueError("invalid future offset")

@@ -69,3 +69,27 @@ def test_telegram_error_does_not_expose_bot_token():
     with patch.object(core,'load_tg_config',return_value=('secret-test-token','test-chat',60,40,300)), patch.object(core,'_allow_browser_action',return_value=True), patch.object(core.requests,'post',side_effect=core.requests.ConnectionError('https://api.telegram.org/botsecret-test-token/sendMessage')):
         data=core.app.test_client().post('/api/telegram-test').get_json()
         assert 'secret-test-token' not in str(data)
+
+
+def test_nonfinite_drawing_coordinates_return_validation_errors():
+    client=core.app.test_client()
+    with patch.dict(os.environ,{'DRAWINGS_SYNC_TOKEN':'test-local-only'}):
+        for point in [{'p':5,'t':float('inf')},{'p':5,'offset':float('inf')},{'p':10**400}]:
+            body={'expected_revision':0,'drawings':[{'type':'hline','points':[point]}]}
+            assert client.put('/api/drawings',json=body,headers={'X-Drawings-Token':'test-local-only'}).status_code==400
+
+
+def test_successful_same_round_recovers_connection_without_replaying_settlement():
+    # Keep the completed issue fixed across a real engine iteration. A valid tail
+    # should restore connectivity but never re-enter analysis/settlement.
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import pytest
+    state=live_state()
+    with patch.dict(core.STATE,state,clear=True), patch.object(core,'last_issue',state['history'][-1]['issue']), patch.object(core.session,'get',return_value=SimpleNamespace(status_code=200,json=lambda:[{'issueNumber':state['history'][-1]['issue'],'number':5,'blockTime':'2026-10-04 06:30:00'}])), patch.object(core,'analyze_all_in_one',Mock()) as analysis, patch.object(core.time,'sleep',side_effect=SystemExit):
+        core.STATE['connected']=False
+        core.STATE['error']='ReadTimeout'
+        with pytest.raises(SystemExit):core.engine_loop()
+        assert core.STATE['connected'] is True
+        assert core.STATE['error'] is None
+        analysis.assert_not_called()
