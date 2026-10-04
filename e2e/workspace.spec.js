@@ -1,7 +1,6 @@
 const {test,expect}=require('@playwright/test');
 const rows=p=>p.evaluate(()=>JSON.parse(localStorage.getItem('trx_drawings_v3')||'[]'));
 const dbg=p=>p.evaluate(()=>TRXDraw._dbg());
-const study=p=>p.evaluate(()=>{const s=TRXChart.studyInfo();return {...s,rows:s.rows.map(r=>({issue:r.issue,type:r.type})),choices:undefined};});
 async function ready(page){await page.addInitScript(()=>localStorage.setItem('trx_draw_v2_prefs',JSON.stringify({magnet:false})));await page.goto('/');await expect.poll(async()=>(await dbg(page)).apiReady).toBe(true);await page.locator('#dt-toggle-btn').click();}
 async function shape(page,type='hline',touch=false){await page.locator(`[data-tool="${type}"]`).click();await page.locator("#tv-chart").scrollIntoViewIfNeeded();const b=await page.locator('#tv-chart').boundingBox();const a={x:b.x+b.width*.27,y:b.y+b.height*.78},z={x:b.x+b.width*.58,y:b.y+b.height*.58};if(touch){await page.touchscreen.tap(a.x,a.y);if(type==='fib')await page.touchscreen.tap(z.x,z.y);}else{await page.mouse.click(a.x,a.y);if(type==='fib')await page.mouse.click(z.x,z.y);}await expect.poll(async()=>(await dbg(page)).count).toBe(1);return {a,z};}
 test('full undo/redo restores style, deleted object, hidden state and clears redo on a new edit',async({page},info)=>{
@@ -42,7 +41,7 @@ test('compact palette preserves chart space and replaces practice with exclusive
  const before=await page.locator('#tv-chart').boundingBox();
  await page.locator('#dt-toggle-btn').click();const after=await page.locator('#tv-chart').boundingBox();expect(after.height).toBe(before.height);expect(after.y).toBe(before.y);
  await expect(page.locator('#study-toggle,#study-tools,#replay-controls')).toHaveCount(0);
- await page.locator('#dt-options').click();await expect(page.locator('#drawing-options')).toBeVisible();
+ await page.locator('#dt-options').click();await expect(page.locator('#drawing-options')).toBeVisible();await expect(page.getByLabel('Blue drawing color')).toHaveCSS('background-color','rgb(41, 98, 255)');
  await page.locator('#dt-list').click();await expect(page.locator('#drawing-options')).toBeHidden();await expect(page.locator('#drawing-manager')).toBeVisible();
  await page.keyboard.press('Escape');await expect(page.locator('#drawing-manager')).toBeHidden();expect((await dbg(page)).count).toBe(0);
  if(info.project.name.includes('mobile')){await page.setViewportSize({width:320,height:740});await page.locator('#dt-options').click();const b=await page.locator('#drawing-options').boundingBox();expect(b.x).toBeGreaterThanOrEqual(0);expect(b.x+b.width).toBeLessThanOrEqual(320);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
