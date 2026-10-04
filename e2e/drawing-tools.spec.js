@@ -51,6 +51,21 @@ test('object controls preserve selection and apply width, style, extensions, loc
   await page.locator('#dt-v2-show').click();await expect.poll(async()=> (await debug(page)).hidden).toBe(0);
   await page.locator('#dt-undo').click();await expect.poll(async()=> (await rows(page)).length).toBe(1);
 });
+test('two-point tools support drag placement and endpoint edits without shifting the other anchor',async({page})=>{
+  await ready(page);
+  for(const type of ['trend','ray','rect','fib']){
+    await page.locator(`[data-tool="${type}"]`).click();
+    const b=await page.locator('#tv-chart').boundingBox();
+    const a={x:b.x+b.width*.25,y:b.y+b.height*.57},z={x:b.x+b.width*.59,y:b.y+b.height*.78};
+    await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(z.x,z.y,{steps:12});await page.mouse.up();
+    await expect.poll(async()=> (await rows(page)).length).toBe(1);
+    const original=(await rows(page))[0];
+    await page.mouse.move(z.x,z.y);await page.mouse.down();await page.mouse.move(z.x+15,z.y-25,{steps:8});await page.mouse.up();
+    await expect.poll(async()=> (await rows(page))[0].points[1].p).not.toBe(original.points[1].p);
+    expect((await rows(page))[0].points[0]).toEqual(original.points[0]);
+    await page.locator('#dt-del').click();await expect.poll(async()=> (await rows(page)).length).toBe(0);
+  }
+});
 test('Fibonacci settings remain clickable and persist every option',async({page},info)=>{
   await ready(page);await create(page,'fib',info.project.name.includes('mobile'));
   await page.locator('#dt-v2-fib').click();
