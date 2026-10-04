@@ -863,10 +863,9 @@ window.TRXChart = (() => {
   }
 
   function srLevels(bars, maxLevels = 6, tfMinutes = group) {
-    const lookback = tfMinutes === group
-      ? structuralLookbackBars(bars.length)
-      : structuralLookbackBars(bars.length, tfMinutes);
-    const lim = bars.slice(-lookback);
+    const lim = tfMinutes === group
+      ? bars.slice(-structuralLookbackBars(bars.length))
+      : bars.slice(-structuralLookbackBars(bars.length, tfMinutes));
     if (lim.length < 25) return [];
     const close = lim[lim.length - 1].c;
     const tol = srAdaptiveTolerance(lim);
