@@ -85,7 +85,7 @@ test('H/SS support-resistance study can be toggled and is scoped to 5m', async (
   await page.locator('#ind-toggle-btn').click();
   const study = page.locator('#hss-toggle');
   await expect(study).not.toBeChecked();
-  await expect(study).toHaveAttribute('title', /5m grouped BIG\/SMALL candles/);
+  await expect(page.locator('label:has(#hss-toggle)')).toHaveAttribute('title', /5m grouped BIG\/SMALL candles/);
   await study.check();
   await page.locator('.tf-btn[data-g="5"]').click();
   await expect(page.locator('#lg-tf')).toHaveText('5m');
