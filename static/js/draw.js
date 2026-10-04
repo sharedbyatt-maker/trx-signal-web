@@ -535,7 +535,7 @@ window.TRXDraw = (() => {
     if(drawings.length>=MAX_CLIENT_DRAWINGS){setHint("Drawing limit: 500 · export and remove unused drawings");return;}
     const style=activePreset&&activePreset.type===type?activePreset.style:{};
     const d=defaults({id:uid(),type,color:c||color,points:pts,width:2,style:"solid",locked:false,hidden:false,extendLeft:false,extendRight:type==="ray",fibLevels:type==="fib"?FIB_LEVELS.map(value=>({value,enabled:true})):undefined,...clone(style)});
-    if(type==='fib'&&fibMode!=='manual') orientFib(d,fibMode);
+    if(type==='fib'){const mode=fibMode!=='manual'?fibMode:d.fibMode;if(mode==='up'||mode==='down')orientFib(d,mode);}
     d.points.forEach(p=>{p.lb=labelOf(p.t)||p.lb;if(!p.lb&&p.t>api.fulls.length){p.anchorLb=api.fulls.at(-1);p.offset=p.t-api.fulls.length;}}); drawings.push(d); selectedId=d.id; save(); updatePanel();
   }
   function undo(){ if(placing){placing=null;placeStage=0;setTool("cursor");redraw();return;} travelHistory(-1); }

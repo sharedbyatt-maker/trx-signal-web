@@ -88,3 +88,7 @@ test('journal refuses to score a skipped next issue',async({page})=>{
  await ready(page);await page.locator('#study-toggle').click();await page.locator('#journal-toggle').click();await page.locator('#journal-note').fill('Before a gap');await page.locator('#journal-save').click();
  await page.evaluate(()=>TRXChart.appendLatest({issue:'20260913000000362',number:8,type:'BIG',block_time:'2026-09-13 14:01:00'}));await expect(page.locator('.journal-entry')).toContainText('Missing next round');await expect(page.locator('#journal-summary')).toContainText('0 settled');
 });
+test('saved automatic Fibonacci preset reorients a new drawing with reversed anchor order',async({page})=>{
+ await ready(page);await page.getByLabel('New Fibonacci mode').selectOption('up');await shape(page,'fib');await page.locator('#dt-list').click();page.once('dialog',d=>d.accept('Up retracement'));await page.locator('#dt-preset-save').click();await page.locator('#dt-list-close').click();await page.locator('#dt-clear').click();await page.getByLabel('New Fibonacci mode').selectOption('manual');
+ await page.locator('[data-tool="fib"]').click();await page.locator('#tv-chart').scrollIntoViewIfNeeded();const b=await page.locator('#tv-chart').boundingBox();await page.mouse.click(b.x+b.width*.25,b.y+b.height*.55);await page.mouse.click(b.x+b.width*.59,b.y+b.height*.8);await expect.poll(async()=>(await dbg(page)).count).toBe(1);const d=(await rows(page))[0];expect(d.fibMode).toBe('up');expect(d.fibReverse).toBe(d.points[0].p<d.points[1].p);
+});
