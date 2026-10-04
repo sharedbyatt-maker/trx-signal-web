@@ -328,7 +328,7 @@ window.TRXDraw = (() => {
     try{const r=await syncRequest("/api/drawings/backups",{headers:authHeaders()});const j=r.data;if(!r.ok)throw new Error();const list=j.backups||[];if(!list.length){window.alert("No server backups yet");return;}const msg=list.map(x=>`r${x.revision} · ${x.count} drawings · ${x.updated_at||""}`).join("\n");const v=window.prompt(`Restore which revision?\n\n${msg}`);if(v==null)return;const rev=Number(String(v).replace(/^r/i,""));if(!Number.isInteger(rev))return;const rr=await syncRequest("/api/drawings/restore",{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({revision:rev,expected_revision:serverRevision})});const jj=rr.data;if(!rr.ok)throw new Error(jj.error||"restore failed");serverRevision=Number(jj.revision);serverConflict=false;replaceFromRows(jj.drawings||[]);resetHistory();saveLocal();setSyncStatus(`RESTORED → r${serverRevision}`);}catch(e){setSyncStatus("RESTORE FAILED",true);}
   }
   function buildPersistenceToolbar(){
-    const host=$("draw-tools");if(!host)return;const sep=document.createElement("span");sep.className="dt-sep";host.appendChild(sep);
+    const host=$("drawing-options-persistence");if(!host)return;const sep=document.createElement("span");sep.className="dt-sep";host.appendChild(sep);
     const mk=(txt,title,fn)=>{const b=document.createElement("button");b.type="button";b.className="dt-btn txt";b.textContent=txt;b.title=title;b.addEventListener("click",fn);host.appendChild(b);return b;};
     syncControls.push(mk("SYNC","Connect/pull/merge server drawings",()=>pullServer(true)),mk("IMPORT","Import validated drawing backup",importDrawings),mk("BACKUPS","Restore a server backup",restoreBackup),mk("LOCAL BKP","Restore latest local safety backup",restoreLocalSafetyBackup));mk("EXPORT","Download drawing backup",exportDrawings);
     syncStatusEl=document.createElement("span");syncStatusEl.style.cssText="font:10px Consolas,monospace;color:#9aa0aa;padding:0 4px";syncStatusEl.textContent=syncToken()?"SYNC READY":"LOCAL ONLY";host.appendChild(syncStatusEl);
@@ -646,28 +646,34 @@ window.TRXDraw = (() => {
   function persistPresets(){try{localStorage.setItem(PRESET_KEY,JSON.stringify(presets));return true;}catch(_e){setHint('Preset မသိမ်းနိုင်ပါ · browser storage ကို စစ်ပါ');return false;}}
   function buildManager(){
     const host=$('draw-tools');if(!host)return;
-    const list=panelButton('DRAWINGS','dt-list','Drawing list and saved presets');list.className='dt-btn txt';host.append(list, fibModeControl(null));
-    managerEl=document.createElement('section');managerEl.id='drawing-manager';managerEl.className='study-popover';managerEl.hidden=true;managerEl.setAttribute('aria-label','Drawing list and presets');wrapEl.append(managerEl);
-    list.addEventListener('click',()=>{managerEl.hidden=!managerEl.hidden;list.setAttribute('aria-expanded',String(!managerEl.hidden));if(!managerEl.hidden){if(fibPanelEl)fibPanelEl.style.display='none';updateManager();}});
+    const list=panelButton('☷','dt-list','Drawing list and saved presets');list.className='dt-btn txt';list.setAttribute('aria-label','Drawing list and saved presets');host.append(list);$('drawing-options-controls')?.append(fibModeControl(null));
+    const options=$('drawing-options'),toggle=$('dt-options');
+    const closeOptions=()=>{options.hidden=true;toggle.setAttribute('aria-expanded','false');};
+    toggle.addEventListener('click',()=>{const open=options.hidden;closeOptions();if(open){options.hidden=false;toggle.setAttribute('aria-expanded','true');managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';}});
+    $('dt-options-close').addEventListener('click',closeOptions);
+    document.addEventListener('keydown',ev=>{if(ev.key==='Escape'){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');}});
+    $('dt-toggle-btn').addEventListener('click',()=>{if(host.classList.contains('collapsed')){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';setTool('cursor');}});
+    managerEl=document.createElement('section');managerEl.id='drawing-manager';managerEl.className='draw-drawer';managerEl.hidden=true;managerEl.setAttribute('aria-label','Drawing list and presets');wrapEl.append(managerEl);
+    list.addEventListener('click',()=>{managerEl.hidden=!managerEl.hidden;list.setAttribute('aria-expanded',String(!managerEl.hidden));if(!managerEl.hidden){closeOptions();if(fibPanelEl)fibPanelEl.style.display='none';updateManager();}});
     list.setAttribute('aria-expanded','false');
   }
   function updateManager(){
     if(!managerEl||managerEl.hidden)return;
     managerEl.replaceChildren();
-    const header=document.createElement('div');header.className='study-row';const title=document.createElement('strong');title.textContent=practice?'REPLAY DRAWINGS · temporary':'DRAWINGS · '+drawings.length;
+    const header=document.createElement('div');header.className='draw-row';const title=document.createElement('strong');title.textContent=practice?'REPLAY DRAWINGS · temporary':'DRAWINGS · '+drawings.length;
     const close=panelButton('Close','dt-list-close');close.addEventListener('click',()=>{managerEl.hidden=true;$('dt-list').setAttribute('aria-expanded','false');});header.append(title,close);managerEl.append(header);
-    const presetRow=document.createElement('div');presetRow.className='study-row';
+    const presetRow=document.createElement('div');presetRow.className='draw-row';
     const sel=document.createElement('select');sel.id='drawing-preset';sel.setAttribute('aria-label','Saved drawing preset');const empty=document.createElement('option');empty.value='';empty.textContent='Saved presets';sel.append(empty);
     presets.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' · '+p.type;sel.append(o);});sel.value=activePreset?.id||'';
     sel.addEventListener('change',()=>{activePreset=presets.find(p=>p.id===sel.value)||null;const d=selected();if(activePreset&&d&&d.type===activePreset.type){Object.assign(d,clone(activePreset.style));if(d.type==='fib'&&d.fibMode&&d.fibMode!=='manual')orientFib(d,d.fibMode);save();updatePanel();redraw();}});
     const saveButton=panelButton('Save selected preset','dt-preset-save');saveButton.disabled=!selected();saveButton.addEventListener('click',()=>{const d=selected();if(!d)return;const name=window.prompt('Preset name (max 40 characters)');if(!name?.trim())return;const p={id:uid(),name:name.trim().slice(0,40),type:d.type,style:presetStyle(d)};if(presets.length>=20){setHint('Preset limit: 20');return;}presets.push(p);activePreset=p;persistPresets();updateManager();});
     const remove=panelButton('Remove preset','dt-preset-remove');remove.disabled=!activePreset;remove.addEventListener('click',()=>{if(!activePreset)return;presets=presets.filter(p=>p.id!==activePreset.id);activePreset=null;persistPresets();updateManager();});
     presetRow.append(sel,saveButton,remove);managerEl.append(presetRow);
-    const note=document.createElement('p');note.className='study-note';note.textContent='Preset ကို ရွေးပြီး same tool ဖြင့် အသစ်ဆွဲနိုင်သည်။ Local browser only · Export drawings for backup.';managerEl.append(note);
+    const note=document.createElement('p');note.className='draw-note';note.textContent='Preset ကို ရွေးပြီး same tool ဖြင့် အသစ်ဆွဲနိုင်သည်။ Local browser only · Export drawings for backup.';managerEl.append(note);
     const rows=document.createElement('div');rows.className='drawing-list';
     if(!drawings.length){const empty=document.createElement('p');empty.textContent='Drawing မရှိသေးပါ။ Chart ပေါ်မှာ tool တစ်ခုရွေးပြီး ဆွဲပါ။';rows.append(empty);}
     drawings.forEach((d,i)=>{
-      const row=document.createElement('div');row.className='study-row drawing-row';row.dataset.drawingId=d.id;
+      const row=document.createElement('div');row.className='draw-row drawing-row';row.dataset.drawingId=d.id;
       const choose=panelButton(`${d.type.toUpperCase()} ${i+1}${d.hidden?' · hidden':''}${d.locked?' · locked':''}`,'');choose.setAttribute('aria-label',`Select ${d.type} ${i+1}`);choose.addEventListener('click',()=>{selectedId=d.id;setTool('cursor');updatePanel();redraw();updateManager();const ts=d.points.map(p=>p.t).filter(Number.isFinite);if(ts.length){const mid=(Math.min(...ts)+Math.max(...ts))/2;const range=api.chart.timeScale().getVisibleLogicalRange();const half=Math.max(15,((range?.to||100)-(range?.from||0))/2);api.chart.timeScale().setVisibleLogicalRange({from:mid-half,to:mid+half});}});
       const hide=panelButton(d.hidden?'Show':'Hide','');hide.setAttribute('aria-label',`${d.hidden?'Show':'Hide'} ${d.type} ${i+1}`);hide.addEventListener('click',()=>{d.hidden=!d.hidden;save();updatePanel();redraw();});
       const lock=panelButton(d.locked?'Unlock':'Lock','');lock.setAttribute('aria-label',`${d.locked?'Unlock':'Lock'} ${d.type} ${i+1}`);lock.addEventListener('click',()=>{d.locked=!d.locked;save();updatePanel();redraw();});
@@ -709,7 +715,7 @@ window.TRXDraw = (() => {
   }
 
   function bindEvents(){
-    const control=ev=>!!ev.target.closest?.('#draw-v2-panel,#fib-v2-panel,#drawing-manager,button,input,select,textarea,a');
+    const control=ev=>!!ev.target.closest?.('#draw-v2-panel,#fib-v2-panel,#drawing-manager,#drawing-options,#draw-tools,button,input,select,textarea,a');
     const clearMove=()=>{if(moveFrame)cancelAnimationFrame(moveFrame);moveFrame=0;pendingMove=null;};
     wrapEl.addEventListener("pointerdown",ev=>{if(ev.button!==0||control(ev))return;const p=localXY(ev);if(tool!=="cursor"||handleHit(p.x,p.y)||hitTest(p.x,p.y)){try{wrapEl.setPointerCapture(ev.pointerId);}catch(_e){} ev.stopPropagation();}onDown(p.x,p.y,ev);},true);
     // Coalesce high-frequency mouse/stylus events to one drawing update per

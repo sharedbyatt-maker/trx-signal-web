@@ -411,31 +411,31 @@ main { padding-top:12px; }
 }
 
 /* Chart practice: progressive disclosure keeps the default large chart unchanged. */
-.study-tools,.replay-controls { margin:0 14px 8px;padding:10px;border:1px solid #303b50;border-radius:8px;background:#111b2b; }
-.study-tools[hidden],.replay-controls[hidden],.study-popover[hidden],#journal-panel[hidden],.replay-badge[hidden] { display:none !important; }
-.study-row { display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0; }
-.study-row label,.study-field { display:flex;align-items:center;gap:5px;min-width:0; }
-.study-row button,.study-row select,.study-row input:not([type=checkbox]),.study-field select { min-height:30px;padding:4px 7px;border:1px solid #3d4a61;border-radius:5px;color:#dce5f3;background:#182339;max-width:100%; }
-.study-row button:disabled,.dt-btn:disabled { opacity:.45;cursor:default; }
-.study-row button:focus-visible,.study-row input:focus-visible,.study-row select:focus-visible { outline:2px solid #679bff;outline-offset:2px; }
-.study-note { margin:7px 0 0;color:#a8b6cb;font-size:11px;line-height:1.6; }
-.study-popover { position:absolute;z-index:28;top:38px;left:8px;width:min(560px,calc(100% - 16px));max-height:calc(100% - 52px);overflow:auto;box-sizing:border-box;padding:10px;border:1px solid #45516b;border-radius:8px;background:rgba(13,22,38,.98);box-shadow:0 8px 24px #0008; }
-.drawing-list { margin-top:9px; }
-.drawing-row { padding:7px 0;border-top:1px solid #2b3549; }
-.drawing-row>button:first-child { flex:1;text-align:left; }
-.replay-badge { display:block;font-weight:700;color:#ffc76a;margin-bottom:7px;line-height:1.6; }
-#replay-position { max-width:270px; }
-.journal-note-field { flex:1;flex-wrap:wrap; }
-#journal-note { flex:1;min-width:140px; }
-#journal-panel { margin-top:10px; }
-.journal-list { margin-top:8px;max-height:250px;overflow:auto; }
-.journal-entry { padding:8px 0;border-top:1px solid #303b50;overflow-wrap:anywhere; }
-.journal-entry p { margin:4px 0;color:#b4c2d6;line-height:1.5; }
-.chart-card:fullscreen { overflow-y:auto; }
+
+.draw-drawer[hidden] {display:none!important}
+.tv-wrap {position:relative}
+.tv-wrap .draw-tools {position:absolute;z-index:30;left:8px;top:36px;width:42px;max-height:calc(100% - 48px);overflow:auto;display:flex;flex-direction:column;flex-wrap:nowrap;gap:4px;margin:0;padding:5px;box-sizing:border-box;background:rgba(13,22,38,.96);box-shadow:0 4px 14px #0006}
+.tv-wrap .draw-tools.collapsed {display:none}
+.draw-tools .tb-label {display:none}
+.draw-tools .dt-btn {flex-shrink:0;width:30px;height:30px;min-width:30px;padding:3px;font-size:17px}
+.draw-tools .dt-sep {width:24px;height:1px;min-height:1px;margin:2px 0}
+.draw-drawer {position:absolute;z-index:32;top:36px;right:8px;width:min(360px,calc(100% - 68px));max-height:calc(100% - 48px);overflow:auto;box-sizing:border-box;padding:12px;border:1px solid #45516b;border-radius:9px;background:rgba(13,22,38,.98);box-shadow:0 8px 24px #0008}
+.draw-row {display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0;margin-bottom:10px}
+.draw-row label,.study-field {display:flex;align-items:center;gap:5px;min-width:0}
+.draw-row button,.draw-row select,.study-field select {min-height:32px;padding:4px 7px;border:1px solid #3d4a61;border-radius:5px;color:#dce5f3;background:#182339;max-width:100%}
+.draw-row>strong {flex:1}
+.draw-row button:disabled,.dt-btn:disabled {opacity:.45;cursor:default}
+.draw-row button:focus-visible,.draw-row select:focus-visible,.draw-tools button:focus-visible {outline:2px solid #679bff;outline-offset:2px}
+.draw-note {margin:7px 0 0;color:#a8b6cb;font-size:11px;line-height:1.6}
+.drawing-list {margin-top:9px}
+.drawing-row {padding:7px 0;border-top:1px solid #2b3549}
+.drawing-row>button:first-child {flex:1;text-align:left}
+.chart-card:fullscreen {overflow-y:auto}
 @media(max-width:600px){
-  .study-tools,.replay-controls { margin:0 8px 8px;padding:8px; }
-  .study-row button,.study-row select,.study-field select { min-height:36px; }
-  .study-field { flex-wrap:wrap; }
-  .study-field select { max-width:220px; }
-  #replay-position { max-width:210px; }
+ .tv-wrap .draw-tools {top:auto;bottom:8px;left:8px;width:calc(100% - 64px);max-height:50px;flex-direction:row;overflow-x:auto;overflow-y:hidden;gap:5px}
+ .draw-tools .dt-btn {width:36px;min-width:36px;height:36px}
+ .draw-tools .dt-sep {width:1px;min-width:1px;height:28px}
+ .draw-drawer {top:auto;bottom:62px;right:8px;width:calc(100% - 16px);max-height:calc(100% - 102px)}
+ .draw-row button,.draw-row select,.study-field select {min-height:36px}
+ .study-field {flex-wrap:wrap}
 }

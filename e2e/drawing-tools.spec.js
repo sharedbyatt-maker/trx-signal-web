@@ -140,7 +140,7 @@ test('export, import, invalid-file recovery, clear and keyboard undo preserve ac
   await ready(page);await create(page,'rect',info.project.name.includes('mobile'));
   const before=await rows(page);
   const downloadPromise=page.waitForEvent('download');
-  await page.getByRole('button',{name:'EXPORT',exact:true}).click();
+  await page.locator('#dt-options').click();await page.getByRole('button',{name:'EXPORT',exact:true}).click();
   const download=await downloadPromise;
   const payload=JSON.parse(require('node:fs').readFileSync(await download.path(),'utf8'));
   expect(payload.drawings).toEqual(before);
@@ -190,7 +190,7 @@ test('server conflict merge, server backup, local safety backup and auth loss ke
   await expect.poll(async()=> (await debug(page)).serverConflict).toBe(true);
   expect((await rows(page))[0].width).toBe(3);
   conflict=false;page.once('dialog',dialog=>dialog.accept());
-  await page.getByRole('button',{name:'SYNC',exact:true}).click();
+  if(await page.locator('#drawing-options').isHidden())await page.locator('#dt-options').click();await page.getByRole('button',{name:'SYNC',exact:true}).click();
   await expect.poll(async()=> (await rows(page)).length).toBe(2);
   expect((await rows(page)).map(d=>d.width).sort()).toEqual([3,4]);
   await page.evaluate(()=>window.TRXDraw.pushServer());
@@ -200,7 +200,7 @@ test('server conflict merge, server backup, local safety backup and auth loss ke
   page.once('dialog',dialog=>dialog.accept('1'));await page.getByRole('button',{name:'BACKUPS',exact:true}).click();
   await expect.poll(async()=> (await rows(page))[0].width).toBe(2);
   const before=await rows(page);denied=true;
-  await page.getByRole('button',{name:'SYNC',exact:true}).click();
+  if(await page.locator('#drawing-options').isHidden())await page.locator('#dt-options').click();await page.getByRole('button',{name:'SYNC',exact:true}).click();
   await expect.poll(async()=>page.evaluate(()=>localStorage.getItem('trx_draw_sync_token'))).toBe(null);
   expect(await rows(page)).toEqual(before);
 });
