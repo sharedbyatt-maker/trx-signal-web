@@ -116,6 +116,7 @@ def _sanitize_drawings(value):
                     clean_lvls.append({"value": float(x["value"]), "enabled": x.get("enabled") is not False})
             clean.update({
                 "fibLevels": clean_lvls,
+                "fibMode": row.get("fibMode") if row.get("fibMode") in ("up", "down", "manual") else "manual",
                 "fibReverse": bool(row.get("fibReverse")),
                 "fibLabelSide": "right" if row.get("fibLabelSide") == "right" else "left",
                 "fibFill": max(0.0, min(0.25, float(row.get("fibFill") or 0.0))) if _finite(row.get("fibFill") or 0.0) else 0.0,

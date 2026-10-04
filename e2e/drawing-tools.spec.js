@@ -49,6 +49,8 @@ test('object controls preserve selection and apply width, style, extensions, loc
   await page.locator('#dt-v2-dup').click();await expect.poll(async()=> (await rows(page)).length).toBe(2);
   await page.locator('#dt-v2-hide').click();await expect.poll(async()=> (await debug(page)).hidden).toBe(1);
   await page.locator('#dt-v2-show').click();await expect.poll(async()=> (await debug(page)).hidden).toBe(0);
+  await page.locator('#dt-undo').click();await expect.poll(async()=> (await debug(page)).hidden).toBe(1);
+  await page.locator('#dt-undo').click();await expect.poll(async()=> (await debug(page)).hidden).toBe(0);
   await page.locator('#dt-undo').click();await expect.poll(async()=> (await rows(page)).length).toBe(1);
 });
 test('two-point tools support drag placement and endpoint edits without shifting the other anchor',async({page})=>{

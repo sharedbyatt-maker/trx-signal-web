@@ -40,6 +40,7 @@ window.TRXChart = (() => {
   let stochKSeries = null;
   let stochDSeries = null;
 
+  let replay = null, renderingReplay = false, replayTimer = null, replayStarting = false;
   let group = 1;
   let viewMode = "candles";   // candles | line
   let opts = {
@@ -1498,7 +1499,11 @@ window.TRXChart = (() => {
     if (!wrap) return;
     if (!chart) init(wrap);
 
-    lastState = s;
+    if (!renderingReplay) {
+      lastState = s;
+      contextRows = (s.history || []).slice(); contextRevision++;
+      if (replay) { if(force)renderReplay(); notifyStudy(); return; }
+    }
     const hist = s.history || [];
 
     // skip rebuild when nothing changed
@@ -1509,8 +1514,7 @@ window.TRXChart = (() => {
     const key = `${hist.length}:${lastIssue}:${tailFingerprint}:${group}:${viewMode}:${JSON.stringify(opts)}:${(s.log || []).length}`;
     if (!force && key === lastKey) return;
     lastKey = key;
-    contextRows = hist.slice();
-    contextRevision++;
+
 
     // capture current view so setData() cannot scroll/zoom the chart
     const prevRange = (() => {
@@ -1674,6 +1678,7 @@ window.TRXChart = (() => {
         ? (/▲/.test(tags[tags.length - 1] || "") ? " green" : " red")
         : "");
     }
+    notifyStudy();
   }
 
   function drawSrLevels(levels) {
@@ -1711,6 +1716,10 @@ window.TRXChart = (() => {
      The normal /api/state refresh remains the authoritative full reconciliation. */
   function appendLatest(row) {
     if (!chart || !row || !row.issue || !curBars.length) return false;
+    if (replay) {
+      if(!contextRows.some(r=>String(r.issue)===String(row.issue))){contextRows.push(row);contextRevision++;if(lastState)lastState={...lastState,history:contextRows.slice()};}
+      notifyStudy();return true;
+    }
     const issue = String(row.issue);
     if (curLabelMap instanceof Map && curLabelMap.has(issue)) return true;
 
@@ -1783,7 +1792,7 @@ window.TRXChart = (() => {
         });
       } catch (e) { /* drawing overlay can wait for full refresh */ }
     }
-    return true;
+    notifyStudy();return true;
   }
 
   /* ---- public: signal arrows toggle ---- */
@@ -1804,6 +1813,7 @@ window.TRXChart = (() => {
       rsi:rsi.at(-1), previousRsi:rsi.at(-2)};
   }
   function getContext() {
+    if(replay)return summarize(buildBars(contextRows,group).bars.map(b=>b.close),group);
     const key = [contextRevision, group, curCloses.length, curCloses.at(-1), curRsiValues.at(-1)].join(":");
     if (key === contextKey) return contextSnapshot;
     contextKey = key;
@@ -1833,13 +1843,70 @@ window.TRXChart = (() => {
     return comparisonSnapshot;
   }
 
+  function notifyStudy(){document.dispatchEvent(new CustomEvent('trx-study-change'));}
+  function replayGrid(){
+    if(!replay)return {slots:[],map:new Map(),indices:new Map(),choices:[]};
+    if(replay.grid?.group===group)return replay.grid;
+    const built=buildBars(replay.rows,group), indices=new Map(replay.rows.map((r,i)=>[String(r.issue),i+1]));
+    const times=new Map(replay.rows.map(r=>[String(r.issue),r.block_time||'']));
+    return replay.grid={group,slots:built.fulls,map:built.labelMap,indices,choices:built.fulls.map((issue,i)=>({position:i+1,issue,time:times.get(String(issue))||''}))};
+  }
+  function replaySlots(){return replayGrid().slots;}
+  function studyInfo(){
+    const rows=replay?replay.rows.slice(0,replay.cutoff):contextRows.slice();
+    const last=rows.at(-1);const slots=replaySlots();
+    let position=0;if(replay){const issue=String(last?.issue||'');const map=replayGrid().map;position=map.get(issue)||1;}
+    return {mode:replay?'replay':'live',playing:!!replayTimer,timeframe:group,rows,
+      issue:String(last?.issue||''),time:last?.block_time||'',close:replay?curCloses.at(-1):buildBars(rows,group).bars.at(-1)?.close,
+      position,total:slots.length,choices:replay?replayGrid().choices:[]};
+  }
+  function renderReplay(){
+    if(!replay||!lastState)return;
+    renderingReplay=true;
+    try{update({...lastState,history:replay.rows.slice(0,replay.cutoff),log:[]},true);}
+    finally{renderingReplay=false;}
+    const badge=$('replay-badge');if(badge){badge.hidden=false;badge.textContent='REPLAY · '+(replay.rows[replay.cutoff-1]?.block_time||'')+' · engine cards remain LIVE';}
+    notifyStudy();
+  }
+  async function startReplay(){
+    if(replay||replayStarting||!contextRows.length)return false;replayStarting=true;
+    try{
+      await window.TRXDraw?.beginPractice();
+      replay={rows:contextRows.map(r=>({...r})),cutoff:contextRows.length};
+      const slots=replaySlots();seekReplay(Math.max(1,slots.length-30));refit();renderReplay();return true;
+    }finally{replayStarting=false;}
+  }
+  function pauseReplay(){clearInterval(replayTimer);replayTimer=null;notifyStudy();}
+  function seekReplay(position){
+    if(!replay)return;pauseReplay();const slots=replaySlots();
+    const at=Math.max(1,Math.min(slots.length,Math.round(Number(position)||1)));
+    const issue=String(slots[at-1]);replay.cutoff=replayGrid().indices.get(issue);
+    renderReplay();anchorRecent();
+  }
+  function stepReplay(){
+    if(!replay)return;const slots=replaySlots();const at=studyInfo().position;
+    if(at>=slots.length){pauseReplay();return;}
+    const issue=String(slots[at]);replay.cutoff=replayGrid().indices.get(issue);
+    renderReplay();anchorRecent();if(at+1>=slots.length)pauseReplay();
+  }
+  function playReplay(speed=1000){
+    if(!replay)return;pauseReplay();if(studyInfo().position>=replaySlots().length)return;
+    replayTimer=setInterval(stepReplay,Math.max(500,Math.min(3000,Number(speed)||1000)));notifyStudy();
+  }
+  function stopReplay(){
+    if(!replay)return;pauseReplay();replay=null;refit();
+    if(lastState)update(lastState,true);window.TRXDraw?.endPractice();
+    if($('replay-badge'))$('replay-badge').hidden=true;notifyStudy();
+  }
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseReplay();});
+
   return {
-    getContext, getComparisons,
+    getContext, getComparisons, studyInfo, startReplay, seekReplay, stepReplay, playReplay, pauseReplay, stopReplay,
     update, appendLatest, autoSR, toggleSignals, setHistoryRange,
     _view: () => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
       catch (e) { return null; }
     },
-    _qa: { calcStoch, structuralLookbackBars },
+    _qa: { calcStoch, structuralLookbackBars, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice()}) },
   };
 })();
