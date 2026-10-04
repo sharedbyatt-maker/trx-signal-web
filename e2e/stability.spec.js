@@ -45,6 +45,7 @@ test('offline state clears both sidebar and focus signals then recovers',async({
   await expect(page.locator('#l1-stake')).toHaveText('—');
   await expect(page.locator('#focus-step')).not.toContainText('BIG');
   await expect(page.locator('#focus-l1')).not.toContainText('BIG');
+  await expect(page.locator('#focus-next')).toHaveText('—');
   offline=false;
   await expect(page.locator('#st-pending')).toHaveText('BIG');
   await expect(page.locator('#l1-pending')).toHaveText('BIG');
@@ -105,4 +106,25 @@ test('daily report failures are visible and settled history remains available',a
   await page.locator('#history-tab').click();
   await expect(page.locator('#signal-history-status')).toContainText('12-Step history temporarily unavailable');
   expect(calls).toBe(1);
+});
+
+test('enabled bell alerts each current engine signal once without polling duplicates',async({page})=>{
+  await page.addInitScript(()=>{
+    window.__notices=[];
+    window.Notification=class {
+      static permission='granted';
+      constructor(_title,options){window.__notices.push(options.body);}
+    };
+  });
+  await page.route('**/api/state',async route=>{
+    const r=await route.fetch(),d=await r.json();d.strat_pending={...armed,tier:0,step:0};await route.fulfill({json:d});
+  });
+  await page.route('**/api/l1-capital',route=>route.fulfill({json:{ready:true,pending:armed,trades:[]}}));
+  await page.goto('/');await expect(page.locator('#st-pending')).toHaveText('BIG');
+  await page.locator('#bell-btn').click();
+  await expect.poll(()=>page.evaluate(()=>window.__notices.length)).toBe(2);
+  await page.waitForTimeout(1700);
+  expect(await page.evaluate(()=>window.__notices.length)).toBe(2);
+  expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('L1 CAPITAL BIG')))).toBe(true);
+  expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('12-STEP BIG')))).toBe(true);
 });

@@ -39,6 +39,7 @@
     }
 
     if (p) {
+      window.TRXAlerts?.signal("L1 CAPITAL", p);
       if (status) { status.textContent = p.target; setState(status, "active"); }
       if ($("l1-pending")) $("l1-pending").textContent = p.target;
       if ($("l1-target-issue")) $("l1-target-issue").textContent = "TARGET · " + String(p.issue || "—").slice(-8);

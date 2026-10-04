@@ -207,6 +207,7 @@ function renderAnalytics(s) {
     const hero = $("st-signal-hero");
 
     if (pend) {
+      window.TRXAlerts?.signal("12-STEP", pend);
       if (modeEl) { modeEl.textContent = "ARMED"; modeEl.className = "stake-mode active"; }
       if (pEl) {
         pEl.textContent = pend.target || "—";
@@ -519,7 +520,9 @@ function tickClock() {
       let etaMs = (last - now.getTime()) % iv;
       if (etaMs <= 0) etaMs += iv;
       const s = Math.max(0, Math.round(etaMs / 1000));
-      setTxt("ctb-next", `NEXT ISSUE ETA: ~${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+      setTxt("ctb-next", window.TRXContext?.isFresh()
+        ? `NEXT ISSUE ETA: ~${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+        : "NEXT ISSUE ETA: —");
     }
   } else {
     setTxt("ctb-last", "—");
@@ -694,6 +697,18 @@ function notifySignal(label, issue) {
     }
   } catch (e) { /* noop */ }
 }
+
+const alertedIssues = new Map();
+window.TRXAlerts = {
+  signal(engine, pending) {
+    if (!soundOn || !pending || !window.TRXContext?.isValidTarget(pending)) return;
+    const key = String(pending.issue) + ":" + pending.target;
+    if (alertedIssues.get(engine) === key) return;
+    alertedIssues.set(engine, key);
+    beep();
+    notifySignal(engine + " " + pending.target, pending.issue);
+  },
+};
 
 const bellBtn = $("bell-btn");
 if (bellBtn) {

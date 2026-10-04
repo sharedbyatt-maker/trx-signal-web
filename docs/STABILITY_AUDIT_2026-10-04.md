@@ -18,6 +18,8 @@ Scope: current production dashboard, feed recovery, public APIs, chart/history u
 | State/history polling | A history fetch can delay initial state and occupy the state polling loop. Hung state/latest/daily requests lack a complete-request deadline. | Render state independently of history; serialize history fetches; bound requests including body parsing; resume after timeout. |
 | Sidebar and focus targets | A stale state or completed fast-path target disappears from Context but remains armed in sidebar/focus. | Apply the same freshness and exact-current-target checks to all signal surfaces; expire cached displays on a timer. |
 | Manual drawing sync | Concurrent autosaves use the same expected revision and conflict with their own prior save. | Serialize writes and queue the latest local changes after the current revision finishes; bound sync/restore requests. |
+| Signal alerts | The bell preference and notification functions are present, but no current signal calls them. | Restore opt-in alerts for valid current L1/12-Step targets with per-engine issue deduplication. |
+| Offline countdown | The next-issue countdown keeps extrapolating after feed/state failure. | Hide the estimate while current feed state is unavailable. |
 | Browser restrictions | Disabled localStorage throws during sound setup/clicks. | Guard preference access; release temporary audio contexts; catch notification permission failures. |
 | Daily report outage | A report fetch failure silently retains its old status. | Expose failed updates and retain the last loaded settled history. |
 
@@ -25,7 +27,7 @@ Scope: current production dashboard, feed recovery, public APIs, chart/history u
 
 - Eight new backend regressions were demonstrated failing against the preceding release before fixes.
 - Python discovered tests, all existing standalone regression scripts, chart integrity checks, and request timeout/abort/recovery checks are run.
-- Browser tests cover both desktop and mobile: slow history, hung state recovery, stale/offline clearing and recovery, fast-path target expiry, denied storage, serialized drawing writes, and report failures.
+- Browser tests cover both desktop and mobile: slow history, hung state recovery, stale/offline clearing and recovery, fast-path target expiry, denied storage, serialized drawing writes, and report failures, and opt-in alert deduplication.
 - Existing browser coverage continues to exercise real chart controls, timeframes, indicator panes, crosshair, S/R, drawing edits/persistence, compact Context, filters, pagination, and layout bounds.
 - CI and production acceptance results are recorded in the release PR.
 
