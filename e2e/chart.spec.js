@@ -79,6 +79,24 @@ test('indicator controls independently open and toggle panes', async ({ page }) 
   await expect(page.locator('#rsi-pane')).toBeVisible();
 });
 
+test('H/SS support-resistance study can be toggled and is scoped to 5m', async ({ page }) => {
+  const errors = watchRuntimeErrors(page);
+  await waitForChart(page);
+  await page.locator('#ind-toggle-btn').click();
+  const study = page.locator('#hss-toggle');
+  await expect(study).not.toBeChecked();
+  await expect(page.locator('label:has(#hss-toggle)')).toHaveAttribute('title', /5m grouped BIG\/SMALL candles/);
+  await study.check();
+  await page.locator('.tf-btn[data-g="5"]').click();
+  await expect(page.locator('#lg-tf')).toHaveText('5m');
+  await expect(study).toBeChecked();
+  await page.locator('.tf-btn[data-g="1"]').click();
+  await expect(page.locator('#lg-tf')).toHaveText('1m');
+  await expect(study).toBeChecked();
+  await page.waitForTimeout(200);
+  expect(errors).toEqual([]);
+});
+
 test('crosshair interaction updates chart legends', async ({ page }) => {
   await waitForChart(page);
   const chart = page.locator('#tv-chart');

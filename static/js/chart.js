@@ -45,7 +45,7 @@ window.TRXChart = (() => {
   let viewMode = "candles";   // candles | line
   let opts = {
     ema: true, sma: false, bb: false, rsi: true, sig: false,
-    pat: false, sr: false, tl: false, macd: false, stoch: false,
+    pat: false, sr: false, tl: false, hss: false, macd: false, stoch: false,
   };
 
   /* S/R level cache — levels must NOT drift on every data tick */
@@ -410,6 +410,7 @@ window.TRXChart = (() => {
     const bars = [];
     const labels = [];
     const times = [];
+    const counts = [];
     const fulls = [];             // per-slot FULL issue (drawing anchor key)
     const labelMap = new Map();
     const bucketSlots = new Map();
@@ -426,11 +427,13 @@ window.TRXChart = (() => {
         slot = bars.length;
         bucketSlots.set(bucket.key, slot);
         bars.push({ time: slot + 1, open, high: hi, low: lo, close });
+        counts[slot] = 1;
         labels[slot] = item.short_issue || String(item.issue).slice(-6);
         times[slot] = bucket.labelTime || item.block_time || item.hm || "";
         fulls[slot] = String(item.issue);
       } else {
         const b = bars[slot];
+        counts[slot] += 1;
         b.close = close;
         if (hi > b.high) b.high = hi;
         if (lo < b.low) b.low = lo;
@@ -443,7 +446,7 @@ window.TRXChart = (() => {
       if (!labelMap.has(fk)) labelMap.set(fk, slot + 1);
       price = close;
     });
-    return { bars, labels, labelMap, times, fulls };
+    return { bars, labels, labelMap, times, fulls, counts };
   }
 
   function linePoints(arr) {
@@ -859,8 +862,10 @@ window.TRXChart = (() => {
     return { touches, rejections, lastTouch, breaksUp, breaksDown, lastBreakUp, lastBreakDown, retests, recency };
   }
 
-  function srLevels(bars, maxLevels = 6) {
-    const lim = bars.slice(-structuralLookbackBars(bars.length));
+  function srLevels(bars, maxLevels = 6, tfMinutes = group) {
+    const lim = tfMinutes === group
+      ? bars.slice(-structuralLookbackBars(bars.length))
+      : bars.slice(-structuralLookbackBars(bars.length, tfMinutes));
     if (lim.length < 25) return [];
     const close = lim[lim.length - 1].c;
     const tol = srAdaptiveTolerance(lim);
@@ -908,6 +913,52 @@ window.TRXChart = (() => {
       const q=scored.filter(x=>x.L>=close).sort((a,b)=>Math.abs(close-a.L)-Math.abs(close-b.L))[0]; if(q)picked.push(q);
     }
     return picked.sort((a,b)=>a.L-b.L).slice(0,maxLevels+2);
+  }
+
+  /* ---- Closed 5m Hammer / Shooting Star candidates at prior S/R ----------
+     This is a visual study of the site's grouped BIG/SMALL walk candles. It
+     never reads the candidate candle when building its S/R levels and never
+     marks the current bucket. */
+  function hssShape(bar) {
+    const range = bar.h - bar.l;
+    const body = Math.abs(bar.c - bar.o);
+    if (!(range > 0) || !(body > 0)) return null; // skip doji / flat bars
+    const lower = Math.min(bar.o, bar.c) - bar.l;
+    const upper = bar.h - Math.max(bar.o, bar.c);
+    const closePos = (bar.c - bar.l) / range;
+    if (lower >= body * 2 && lower >= range * 0.5 && upper <= body && closePos >= 0.65) return "H";
+    if (upper >= body * 2 && upper >= range * 0.5 && lower <= body && closePos <= 0.35) return "SS";
+    return null;
+  }
+
+  function detectHssCandidates(bars, counts, tfMinutes = group) {
+    if (Number(tfMinutes) !== 5 || bars.length < 30) return [];
+    const marks = [];
+    // Require a following bucket as proof that the candidate bucket has closed.
+    // Five source rows also guards against incomplete / gapped grouped candles.
+    for (let i = 4; i < bars.length - 1; i++) {
+      if (counts && counts[i] !== 5) continue;
+      const b = bars[i], shape = hssShape(b);
+      if (!shape) continue;
+      const prior = bars[i - 1].c - bars[i - 4].c;
+      if (shape === "H" ? prior >= 0 : prior <= 0) continue;
+
+      // srLevels receives only bars before this candle. Add the OHLC names it
+      // expects while retaining h/l fields used by its adaptive tolerance.
+      const history = bars.slice(Math.max(0, i - 720), i)
+        .map((x) => ({ ...x, high: x.h, low: x.l }));
+      const levels = srLevels(history, 6, 5);
+      const support = levels.filter((lv) => lv.role === "S" && b.l <= lv.L + lv.tol && b.l >= lv.L - lv.tol * 2 && b.c >= lv.L - lv.tol * 0.2)
+        .sort((a, z) => Math.abs(b.l - a.L) - Math.abs(b.l - z.L))[0];
+      const resistance = levels.filter((lv) => lv.role === "R" && b.h >= lv.L - lv.tol && b.h <= lv.L + lv.tol * 2 && b.c <= lv.L + lv.tol * 0.2)
+        .sort((a, z) => Math.abs(b.h - a.L) - Math.abs(b.h - z.L))[0];
+      if (shape === "H" && support) {
+        marks.push({ time: b.time, position: "belowBar", color: "#39c6a5", shape: "arrowUp", text: "H@S", size: 2 });
+      } else if (shape === "SS" && resistance) {
+        marks.push({ time: b.time, position: "aboveBar", color: "#ff7b72", shape: "arrowDown", text: "SS@R", size: 2 });
+      }
+    }
+    return marks;
   }
 
   function drawSrLines(levels) {
@@ -1454,6 +1505,7 @@ window.TRXChart = (() => {
     bindOpt("sma-toggle", "sma");
     bindOpt("bb-toggle", "bb");
     bindOpt("pat-toggle", "pat");
+    bindOpt("hss-toggle", "hss");
     bindOpt("sr-toggle", "sr", syncSrControls);
     bindOpt("tl-toggle", "tl");
     bindOpt("rsi-toggle", "rsi", applyRsiVisibility);
@@ -1521,7 +1573,7 @@ window.TRXChart = (() => {
       try { return chart.timeScale().getVisibleLogicalRange(); } catch (e) { return null; }
     })();
 
-    const { bars, labels, labelMap, times, fulls } = buildBars(hist);
+    const { bars, labels, labelMap, times, fulls, counts } = buildBars(hist);
     curBars = bars.map((b) => ({ time: b.time, o: b.open, h: b.high, l: b.low, c: b.close }));
     curCloses = curBars.map((b) => b.c);
     curLabels = labels;
@@ -1604,6 +1656,10 @@ window.TRXChart = (() => {
     if (opts.pat) {
       const pm = detectPatterns(piv.hi, piv.lo, curBars);
       markers = markers.concat(pm);
+      markers.sort((a, b) => a.time - b.time);
+    }
+    if (opts.hss && group === 5) {
+      markers = markers.concat(detectHssCandidates(curBars, counts));
       markers.sort((a, b) => a.time - b.time);
     }
     markers = markers.filter((m) => m && typeof m.time === "number" && !isNaN(m.time));
@@ -1907,6 +1963,6 @@ window.TRXChart = (() => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
       catch (e) { return null; }
     },
-    _qa: { calcStoch, structuralLookbackBars, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice()}) },
+    _qa: { calcStoch, structuralLookbackBars, hssShape, detectHssCandidates, srLevels, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice()}) },
   };
 })();
