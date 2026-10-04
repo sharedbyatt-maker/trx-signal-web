@@ -44,7 +44,7 @@ test('object controls preserve selection and apply width, style, extensions, loc
   await page.locator('#dt-v2-lock').click();
   await expect.poll(async()=> (await rows(page))[0].locked).toBe(true);
   await page.locator('#dt-v2-lock').click();
-  await page.locator('[data-color="#f23645"]').click();
+  await page.locator('#dt-options').click();await page.locator('[data-color="#f23645"]').click();await page.locator('#dt-options-close').click();
   expect((await rows(page))[0]).toMatchObject({width:4,style:'dashed',color:'#f23645',extendLeft:true,extendRight:true,locked:false});
   await page.locator('#dt-v2-dup').click();await expect.poll(async()=> (await rows(page)).length).toBe(2);
   await page.locator('#dt-v2-hide').click();await expect.poll(async()=> (await debug(page)).hidden).toBe(1);
@@ -84,13 +84,14 @@ test('Fibonacci settings remain clickable and persist every option',async({page}
   expect(before).toMatchObject({fibReverse:true,fibLabelSide:'right',fibExtendRight:true,fibFill:.15});
   expect(before.fibLevels).toContainEqual({value:1.618,enabled:true});
   expect(before.fibLevels).toContainEqual({value:2.618,enabled:true});
+  if(info.project.name.includes('mobile')){const panel=await fib.boundingBox(),palette=await page.locator('#draw-tools').boundingBox();expect(panel.y+panel.height).toBeLessThanOrEqual(palette.y);}
   await fib.getByRole('button',{name:'DONE',exact:true}).click();await expect(fib).toBeHidden();
   await page.reload();await expect.poll(async()=> (await debug(page)).count).toBe(1);
   expect((await rows(page))[0]).toEqual(before);
 });
 test('price-axis scaling redraws drawing geometry while preserving its saved price',async({page})=>{
   await ready(page);await create(page,'hline');
-  await page.locator('[data-color="#e0e3eb"]').click();
+  await page.locator('#dt-options').click();await page.locator('[data-color="#e0e3eb"]').click();await page.locator('#dt-options-close').click();
   const original=await rows(page);
   const lineY=()=>page.locator('.draw-overlay').evaluate(c=>{
     const x=Math.round(6*devicePixelRatio),pixels=c.getContext('2d').getImageData(x,0,1,c.height).data,ys=[];
@@ -140,7 +141,7 @@ test('export, import, invalid-file recovery, clear and keyboard undo preserve ac
   await ready(page);await create(page,'rect',info.project.name.includes('mobile'));
   const before=await rows(page);
   const downloadPromise=page.waitForEvent('download');
-  await page.getByRole('button',{name:'EXPORT',exact:true}).click();
+  await page.locator('#dt-options').click();await page.getByRole('button',{name:'EXPORT',exact:true}).click();
   const download=await downloadPromise;
   const payload=JSON.parse(require('node:fs').readFileSync(await download.path(),'utf8'));
   expect(payload.drawings).toEqual(before);
@@ -190,7 +191,7 @@ test('server conflict merge, server backup, local safety backup and auth loss ke
   await expect.poll(async()=> (await debug(page)).serverConflict).toBe(true);
   expect((await rows(page))[0].width).toBe(3);
   conflict=false;page.once('dialog',dialog=>dialog.accept());
-  await page.getByRole('button',{name:'SYNC',exact:true}).click();
+  if(await page.locator('#drawing-options').isHidden())await page.locator('#dt-options').click();await page.getByRole('button',{name:'SYNC',exact:true}).click();
   await expect.poll(async()=> (await rows(page)).length).toBe(2);
   expect((await rows(page)).map(d=>d.width).sort()).toEqual([3,4]);
   await page.evaluate(()=>window.TRXDraw.pushServer());
@@ -200,7 +201,7 @@ test('server conflict merge, server backup, local safety backup and auth loss ke
   page.once('dialog',dialog=>dialog.accept('1'));await page.getByRole('button',{name:'BACKUPS',exact:true}).click();
   await expect.poll(async()=> (await rows(page))[0].width).toBe(2);
   const before=await rows(page);denied=true;
-  await page.getByRole('button',{name:'SYNC',exact:true}).click();
+  if(await page.locator('#drawing-options').isHidden())await page.locator('#dt-options').click();await page.getByRole('button',{name:'SYNC',exact:true}).click();
   await expect.poll(async()=>page.evaluate(()=>localStorage.getItem('trx_draw_sync_token'))).toBe(null);
   expect(await rows(page)).toEqual(before);
 });

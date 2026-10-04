@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=63">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=64">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/polish.css') }}?v=1">
 </head>
 <body>
@@ -89,8 +89,7 @@
           <svg viewBox="0 0 24 24" class="btn-ico"><path d="M12 4l5 8h-3v7h-4v-7H7z" fill="currentColor" stroke="none"/></svg>
           SIG
         </button>
-        <button class="tf-btn" id="dt-toggle-btn" title="Drawing tools ဖွင့်/ပိတ်">🎨</button>
-        <button class="tf-btn" id="study-toggle" aria-expanded="false" aria-controls="study-tools">PRACTICE</button>
+        <button class="tf-btn" id="dt-toggle-btn" aria-label="Drawing tools" aria-controls="draw-tools" aria-expanded="false" title="Drawing tools ဖွင့်/ပိတ်">🎨</button>
         <button class="tf-btn" id="ind-toggle-btn" title="Indicators ဖွင့်/ပိတ်">⚙️</button>
       </div>
     </div>
@@ -110,6 +109,7 @@
       <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle"> Patterns</label>
     </div>
 
+    <div class="tv-wrap">
     <div class="draw-tools collapsed" id="draw-tools">
       <span class="tb-label">DRAW</span>
       <button class="dt-btn active" data-tool="cursor" title="Cursor / Select (Esc)" aria-label="Cursor">
@@ -134,41 +134,26 @@
         <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/><line x1="6" y1="7" x2="18" y2="7"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="7" y1="17" x2="17" y2="17"/></svg>
       </button>
       <span class="dt-sep"></span>
-      <span class="tb-label">COLOR</span>
-      <button class="dt-swatch active" data-color="#2962ff" style="--c:#2962ff" title="Blue"></button>
-      <button class="dt-swatch" data-color="#f23645" style="--c:#f23645" title="Red"></button>
-      <button class="dt-swatch" data-color="#089981" style="--c:#089981" title="Green"></button>
-      <button class="dt-swatch" data-color="#ff9800" style="--c:#ff9800" title="Orange"></button>
-      <button class="dt-swatch" data-color="#e0e3eb" style="--c:#e0e3eb" title="White"></button>
-      <span class="dt-sep"></span>
-      <button class="dt-btn txt" id="dt-del" title="Delete selected (Del)">Delete</button>
-      <button class="dt-btn txt" id="dt-undo" title="Undo drawing edit (Ctrl+Z)">Undo</button>
-      <button class="dt-btn txt" id="dt-redo" title="Redo drawing edit (Ctrl+Shift+Z)">Redo</button>
-      <button class="dt-btn txt" id="dt-clear" title="Clear all drawings">Clear All</button>
+      <button class="dt-btn txt" id="dt-del" title="Delete selected (Del)" aria-label="Delete selected drawing">×</button>
+      <button class="dt-btn txt" id="dt-undo" title="Undo drawing edit (Ctrl+Z)" aria-label="Undo">↶</button>
+      <button class="dt-btn txt" id="dt-redo" title="Redo drawing edit (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
+      <button class="dt-btn" id="dt-options" aria-label="Drawing settings" aria-controls="drawing-options" aria-expanded="false" title="Drawing settings">⚙</button>
     </div>
 
-    <div id="study-tools" class="study-tools" hidden>
-      <div class="study-row"><strong>CHART PRACTICE</strong><button id="replay-start" type="button">Start replay</button><button id="journal-toggle" type="button" aria-expanded="false" aria-controls="journal-panel">Observation journal</button></div>
-      <p class="study-note">BIG/SMALL walk · လေ့ကျင့်ရန်သာ · L1 / 12-Step engines ဆက်လက် LIVE ဖြစ်သည်။</p>
-      <section id="journal-panel" hidden aria-label="Manual observation journal">
-        <form id="journal-form" class="study-row">
-          <label>Next result <select id="journal-expect"><option value="BIG">BIG (+1)</option><option value="SMALL">SMALL (−1)</option></select></label>
-          <label class="journal-note-field">Observation <input id="journal-note" maxlength="300" placeholder="e.g. Fib 0.618 reaction" required></label>
-          <button type="submit" id="journal-save">Record before next result</button>
-        </form>
-        <p id="journal-basis" class="study-note"></p>
-        <div class="study-row"><button id="journal-export" type="button">Export journal</button><button id="journal-import" type="button">Import journal</button><label><input id="journal-archived" type="checkbox"> Show archived</label><span id="journal-summary"></span></div>
-        <p id="journal-status" role="status" class="study-note"></p>
-        <div id="journal-list" class="journal-list"></div>
-        <p class="study-note">Local browser only · Export for backup · Observations are locked once recorded. Replay records are practice and excluded from live results.</p>
-      </section>
-    </div>
-    <div id="replay-controls" class="replay-controls" hidden>
-      <span id="replay-badge" class="replay-badge" hidden></span>
-      <div class="study-row"><label>Start / seek <select id="replay-position" aria-label="Replay candle"></select></label><button id="replay-prev" type="button">Previous</button><button id="replay-next" type="button">Next candle</button><button id="replay-play" type="button">Play</button><label>Speed <select id="replay-speed"><option value="2000">0.5×</option><option value="1000" selected>1×</option><option value="500">2×</option></select></label><button id="replay-live" type="button">Return to live</button></div>
-      <p class="study-note">Future chart bars hidden · Replay drawings are temporary · Current candle may be partial after a timeframe change.</p>
-    </div>
-    <div class="tv-wrap">
+    <section id="drawing-options" class="draw-drawer" hidden aria-label="Drawing settings">
+      <div class="draw-row"><strong>DRAWING SETTINGS</strong><button type="button" id="dt-options-close">Close</button></div>
+      <div id="drawing-options-controls" class="draw-row">
+      <span class="tb-label">COLOR</span>
+      <button class="dt-swatch active" data-color="#2962ff" style="--c:#2962ff" title="Blue" aria-label="Blue drawing color"></button>
+      <button class="dt-swatch" data-color="#f23645" style="--c:#f23645" title="Red" aria-label="Red drawing color"></button>
+      <button class="dt-swatch" data-color="#089981" style="--c:#089981" title="Green" aria-label="Green drawing color"></button>
+      <button class="dt-swatch" data-color="#ff9800" style="--c:#ff9800" title="Orange" aria-label="Orange drawing color"></button>
+      <button class="dt-swatch" data-color="#e0e3eb" style="--c:#e0e3eb" title="White" aria-label="White drawing color"></button>
+      <button class="dt-btn txt" id="dt-clear" title="Clear all drawings">Clear All</button>
+      </div>
+      <div id="drawing-options-persistence" class="draw-row"></div>
+    </section>
+
       <div id="tv-chart"></div>
       <div class="tv-legend mono">
         <span class="lg-sym">TRX<span class="lg-dim">/ROUND</span></span>
@@ -374,10 +359,9 @@
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/transport.js') }}?v=1"></script>
 <script src="{{ url_for('static', filename='js/chart.js') }}?v=56"></script>
-<script src="{{ url_for('static', filename='js/draw.js') }}?v=47"></script>
-<script src="{{ url_for('static', filename='js/study.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/draw.js') }}?v=48"></script>
 <script src="{{ url_for('static', filename='js/market-context.js') }}?v=5"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=53"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=54"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=4"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=7"></script>
 <script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=7"></script>

@@ -569,7 +569,7 @@ if (srBtn) {
     }
   });
 }
-/* 🎨 toggle: DRAW tools + INDICATORS bars (hidden by default; click = open both, again = close both) */
+/* Drawing palette and indicator controls open independently. */
 const dtToggle = $("dt-toggle-btn");
 const indToggle = $("ind-toggle-btn");
 const drawBar = $("draw-tools");
@@ -579,6 +579,7 @@ if (dtToggle) {
     const open = drawBar && drawBar.classList.contains("collapsed");
     if (drawBar) drawBar.classList.toggle("collapsed", !open);
     dtToggle.classList.toggle("active", !!open);
+    dtToggle.setAttribute("aria-expanded", String(!!open));
   });
 }
 if (indToggle) {
