@@ -435,6 +435,7 @@ main { padding-top:12px; }
 .chart-card:fullscreen {overflow-y:auto}
 @media(max-width:600px){
  .tv-wrap .draw-tools {top:auto;bottom:8px;left:8px;width:calc(100% - 64px);max-height:50px;flex-direction:row;overflow-x:auto;overflow-y:hidden;gap:5px}
+ .tv-wrap:has(.draw-tools:not(.collapsed)) .draw-hint {bottom:64px}
  .draw-tools .dt-btn {width:36px;min-width:36px;height:36px}
  .draw-tools .dt-sep {width:1px;min-width:1px;height:28px}
  .draw-drawer {top:auto;bottom:62px;right:8px;width:calc(100% - 16px);max-height:calc(100% - 102px)}

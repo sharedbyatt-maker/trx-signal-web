@@ -41,6 +41,7 @@ test('compact palette preserves chart space and replaces practice with exclusive
  const before=await page.locator('#tv-chart').boundingBox();
  await page.locator('#dt-toggle-btn').click();const after=await page.locator('#tv-chart').boundingBox();expect(after.height).toBe(before.height);expect(after.y).toBe(before.y);
  await expect(page.locator('#study-toggle,#study-tools,#replay-controls')).toHaveCount(0);
+ if(info.project.name.includes('mobile')){const hint=await page.locator('.draw-hint').boundingBox(),palette=await page.locator('#draw-tools').boundingBox();expect(hint.y+hint.height).toBeLessThanOrEqual(palette.y);}
  await page.locator('#dt-options').click();await expect(page.locator('#drawing-options')).toBeVisible();await expect(page.getByLabel('Blue drawing color')).toHaveCSS('background-color','rgb(41, 98, 255)');
  await page.locator('#dt-list').click();await expect(page.locator('#drawing-options')).toBeHidden();await expect(page.locator('#drawing-manager')).toBeVisible();
  await page.keyboard.press('Escape');await expect(page.locator('#drawing-manager')).toBeHidden();expect((await dbg(page)).count).toBe(0);
