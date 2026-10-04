@@ -1,0 +1,84 @@
+/* Presentation only. Preserve chart sizing, pane geometry and engine behavior. */
+:root { --polish-muted:#a9bad0; --polish-line:#2b3d55; }
+body { -webkit-font-smoothing:antialiased; }
+.card { border-color:var(--polish-line); box-shadow:0 5px 18px rgba(0,0,0,.12); }
+.side-stack { gap:12px; }
+.card-title-row { gap:8px; }
+.side-stack .card-title { font-size:11px; line-height:1.5; letter-spacing:.07em; }
+.daily12-date { font-size:10px; color:#b7c8dc; white-space:nowrap; }
+.stake-signal-hero { min-height:64px; gap:12px; }
+#l1-signal-hero:not(.has-target) .stake-hero-dir,
+#st-signal-hero:not(.armed) .stake-hero-dir { font-size:14px; color:#b6c5da; letter-spacing:.04em; }
+.stake-hero-issue { font-size:10px; line-height:1.5; opacity:1; color:var(--polish-muted); }
+.stake-meta-grid>div>span { font-size:10px; color:var(--polish-muted); letter-spacing:.06em; }
+.stake-meta-grid>div>b { font-size:12px; font-variant-numeric:tabular-nums; }
+.l1-report-grid small, .daily12-summary-grid small { font-size:10px; color:var(--polish-muted); letter-spacing:.04em; }
+.l1-report-grid b, .daily12-summary-grid b { font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.l1-report-grid>div, .daily12-summary-grid>div { padding:9px; }
+.manual-note, .ctx-note { font-size:10px; color:var(--polish-muted); line-height:1.65; }
+.terminal-details summary, .daily12-details>summary { min-height:32px; display:flex; align-items:center; color:#b5c6dd; font-size:11px; letter-spacing:.02em; }
+.terminal-details summary::before { content:'▸'; margin-right:7px; color:#8fa9ce; }
+.terminal-details[open] summary::before { content:'▾'; }
+.terminal-details summary { list-style:none; }
+.terminal-details summary::-webkit-details-marker { display:none; }
+.daily12-details>summary { justify-content:space-between; }
+.daily12-line, .daily12-updated, .d12-empty { font-size:10px; line-height:1.6; opacity:1; color:var(--polish-muted); }
+.daily12-section-title { font-size:10px; opacity:1; color:var(--polish-muted); }
+.daily12-extra-grid small { font-size:10px; opacity:1; color:var(--polish-muted); }
+.daily12-extra-grid b { font-size:12px; }
+.d12-activity-row, .daily12-history>div { font-size:10px; line-height:1.6; }
+.market-card .market-metrics small { font-size:10px; color:var(--polish-muted); }
+.market-card .market-metrics b { font-size:14px; }
+.market-card .market-metrics div span:not(.market-icon) { font-size:10px; color:var(--polish-muted); line-height:1.5; }
+.market-card .market-metrics>div { padding:10px; }
+.compact-timeframes .insight-heading h3 { font-size:10px; letter-spacing:.06em; }
+.timeframe-card-heading span, .timeframe-card-values small { font-size:10px; color:var(--polish-muted); }
+.timeframe-card-heading strong { font-size:12px; }
+.timeframe-momentum { font-size:10px; }
+.timeframe-card { padding:9px; }
+.setup-check summary { min-height:38px; padding:9px 10px; }
+.setup-check summary strong, .setup-check summary b { font-size:10px; }
+.setup-reason, .market-note { font-size:11px; line-height:1.55; color:var(--polish-muted); }
+.market-note { margin-top:10px; }
+.market-tabs button { font-size:11px; min-height:34px; padding:7px 12px; }
+.market-heading>span { font-size:10px; color:var(--polish-muted); }
+.signal-table th { color:#b8cbe3; }
+.signal-table tbody .history-result:hover { background:rgba(90,142,220,.06); }
+.chart-toolbar { gap:5px; }
+.tf-btn, .range-select { min-height:32px; }
+.chart-toolbar button, .market-tabs button, .history-filters button,
+.history-more, .history-detail-button, .history-date-controls button,
+.bell-btn, .dt-btn { transition:background-color .15s ease, border-color .15s ease; }
+button:hover, summary:hover { border-color:#587ba8; }
+button:focus-visible, select:focus-visible, input:focus-visible,
+summary:focus-visible { outline:2px solid #94bdff; outline-offset:3px; }
+.focus-bar { border-color:#3b4e6b; box-shadow:0 4px 12px rgba(0,0,0,.15); }
+.chart-time-bar { color:var(--polish-muted); }
+footer { line-height:1.7; color:var(--polish-muted); }
+@media (min-width:601px) and (max-width:1100px) {
+  /* Keep each engine signal beside its own daily report in the two-column grid. */
+  .side-stack { align-items:start; }
+}
+@media (max-width:600px) {
+  .chart-toolbar .tf-btn { min-width:36px; height:40px; padding-inline:8px; }
+  .range-select { height:40px; }
+  .bell-btn { min-width:40px; height:40px; }
+  .market-tabs button, .history-filters button,
+  .history-date-controls button, .history-date-controls input,
+  .history-more, .history-detail-button, .dt-btn { min-height:44px; }
+  .terminal-details summary, .daily12-details>summary, .setup-check summary { min-height:44px; }
+  .timeframe-card { gap:8px; flex-wrap:wrap; }
+  .timeframe-card-heading { min-width:94px; }
+  .timeframe-card-values { min-width:150px; }
+  .market-card .market-metrics>div { padding:9px; }
+  .market-card .market-metrics b { font-size:14px; }
+  .market-tabs { gap:7px; }
+  .history-date-controls input { min-width:0; }
+  .focus-state { max-width:100%; }
+  .setup-check summary strong { width:auto; }
+  .signal-table .history-result { padding:9px; }
+  .history-result td[data-label]::before { font-size:10px; color:var(--polish-muted); }
+}
+@media (prefers-reduced-motion:reduce) {
+  *, *::before, *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+}
