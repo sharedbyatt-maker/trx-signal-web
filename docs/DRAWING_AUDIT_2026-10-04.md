@@ -34,6 +34,8 @@ Existing chart, stability and engine regressions remain required release checks.
 
 ## Practical limits
 
+The later [Chart Practice upgrade](CHART_PRACTICE.md) replaces the baseline Undo limitation below with full session Undo/Redo.
+
 - Undo removes the last created drawing (or cancels an unfinished placement); it is not a complete edit-history undo system.
 - Local persistence depends on the browser allowing storage and keeping that browser's data. Export remains the portable backup.
 - Server sync requires a configured token. Cross-device merge and backup paths are tested with isolated mock endpoints; no production server drawing records are overwritten for acceptance.

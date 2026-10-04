@@ -8,7 +8,7 @@ window.TRXStudy = (() => {
   function validate(raw){
     if(!Array.isArray(raw)||raw.length>LIMIT)throw new Error('Invalid journal');
     const ids=new Set();return raw.map(e=>{
-      if(!e||typeof e.id!=='string'||ids.has(e.id)||typeof e.issue!=='string'||!/^\d{1,30}$/.test(e.issue)||!['BIG','SMALL'].includes(e.expected)||!['live','replay'].includes(e.mode)||typeof e.note!=='string'||e.note.length>300||!Number.isFinite(e.close)||!Number.isInteger(e.timeframe)||e.timeframe<1||e.timeframe>60||typeof e.recordedAt!=='string'||!Number.isFinite(Date.parse(e.recordedAt)))throw new Error('Invalid observation');
+      if(!e||typeof e.id!=='string'||!e.id||e.id.length>96||ids.has(e.id)||typeof e.issue!=='string'||!/^\d{1,30}$/.test(e.issue)||!['BIG','SMALL'].includes(e.expected)||!['live','replay'].includes(e.mode)||typeof e.note!=='string'||e.note.length>300||!Number.isFinite(e.close)||!Number.isInteger(e.timeframe)||e.timeframe<1||e.timeframe>60||typeof e.recordedAt!=='string'||!Number.isFinite(Date.parse(e.recordedAt)))throw new Error('Invalid observation');
       ids.add(e.id);return {id:e.id.slice(0,96),issue:e.issue,expected:e.expected,mode:e.mode,note:e.note,close:e.close,timeframe:e.timeframe,recordedAt:e.recordedAt,sourceTime:String(e.sourceTime||'').slice(0,40),archived:!!e.archived,provenance:e.provenance==='imported'?'imported':'recorded',actual:['BIG','SMALL'].includes(e.actual)?e.actual:null,resultIssue:e.resultIssue?String(e.resultIssue):null};
     });
   }
@@ -22,7 +22,7 @@ window.TRXStudy = (() => {
   }
   function outcome(e,s){
     const at=s.rows.findIndex(r=>String(r.issue)===e.issue);
-    if(at<0)return e.actual&&e.resultIssue&&s.mode==='live'?{actual:e.actual,text:e.actual===e.expected?'MATCH':'MISS'}:{actual:null,text:'Outside loaded history'};
+    if(at<0)return e.actual&&e.resultIssue&&e.provenance==='recorded'&&s.mode==='live'?{actual:e.actual,text:e.actual===e.expected?'MATCH':'MISS'}:{actual:null,text:'Outside loaded history'};
     const next=s.rows[at+1];
     if(!next)return {actual:null,text:'PENDING'};
     if(!consecutive(s.rows[at],next))return {actual:null,text:'Missing next round'};
@@ -58,7 +58,7 @@ window.TRXStudy = (() => {
     const outcomes=new Map(entries.map(e=>[e.id,outcome(e,s)]));
     // Keep observed live settlements when the rolling source buffer later evicts the anchor.
     let changed=false;const nextEntries=entries.map(e=>{const o=outcomes.get(e.id);if(e.mode==='live'&&e.provenance==='recorded'&&s.mode==='live'&&o.actual&&o.issue&&(e.actual!==o.actual||e.resultIssue!==o.issue)){changed=true;return {...e,actual:o.actual,resultIssue:o.issue};}return e;});if(changed)persist(nextEntries);
-    const measured=entries.filter(e=>!e.archived&&e.mode==='live'&&e.provenance==='recorded'&&outcomes.get(e.id).actual);
+    const measured=entries.filter(e=>e.mode==='live'&&e.provenance==='recorded'&&outcomes.get(e.id).actual);
     const matches=measured.filter(e=>outcomes.get(e.id).actual===e.expected).length;
     $('journal-summary').textContent=`Live observations: ${measured.length} settled · ${matches} matched${measured.length?' · '+(matches/measured.length*100).toFixed(1)+'%':''} · sample only`;
     const list=$('journal-list');list.replaceChildren();

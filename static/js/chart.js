@@ -1907,6 +1907,6 @@ window.TRXChart = (() => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
       catch (e) { return null; }
     },
-    _qa: { calcStoch, structuralLookbackBars },
+    _qa: { calcStoch, structuralLookbackBars, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice()}) },
   };
 })();

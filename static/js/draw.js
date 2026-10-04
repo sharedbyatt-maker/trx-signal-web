@@ -123,7 +123,7 @@ window.TRXDraw = (() => {
   function loadPrefs() {
     try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); magnet = p.magnet !== false; fibMode=['manual','up','down'].includes(p.fibMode)?p.fibMode:'manual'; }
     catch (_e) { magnet = true; }
-    try {const raw=JSON.parse(localStorage.getItem(PRESET_KEY)||'[]');presets=Array.isArray(raw)?raw.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&p.style&&typeof p.style==='object').slice(0,20):[];}
+    try {const raw=JSON.parse(localStorage.getItem(PRESET_KEY)||'[]');presets=Array.isArray(raw)?raw.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&['trend','ray','hline','vline','rect','fib'].includes(p.type)&&p.style&&typeof p.style==='object'&&(!p.style.fibLevels||Array.isArray(p.style.fibLevels)&&p.style.fibLevels.length<=64)).slice(0,20).map(p=>({id:p.id.slice(0,96),name:p.name.slice(0,40),type:p.type,style:presetStyle(defaults({...p.style,type:p.type,color:/^#[0-9a-f]{6}$/i.test(p.style.color)?p.style.color:'#2962ff'}))})):[];}
     catch (_e) { magnet = true; }
   }
   function savePrefs() {
@@ -534,7 +534,7 @@ window.TRXDraw = (() => {
   function commit(type,pts,c) {
     if(drawings.length>=MAX_CLIENT_DRAWINGS){setHint("Drawing limit: 500 · export and remove unused drawings");return;}
     const style=activePreset&&activePreset.type===type?activePreset.style:{};
-    const d=defaults({id:uid(),type,color:c,points:pts,width:2,style:"solid",locked:false,hidden:false,extendLeft:false,extendRight:type==="ray",fibLevels:type==="fib"?FIB_LEVELS.map(value=>({value,enabled:true})):undefined,...clone(style)});
+    const d=defaults({id:uid(),type,color:c||color,points:pts,width:2,style:"solid",locked:false,hidden:false,extendLeft:false,extendRight:type==="ray",fibLevels:type==="fib"?FIB_LEVELS.map(value=>({value,enabled:true})):undefined,...clone(style)});
     if(type==='fib'&&fibMode!=='manual') orientFib(d,fibMode);
     d.points.forEach(p=>{p.lb=labelOf(p.t)||p.lb;if(!p.lb&&p.t>api.fulls.length){p.anchorLb=api.fulls.at(-1);p.offset=p.t-api.fulls.length;}}); drawings.push(d); selectedId=d.id; save(); updatePanel();
   }
@@ -685,7 +685,7 @@ window.TRXDraw = (() => {
       else if(selectedId){selectedId=null;updatePanel();redraw();}
       return;
     }
-    if(!placing&&tool!=="hline"&&tool!=="vline"){const pt=fromXY(x,y,true);if(pt){placing=defaults({type:tool,color,points:[{...pt,lb:labelOf(pt.t)}],width:2,style:"solid",extendRight:tool==="ray"});placeStage=1;redraw();}}
+    if(!placing&&tool!=="hline"&&tool!=="vline"){const pt=fromXY(x,y,true);if(pt){placing=defaults({type:tool,color,points:[{...pt,lb:labelOf(pt.t)}],width:2,style:"solid",extendRight:tool==="ray"});placeStage=1;updateHistoryButtons();redraw();}}
   }
   function onMove(x,y){
     hover={x,y};
