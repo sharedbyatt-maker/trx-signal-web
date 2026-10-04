@@ -116,9 +116,10 @@ test('export, import, invalid-file recovery, clear and keyboard undo preserve ac
   await (await chooserPromise).setFiles({name:'drawings.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(payload))});
   await expect.poll(async()=> (await debug(page)).count).toBe(1);
   expect(await rows(page)).toEqual(before);
-  page.once('dialog',dialog=>dialog.dismiss());
+  const invalidDialog=page.waitForEvent('dialog');
   chooserPromise=page.waitForEvent('filechooser');await page.getByRole('button',{name:'IMPORT',exact:true}).click();
   await (await chooserPromise).setFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{broken')});
+  await (await invalidDialog).dismiss();
   await expect.poll(async()=> (await rows(page)).length).toBe(1);
   await page.locator('.tf-btn[data-g="1"]').focus();await page.keyboard.press('Control+z');
   await expect.poll(async()=> (await rows(page)).length).toBe(0);
@@ -159,6 +160,7 @@ test('server conflict merge, server backup, local safety backup and auth loss ke
   await page.getByRole('button',{name:'SYNC',exact:true}).click();
   await expect.poll(async()=> (await rows(page)).length).toBe(2);
   expect((await rows(page)).map(d=>d.width).sort()).toEqual([3,4]);
+  await page.evaluate(()=>window.TRXDraw.pushServer());
   page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'LOCAL BKP',exact:true}).click();
   await expect.poll(async()=> (await rows(page)).length).toBe(1);
   expect((await rows(page))[0].width).toBe(3);

@@ -265,10 +265,14 @@ window.TRXDraw = (() => {
   function importDrawings(){
     const inp=document.createElement("input");inp.type="file";inp.accept="application/json,.json";inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;if(f.size>1024*1024){window.alert("Drawing backup is too large");return;}const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(String(rd.result||"{}"));const rows=sanitizeClientRows(Array.isArray(j)?j:j.drawings);backupLocalSnapshot("before-import");replaceFromRows(rows);save();setSyncStatus("IMPORTED · SAVED");}catch(_e){window.alert("Invalid drawing backup file");}};rd.readAsText(f);};inp.click();
   }
-  function restoreLocalSafetyBackup(){
+  async function restoreLocalSafetyBackup(){
+    if(serverPushRequest)await serverPushRequest;
+    clearTimeout(serverSyncTimer);
     try{const raw=localStorage.getItem(SAFETY_BACKUP_KEY);if(!raw){window.alert("No local safety backup yet");return;}const j=JSON.parse(raw);const rows=sanitizeClientRows(j.drawings||[]);if(!window.confirm(`Restore local safety backup from ${j.created_at||"unknown time"}? Current drawings will be backed up first.`))return;backupLocalSnapshot("before-local-recovery");replaceFromRows(rows);saveLocal();serverConflict=true;setSyncStatus("LOCAL BACKUP RESTORED · SYNC REVIEW",true);}catch(_e){window.alert("Local safety backup is invalid");}
   }
   async function restoreBackup(){
+    if(serverPushRequest)await serverPushRequest;
+    clearTimeout(serverSyncTimer);
     if(!syncToken()){const t=window.prompt("Drawing Sync Token");if(!t)return;setSyncToken(t.trim());}
     try{const r=await syncRequest("/api/drawings/backups",{headers:authHeaders()});const j=r.data;if(!r.ok)throw new Error();const list=j.backups||[];if(!list.length){window.alert("No server backups yet");return;}const msg=list.map(x=>`r${x.revision} · ${x.count} drawings · ${x.updated_at||""}`).join("\n");const v=window.prompt(`Restore which revision?\n\n${msg}`);if(v==null)return;const rev=Number(String(v).replace(/^r/i,""));if(!Number.isInteger(rev))return;const rr=await syncRequest("/api/drawings/restore",{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({revision:rev,expected_revision:serverRevision})});const jj=rr.data;if(!rr.ok)throw new Error(jj.error||"restore failed");serverRevision=Number(jj.revision);serverConflict=false;replaceFromRows(jj.drawings||[]);saveLocal();setSyncStatus(`RESTORED → r${serverRevision}`);}catch(e){setSyncStatus("RESTORE FAILED",true);}
   }
@@ -635,7 +639,7 @@ window.TRXDraw = (() => {
   }
   function init(){
     if(canvas)return;wrapEl=$("tv-chart");if(!wrapEl)return;loadPrefs();canvas=document.createElement("canvas");canvas.className="draw-overlay";wrapEl.appendChild(canvas);ctx=canvas.getContext("2d");
-    hintEl=document.createElement("div");hintEl.className="draw-hint";hintEl.textContent=HINTS.cursor;wrapEl.appendChild(hintEl);buildPanel();buildPersistenceToolbar();bindEvents();resize();
+    hintEl=document.createElement("div");hintEl.className="draw-hint";hintEl.textContent=HINTS.cursor;wrapEl.appendChild(hintEl);buildPanel();buildFibPanel();buildPersistenceToolbar();bindEvents();resize();
   }
   document.addEventListener("DOMContentLoaded",init);if(document.readyState!=="loading")init();
   return {onData,redraw,undo,clearAll,pullServer,pushServer,exportDrawings,_dbg:()=>({tool,apiReady:!!api,count:drawings.length,selectedId,dragging:!!drag,placing:!!placing,magnet,serverRevision,serverConflict,selected:selected()?{type:selected().type,locked:selected().locked,hidden:selected().hidden,width:selected().width,style:selected().style,extendLeft:selected().extendLeft,extendRight:selected().extendRight}:null,hidden:drawings.filter(d=>d.hidden).length})};
