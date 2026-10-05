@@ -92,7 +92,14 @@ def api_history():
 
 @app.get("/api/state")
 def api_state():
-    return jsonify(state_payload())
+    data=state_payload()
+    from strategy_settings import ladder
+    store=getattr(globals().get("_admin_core"),"_admin_store",None)
+    if store:
+        data["money_settings"]=store.control("twelve")["settings"]
+        data["money_ladder"]=ladder(data["money_settings"])
+        data["money_risk_status"]="TRADE ALLOWED"
+    return jsonify(data)
 
 
 @app.get("/api/latest")
@@ -156,9 +163,13 @@ def api_daily12():
 
 @app.get("/api/l1-capital")
 def api_l1_capital():
+    from strategy_settings import ladder, MONEY_DEFAULTS
+    store=getattr(globals().get("_admin_core"),"_admin_store",None)
+    money=store.control("l1")["settings"] if store else MONEY_DEFAULTS["l1"]
     return jsonify(
         {
             "ready": True,
+            "money_settings":money, "money_ladder":ladder(money),
             "engine": "L1 CAPITAL",
             "version": "1.1",
             "pending": {
@@ -215,7 +226,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(ROOT))
 from admin_dashboard import install_admin, AdminStore
 from werkzeug.security import generate_password_hash
-_admin_core = SimpleNamespace(app=app, LOCK=threading.RLock(), STATE={'strat_log': []}, signal_history=[],
+_admin_core = SimpleNamespace(app=app, LOCK=threading.RLock(), STATE={'strat_log': [], 'connected':True, 'history':ROWS}, signal_history=[],
                               load_tg_config=lambda: ('fixture', 'fixture'),
                               _engine_thread=SimpleNamespace(is_alive=lambda: True),
                               _send_telegram=lambda text, cfg: 'sent', api_strat_daily_report=api_daily12)

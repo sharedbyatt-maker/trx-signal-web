@@ -21,6 +21,8 @@ if sys_stdout := __import__("sys").stdout:
 
 # Configuration is isolated from runtime behavior; imported names remain
 # available from app_core for backward compatibility with tests and callers.
+from strategy_settings import MONEY_DEFAULTS, MoneySchedule, ladder, risk_status
+from telegram_controls import TELEGRAM_DEFAULTS, classify, allowed
 from core_config import *  # noqa: F401,F403
 from feed_utils import next_issue_number, feed_delay_seconds, source_time_iso
 from core_notifications import consecutive_bs_streak, format_streak_telegram, rsi_alert_state
@@ -91,6 +93,10 @@ def load_tg_config():
     if not (token and chat and "PUT_YOUR" not in token and "PUT_YOUR" not in chat):
         token = os.environ.get("TG_TOKEN", "").strip()
         chat = os.environ.get("TG_CHAT", "").strip()
+    store = globals().get('_admin_store')
+    override = store.credential_override() if store else None
+    if override:
+        token, chat = override['token'], override['chat']
     if token and chat:
         return (token, chat, up, down, remind)
     return None
@@ -130,18 +136,30 @@ def _admin_telegram_enabled():
     store = globals().get('_admin_store')
     return not store or store.cached['settings']['telegram']
 
+def _telegram_allowed(text):
+    store=globals().get('_admin_store')
+    return _admin_telegram_enabled() and (not store or allowed(store.controls['telegram']['settings'], *classify(text)))
+
+def _money_current(name):
+    store=globals().get('_admin_store')
+    return copy.deepcopy(store.controls[name]['settings'] if store else MONEY_DEFAULTS[name])
+
 def _tg_worker():
     while True:
         text = _tg_queue.get()
         try:
             if text is None:
                 break
+            engine=category=None
+            if isinstance(text,tuple):text,engine,category=text
+            store=globals().get('_admin_store')
+            permit=_admin_telegram_enabled() and (not store or allowed(store.controls['telegram']['settings'],engine or classify(text)[0],category or classify(text)[1]))
             cfg = load_tg_config()
-            result = (_send_telegram(text, cfg) if cfg else "skip — config မဖြည့်ရသေးပါ") if _admin_telegram_enabled() else "disabled by admin"
+            result = (_send_telegram(text, cfg) if cfg else "skip — config မဖြည့်ရသေးပါ") if permit else "disabled by admin"
             store = globals().get('_admin_store')
             if store:
                 try:
-                    store.event('telegram', {'message': text.splitlines()[0][:240], 'result': result})
+                    store.event('telegram', {'message': text.splitlines()[0][:240], 'result': result, 'engine':engine or classify(text)[0], 'category':category or classify(text)[1]})
                 except Exception:
                     pass
             print(f"[TG] {result}: {text.splitlines()[0]}", flush=True)
@@ -154,21 +172,27 @@ def _tg_worker():
             _tg_queue.task_done()
 
 
-def tg_notify(text):
+def tg_notify(text, engine=None, category=None):
     """Bound Telegram memory pressure. Normal operation never approaches this cap."""
     global _tg_drop_count
-    if not _admin_telegram_enabled():
+    store=globals().get('_admin_store')
+    if not _admin_telegram_enabled() or (store and not allowed(store.controls['telegram']['settings'], engine or classify(text)[0], category or classify(text)[1])):
         return True
     # Catch-up replay settles model history; never send expired actionable alerts.
     if getattr(_notification_context, "historical", False):
         return True
     try:
-        _tg_queue.put_nowait(text)
+        _tg_queue.put_nowait((text,engine,category) if engine or category else text)
         return True
     except queue.Full:
         _tg_drop_count += 1
         print(f"[TG] queue full ({TG_QUEUE_MAX}); notification dropped safely", flush=True)
         return False
+
+tg_notify.supports_metadata=True
+
+def strat_notify(text):
+    return tg_notify(text,engine="twelve",category="daily" if "DAILY" in text.splitlines()[0].upper() else classify(text)[1])
 
 STATE = {
     "connected": False,
@@ -390,7 +414,7 @@ def _send_previous_strat_daily_if_needed(current_day):
         snap = _enrich_strat_daily_report(r)
         r["telegram_sent"] = True
         _save_strat_daily_reports_locked()
-    tg_notify(format_strat_daily_telegram(snap))
+    strat_notify(format_strat_daily_telegram(snap))
 
 strat_daily_lock = threading.RLock()
 strat_daily_reports = _load_strat_daily_reports()
@@ -1076,6 +1100,11 @@ def engine_loop():
 
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         latest = parsed_history[-1]
+                        with LOCK:
+                            globals()['_money_processing_issue']=latest['issue']
+                            store=globals().get('_admin_store')
+                            money=MoneySchedule('twelve',store.money_history('twelve') if store else ()).at(latest['issue'])
+                            money_ladder=ladder(money)
                         if latest["issue"] != last_issue:
                             # Build the staking walk/RSI only for a fresh completed round.
                             # Recomputing up to 30k points on every 0.5s no-change poll
@@ -1218,7 +1247,7 @@ def engine_loop():
                                     strat_state["step"] = 0
                                     strat_state["pending"] = None   # ladder done — clear UI state
                                     strat_state["last_result"] = f"WIN +{payout - stake_used:,} @ step {sp['bets']}"
-                                    tg_notify(
+                                    strat_notify(
                                         f"✅ BET WON — {sp['target']}\n"
                                         f"Tier {sp['tier']+1} · Step {sp['bets']} · "
                                         f"stake {stake_used:,} MMK\n"
@@ -1236,7 +1265,7 @@ def engine_loop():
                                             strat_state["busts"] += 1
                                             sp["outcome"] = "12-STEP BUST"
                                             strat_state["last_result"] = "💀 12-STEP BUST — Tier1 reset"
-                                            tg_notify(
+                                            strat_notify(
                                                 f"💀 12-STEP BUST — Tier 3 ၄ပွဲလုံး ရှုံးပါသည်\n"
                                                 f"စုစုပေါင်း အရှုံး (ဤ cycle): {sp['net']:+,} MMK\n"
                                                 f"System: Tier 1 သို့ reset ပြန်စပါမည်\n"
@@ -1246,11 +1275,11 @@ def engine_loop():
                                             sp["outcome"] = "TIER-FAILED"
                                             nxt = sp["tier"] + 1
                                             strat_state["last_result"] = f"Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}"
-                                            tg_notify(
+                                            strat_notify(
                                                 f"🛑 TIER FAILED (PAUSED) — Tier {sp['tier']+1}\n"
                                                 f"၄ပွဲလုံး ရှုံး · episode net: {sp['net']:+,} MMK\n"
                                                 f"နောက် Signal အသစ် ထွက်လာမှ Tier {nxt+1} Step 1 "
-                                                f"({STAKE_TIERS[nxt][0]:,} MMK) ဖြင့် ဆယ်မည်\n"
+                                                f"({money_ladder[nxt][0]:,} MMK) ဖြင့် ဆယ်မည်\n"
                                                 f"Issue …{latest['short_issue']}")
                                             print(f"[STAKE] Tier {sp['tier']+1} FAILED (paused) — next signal → Tier {nxt+1}", flush=True)
                                         strat_state["tier"] = 0 if sp["tier"] >= 2 else sp["tier"] + 1
@@ -1260,7 +1289,7 @@ def engine_loop():
                                         # ---- step lost, bets<4 — ladder continues ----
                                         sp["outcome"] = "STEP-LOSS"
                                         strat_state["step"] = sp["bets"]
-                                        next_stake = STAKE_TIERS[sp["tier"]][strat_state["step"]]
+                                        next_stake = money_ladder[sp["tier"]][strat_state["step"]]
                                         sp["step"] = strat_state["step"]
                                         sp["stake"] = next_stake
                                         sp["issue"] = next_issue
@@ -1284,7 +1313,7 @@ def engine_loop():
                                         strat_state["last_result"] = (
                                             f"Step {sp['bets']} lost → Step {sp['bets']+1} "
                                             f"({next_stake:,} MMK) armed for …{sp['short_issue']}")
-                                        tg_notify(
+                                        strat_notify(
                                             f"⚠️ STEP LOST — ADVANCING TO STEP {sp['bets']+1}\n"
                                             f"Target: {sp['target']} · Tier {sp['tier']+1}\n"
                                             f"နောက်ပွဲ Stake: {next_stake:,} MMK\n"
@@ -1325,7 +1354,7 @@ def engine_loop():
 
                             # new signal → arm next round with current tier/step stake
                             if strat_signal is not None and strat_pending is None:
-                                stake_amt = STAKE_TIERS[strat_state["tier"]][strat_state["step"]]
+                                stake_amt = money_ladder[strat_state["tier"]][strat_state["step"]]
                                 trigger_rsi = round(float(rsi_prev_s), 1) if rsi_prev_s is not None else None
                                 trigger_rule = (
                                     f"Prev RSI ≤ {RSI_STRAT_OVERSOLD:g} + BIG confirm"
@@ -1375,7 +1404,7 @@ def engine_loop():
                                     "source_time": latest.get("block_time", ""),
                                     "armed_at": now,
                                 }
-                                tg_notify(
+                                strat_notify(
                                     f"🎯 12-STEP SIGNAL — {strat_signal}\n\n"
                                     f"Target Issue: …{strat_pending['short_issue']}\n"
                                     f"Tier {strat_state['tier']+1} · Step {strat_state['step']+1}\n"
@@ -1543,6 +1572,11 @@ def api_state():
         snap["last_update_utc"] = datetime.fromisoformat(updated).astimezone(timezone.utc).isoformat() if updated else None
         health = public_feed_health(STATE)
     snap["feed_health"] = health
+    money=_money_current("twelve")
+    today,_=_strat_daily_snapshot(None,1)
+    snap["money_settings"]=money
+    snap["money_ladder"]=ladder(money)
+    snap["money_risk_status"]=risk_status(money,today.get("net_pnl",0),int((snap.get("strat_pending") or {}).get("stake") or 0))
     snap["admin_alerts_enabled"] = getattr(globals().get("_admin_store"), "cached", {"settings": {"alerts": True}})["settings"]["alerts"]
     if health["status"] not in ("LIVE", "DEGRADED"):
         snap["pending"] = None
@@ -1636,13 +1670,17 @@ def api_strat_daily_report():
         pend = None
     tier_idx = max(0, min(int(st.get("tier", 0)), len(STAKE_TIERS) - 1))
     step_idx = max(0, min(int(st.get("step", 0)), len(STAKE_TIERS[tier_idx]) - 1))
+    money=_money_current("twelve")
+    current["money_settings"]=money
+    current["money_ladder"]=ladder(money)
+    current["risk_status"]=risk_status(money,current.get("net_pnl",0),int((pend or {}).get("stake") or 0))
     current["engine"] = {
         "tier": tier_idx + 1,
         "step": step_idx + 1,
         "pending": pend,
         "last_result": st.get("last_result"),
         "status": health["status"] if health["status"] not in ("LIVE", "DEGRADED") else "ACTIVE" if pend else "WAITING",
-        "next_eligible_stake": int(STAKE_TIERS[tier_idx][step_idx]),
+        "next_eligible_stake": int(ladder(money)[tier_idx][step_idx]),
         "signals_session": int(st.get("signals", 0)),
         "busts_session": int(st.get("busts", 0)),
         "rules": {

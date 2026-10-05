@@ -18,6 +18,8 @@
   let lastSnapshot = null;
   function render(x, received = true) {
     if (received) { lastSnapshot = x; window.TRXContext?.onL1(x); }
+    const money=x?.money_settings;
+    if(money){const limit=v=>v?fmt(v)+' MMK':'Disabled';if($('l1-money-settings'))$('l1-money-settings').textContent=`Bankroll ${fmt(money.bankroll)} · Base ${fmt(money.base)} · TP ${limit(money.tp)} · SL ${limit(money.sl)} · Withdrawal ${fmt(money.withdrawal)}`;if($('l1-money-ladder'))$('l1-money-ladder').textContent=(x.money_ladder||[]).map((row,t)=>`T${t+1}: `+row.map(fmt).join(' → ')).join(' / ');}
     const p = window.TRXContext?.isValidTarget(x?.pending) ? x.pending : null;
     const ready = !!(x && x.ready && window.TRXContext?.isL1Ready());
     const status = $("l1-status");
@@ -134,3 +136,4 @@
   setInterval(refresh, 1000);
   setInterval(() => { if (lastSnapshot) render(lastSnapshot, false); }, 1000);
 })();
+
