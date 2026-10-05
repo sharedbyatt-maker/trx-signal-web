@@ -215,7 +215,16 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     @app.get('/api/admin/backup')
     @protect
     def backup():
-        response = jsonify(schema=1, exported_at=utcnow(), **store.read(), events=store.events(2000))
+        events = store.events(2000)
+        kept, size = [], 0
+        for event in events:
+            event_size = len(json.dumps(event).encode('utf-8')) + 2
+            if size + event_size > 800000:
+                break
+            kept.append(event)
+            size += event_size
+        response = jsonify(schema=1, exported_at=utcnow(), **store.read(), events=kept,
+                           events_truncated=len(kept) < len(events))
         response.headers['Content-Disposition'] = 'attachment; filename="trx-admin-backup.json"'
         return response
 

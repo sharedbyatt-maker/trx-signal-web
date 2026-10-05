@@ -173,3 +173,52 @@ def test_restore_keeps_delivery_records_visible(admin):
     delivered = [e for e in client.get('/api/admin/events').json['events'] if e['kind']=='telegram']
     assert delivered[0]['detail']['result'] == 'sent'
     assert delivered[0]['detail']['imported_from_backup_at'] == backup['events'][0]['at']
+
+
+def test_export_always_fits_restore_limit(admin):
+    client, store, *_ = admin
+    login(client)
+    for i in range(70):
+        store.event('fixture', {'payload':'x'*15000})
+    exported = client.get('/api/admin/backup')
+    assert len(exported.data) < 1024*1024
+    assert exported.json['events_truncated'] is True
+    backup = exported.json
+    backup['expected_revision'] = 0
+    assert client.post('/api/admin/restore', headers=headers(client), json=backup).status_code == 200
+
+
+def test_telegram_job_records_delivery_result(admin):
+    client, store, core, _ = admin
+    login(client)
+    core.load_tg_config = lambda: ('fixture', 'fixture')
+    core._send_telegram = lambda message, cfg: 'sent'
+    assert client.post('/api/admin/maintenance', headers=headers(client), json={'action':'telegram_test'}).status_code == 202
+    import time
+    for _ in range(50):
+        if any(e['kind']=='telegram' for e in store.events()):
+            break
+        time.sleep(.01)
+    event = next(e for e in store.events() if e['kind']=='telegram')
+    assert event['detail']['result']=='sent'
+
+
+def test_telegram_disable_gates_new_and_previously_queued_messages(monkeypatch):
+    import os, queue
+    os.environ['TRX_NO_ENGINE']='1'
+    import app_core as core
+    records, sent = [], []
+    store = SimpleNamespace(cached={'settings':{'telegram':False}}, event=lambda *args:records.append(args))
+    q = queue.Queue()
+    monkeypatch.setattr(core, '_admin_store', store, raising=False)
+    monkeypatch.setattr(core, '_tg_queue', q)
+    monkeypatch.setattr(core, 'STATE', copy.deepcopy(core.STATE))
+    monkeypatch.setattr(core, 'load_tg_config', lambda:('fixture','fixture'))
+    monkeypatch.setattr(core, '_send_telegram', lambda *args:sent.append(args))
+    assert core.tg_notify('new notification') is True and q.empty()
+    q.put('queued before disable')
+    q.put(None)
+    core._tg_worker()
+    assert not sent
+    assert core.STATE['tg_last']['result'] == 'disabled by admin'
+    assert records[0][0] == 'telegram'
