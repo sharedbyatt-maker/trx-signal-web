@@ -128,7 +128,12 @@ class AdminStore:
                 if type(after_issue) is not int or after_issue<=0:raise ValueError('A live source issue is required.')
                 db.execute('INSERT INTO money_changes VALUES(?,?,?,?)',(name,rev,str(after_issue),json.dumps(value)))
             db.execute('UPDATE controls SET revision=?,value=? WHERE name=?',(rev,json.dumps(value),name))
-            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_settings_saved',json.dumps({'before':json.loads(old[1]),'after':value,'revision':rev,'after_issue':str(after_issue) if after_issue is not None else None})))
+            detail = {'before':json.loads(old[1]),'after':value,'revision':rev,'after_issue':str(after_issue) if after_issue is not None else None}
+            if name == 'messages':
+                previous=json.loads(old[1])['templates']
+                detail={'revision':rev,'changed_templates':[key for key,text in value['templates'].items() if text!=previous[key]]}
+            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_settings_saved',json.dumps(detail)))
+            db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 2000)')
             db.commit()
             self.refresh_controls()
             return self.control(name)

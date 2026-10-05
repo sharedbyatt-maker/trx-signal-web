@@ -130,3 +130,15 @@ def test_corrupt_override_blocks_fallback_and_can_be_replaced(monkeypatch,tmp_pa
     assert 'unreadable' in core._tg_config_error
     store.vault.save('123456:'+('y'*30),'999999')
     assert core.load_tg_config()[1]=='999999' and core._tg_config_error is None
+
+
+def test_maximum_unicode_templates_produce_a_restorable_backup(admin):
+    client,store,*_=admin
+    login(client)
+    value={'templates':{key:'က'*1800 for key in MESSAGE_DEFAULTS['templates']}}
+    store.save_control('messages',value,0)
+    assert len(str(store.events()[0]['detail']))<2000
+    backup=client.get('/api/admin/backup').json
+    backup['expected_revision']=0
+    assert client.post('/api/admin/restore',json=backup,headers=headers(client)).status_code==200
+    assert store.control('messages')['settings']==value

@@ -132,14 +132,15 @@ def _send_telegram(text, cfg, delivery_check=None):
                         return 'Telegram rejected response'
                 except (ValueError,AttributeError,TypeError):
                     return 'Invalid Telegram response'
+                globals()['_tg_rate_limited_until']=0
                 return "sent" if attempt == 0 else "sent (retry)"
             if response.status_code == 429:
                 try:
                     retry_delay = max(1, float(response.json().get("parameters", {}).get("retry_after", 2)))
                 except (ValueError, TypeError, AttributeError):
                     retry_delay = 3
+                globals()['_tg_rate_limited_until']=time.monotonic() + (retry_delay if math.isfinite(retry_delay) else 60)
                 if not math.isfinite(retry_delay) or retry_delay > 10:
-                    globals()['_tg_rate_limited_until']=time.monotonic() + (retry_delay if math.isfinite(retry_delay) else 60)
                     return 'rate limited — message discarded'
             elif response.status_code < 500:
                 return f"HTTP {response.status_code}"
