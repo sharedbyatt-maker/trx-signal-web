@@ -151,7 +151,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     app.secret_key = os.environ.get('ADMIN_SESSION_SECRET') or secrets.token_hex(32)
     app.config.update(SESSION_COOKIE_NAME='trx_admin', SESSION_COOKIE_HTTPONLY=True,
                       SESSION_COOKIE_SAMESITE='Strict', SESSION_COOKIE_SECURE=os.environ.get('ADMIN_COOKIE_SECURE', '1' if os.environ.get('RENDER') else '0') == '1',
-                      PERMANENT_SESSION_LIFETIME=timedelta(hours=8), MAX_CONTENT_LENGTH=1024 * 1024)
+                      PERMANENT_SESSION_LIFETIME=timedelta(hours=8), MAX_CONTENT_LENGTH=8 * 1024 * 1024)
     attempts = OrderedDict()
     auth_lock = threading.Lock()
     maintenance_lock = threading.Lock()
@@ -346,10 +346,12 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     @protect
     def backup():
         events = store.events(2000)
+        monetary_size=len(json.dumps({"controls":store.controls,"money_changes":store.timelines,"issued_stakes":store.issued}).encode("utf-8"))
+        event_budget=max(0,800000-monetary_size)
         kept, size = [], 0
         for event in events:
             event_size = len(json.dumps(event).encode('utf-8')) + 2
-            if size + event_size > 800000:
+            if size + event_size > event_budget:
                 break
             kept.append(event)
             size += event_size
@@ -457,6 +459,9 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                         core.STATE['backtest'] = None
                     finish(True)
                 elif action == 'telegram_test':
+                    if not store.cached['settings']['telegram']:
+                        finish(False,'Telegram was disabled before the test started.')
+                        return
                     result = core._send_telegram('✅ TRX Admin — Telegram Test OK', core.load_tg_config())
                     store.event('telegram', {'message': 'Admin connection test', 'result': result})
                     finish(result.startswith('sent'), None if result.startswith('sent') else result)

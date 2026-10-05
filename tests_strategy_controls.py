@@ -176,3 +176,16 @@ def test_real_twelve_engine_settles_old_stake_and_arms_new_ladder(monkeypatch,tm
         assert [e['net_pnl'] for e in settlements]==[-200,576]
         assert core.strat_pending['stake']==300 # winning cycle reset
     finally:core._notification_context.historical=False
+
+
+
+def test_backup_budget_reserves_space_for_monetary_history(admin):
+    client,store,_,_=admin;login(client)
+    with store.connect() as db:
+        db.executemany('INSERT INTO issued_stakes VALUES(?,?)',[(str(20261001000000000+i),500) for i in range(12000)])
+    store.refresh_controls()
+    for _ in range(80):store.event('fixture',{'large':'x'*12000})
+    result=client.get('/api/admin/backup')
+    assert len(result.data)<1024*1024
+    assert len(result.json['issued_stakes'])==12000
+    assert result.json['events_truncated'] is True
