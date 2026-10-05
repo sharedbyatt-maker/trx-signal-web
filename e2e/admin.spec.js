@@ -108,6 +108,8 @@ test('message studio preserves drafts and chart/master saves stay separate',asyn
   const csrf=await page.locator('meta[name="csrf-token"]').getAttribute('content');
   const initial=(await (await page.request.get('/api/admin/settings')).json()).settings;
   const templates=(await (await page.request.get('/api/admin/telegram/messages')).json()).settings;
+  await expect(page.locator('#policy-state')).toContainText('Saved policy loaded');
+  await expect(page.locator('#draft-summary')).toHaveText('');
   try{
     await page.goto('/admin#chart');
     const draft=initial.timeframe===15?'5':'15';
@@ -149,6 +151,8 @@ test('message studio preserves drafts and chart/master saves stay separate',asyn
     await expect(page.locator('#notice')).toContainText('Invalid placeholder');
     await page.getByRole('button',{name:'Reload saved templates',exact:true}).click();
     await expect(page.locator('#message-template')).toHaveValue('မင်္ဂလာပါ {engine}\n{body}');
+    await page.getByRole('button',{name:'Preview message',exact:true}).click();
+    await expect(page.locator('#message-preview')).toContainText('500 MMK');
     await page.screenshot({path:test.info().outputPath('admin-message-studio.png'),fullPage:true});
     expect(errors).toEqual([]);
   }finally{
