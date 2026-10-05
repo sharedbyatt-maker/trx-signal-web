@@ -25,7 +25,7 @@ test('loads the real chart UI without browser runtime errors', async ({ page }) 
   await expect(page.locator('#lg-ohlc')).not.toHaveText('');
   await expect(page.locator('#rsi-pane')).toBeVisible();
   await expect(page.locator('#context-card')).toHaveCount(0);
-  await expect(page.locator('#history-range-select')).toHaveValue('10');
+  await expect(page.locator('#history-range-select')).toHaveValue('30');
   await page.waitForTimeout(700);
   expect(errors).toEqual([]);
 });
@@ -51,7 +51,7 @@ test('chart supports HLC stochastic', async ({ page }) => {
 test('history range presets expose the full-history navigation controls', async ({ page }) => {
   await waitForChart(page);
   await expect(page.locator('#chart-meta')).not.toHaveText('loading…');
-  for (const d of ['3', '1', '10']) {
+  for (const d of ['3', '1', '10', '30']) {
     await page.locator('#history-range-select').selectOption(d);
     await expect(page.locator('#history-range-select')).toHaveValue(d);
     await expect(page.locator('#tv-chart canvas').first()).toBeVisible();
@@ -489,3 +489,4 @@ test('oversized chart workspace scrolls normally to keep all controls reachable'
   await page.locator('#chart-time-bar').scrollIntoViewIfNeeded();
   await expect(page.locator('#chart-time-bar')).toBeInViewport();
 });
+

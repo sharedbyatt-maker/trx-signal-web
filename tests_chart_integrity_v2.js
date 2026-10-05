@@ -42,9 +42,19 @@ const incomplete = fullBuckets.slice(); incomplete[35]=4;
 if (qa.detectHssCandidates(hssBars, incomplete, 5).some(m => m.time === 36)) throw new Error('Incomplete 5m bucket was marked');
 if (qa.detectHssCandidates(hssBars, fullBuckets, 1).length) throw new Error('H/SS study must stay scoped to 5m');
 
-const cases = [[20000,1,4320],[20000,5,2880],[20000,15,960],[20000,60,240],[100,1,100]];
+const cases = [[20000,1,4320],[20000,5,8640],[20000,15,2880],[20000,60,720],[100,1,100]];
 for (const [avail, tf, want] of cases) {
   const got = qa.structuralLookbackBars(avail, tf);
   if (got !== want) throw new Error(`lookback ${tf}m expected ${want}, got ${got}`);
 }
 console.log('Chart Analysis Integrity v2 QA passed');
+
+
+const hm = candidates.find(m => m.time === 36);
+const evidence = hm.evidence;
+if (evidence.candle.l !== 98 || evidence.body !== 1 || evidence.lowerWick !== 3 || evidence.upperWick < 0) throw new Error('Candle evidence differs from detector input');
+if (evidence.zone.role !== 'S' || evidence.priorMove >= 0 || evidence.confirmedAt !== 37 || evidence.priorBars !== 35) throw new Error('Missing causal zone / trend / confirmation evidence');
+const futureChanged = hssBars.map(b=>({...b})); futureChanged[36]={time:37,o:1000,c:1001,h:1002,l:999};
+const again=qa.detectHssCandidates(futureChanged,fullBuckets,5).find(m=>m.time===36);
+if(JSON.stringify(again.evidence.zone)!==JSON.stringify(evidence.zone)) throw new Error('Future candle changed historical S/R evidence');
+console.log('H/SS evidence matches causal detection');

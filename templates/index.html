@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>TRX Confluence Engine — Live Terminal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=65">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=66">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/polish.css') }}?v=1">
 </head>
 <body>
@@ -18,7 +18,7 @@
     <span class="logo">📈</span>
     <div>
       <h1>TRX CONFLUENCE ENGINE <span class="ver">TERMINAL</span></h1>
-      <p class="sub">EMA 5/15 · SMA 20/50 · BB 20·2 · RSI 14 · MACD · Trendlines · S/R · Patterns · 10-Day History</p>
+      <p class="sub">EMA 5/15 · SMA 20/50 · BB 20·2 · RSI 14 · MACD · Trendlines · S/R · Patterns · 30-Day History</p>
     </div>
   </div>
   <div class="conn">
@@ -71,7 +71,8 @@
           <select id="history-range-select" class="range-select" title="Chart history range">
             <option value="1">1D</option>
             <option value="3">3D</option>
-            <option value="10" selected>10D</option>
+            <option value="10">10D</option>
+            <option value="30" selected>30D</option>
           </select>
         </label>
         <span id="chart-meta" hidden aria-hidden="true"></span>
@@ -165,6 +166,12 @@
         <span class="lg-chg" id="lg-chg"></span>
       </div>
     </div>
+    <section id="hss-details" class="hss-details" hidden aria-label="H / SS signal reasons">
+      <label for="hss-signal-select">H / SS SIGNAL REASON</label>
+      <select id="hss-signal-select" aria-label="Choose H / SS signal"></select>
+      <p id="hss-evidence" aria-live="polite"></p>
+      <small>Grouped BIG/SMALL walk candles · visual candidates. No measured hit rate or trade guarantee.</small>
+    </section>
     <div id="rsi-pane">
       <div id="rsi-chart"></div>
       <div class="tv-rsi-legend mono">
@@ -359,12 +366,13 @@
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/transport.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=57"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=58"></script>
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=48"></script>
 <script src="{{ url_for('static', filename='js/market-context.js') }}?v=5"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=54"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=55"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=4"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=7"></script>
 <script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=7"></script>
 </body>
 </html>
+

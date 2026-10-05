@@ -71,6 +71,8 @@ window.TRXChart = (() => {
     return srLevelsCache;
   }
 
+  let hssCandidates = [], selectedHssId = null;
+
   let curBars = [];           // [{time,o,h,l,c}]
   let curCloses = [];         // hot-path close cache; kept in lockstep with curBars
   let curLabels = [];
@@ -459,9 +461,9 @@ window.TRXChart = (() => {
   function structuralLookbackBars(available, tfMinutes = group) {
     const tf = Math.max(1, Number(tfMinutes) || 1);
     // 1m: use 3 days (4,320 bars) to deepen structure context without
-    // rescanning all ~14,400 ten-day bars every authoritative refresh.
-    // 5m/15m/1h: the full 10-day buffer is small enough to analyze directly.
-    const days = tf === 1 ? 3 : 10;
+    // rescanning all ~43,200 thirty-day bars every authoritative refresh.
+    // 5m/15m/1h: the full 30-day buffer is small enough to analyze directly.
+    const days = tf === 1 ? 3 : 30;
     const wanted = Math.ceil(days * 1440 / tf);
     return Math.max(0, Math.min(Number(available) || 0, wanted));
   }
@@ -952,13 +954,69 @@ window.TRXChart = (() => {
         .sort((a, z) => Math.abs(b.l - a.L) - Math.abs(b.l - z.L))[0];
       const resistance = levels.filter((lv) => lv.role === "R" && b.h >= lv.L - lv.tol && b.h <= lv.L + lv.tol * 2 && b.c <= lv.L + lv.tol * 0.2)
         .sort((a, z) => Math.abs(b.h - a.L) - Math.abs(b.h - z.L))[0];
-      if (shape === "H" && support) {
-        marks.push({ time: b.time, position: "belowBar", color: "#39c6a5", shape: "arrowUp", text: "H@S", size: 2 });
-      } else if (shape === "SS" && resistance) {
-        marks.push({ time: b.time, position: "aboveBar", color: "#ff7b72", shape: "arrowDown", text: "SS@R", size: 2 });
+      const zone = shape === "H" ? support : resistance;
+      if (zone) {
+        const body = Math.abs(b.c - b.o), range = b.h - b.l;
+        marks.push({
+          id: `hss:${b.time}:${shape}`, time: b.time,
+          position: shape === "H" ? "belowBar" : "aboveBar",
+          color: shape === "H" ? "#39c6a5" : "#ff7b72",
+          shape: shape === "H" ? "arrowUp" : "arrowDown",
+          text: shape === "H" ? "H@S" : "SS@R", size: 2,
+          evidence: { candle: { ...b }, zone: { ...zone }, priorMove: prior,
+            body, range, lowerWick: Math.min(b.o, b.c) - b.l,
+            upperWick: b.h - Math.max(b.o, b.c), closePosition: (b.c - b.l) / range,
+            priorBars: history.length, confirmedAt: bars[i + 1].time },
+        });
       }
     }
     return marks;
+  }
+
+  function showHssDetail(id) {
+    const mark = hssCandidates.find(m => m.id === id);
+    const output = $("hss-evidence");
+    if (!output) return;
+    selectedHssId = mark ? mark.id : null;
+    if (!mark) { output.textContent = "Choose a signal or click its candle / marker."; return; }
+    const select = $("hss-signal-select");
+    if (select) select.value = mark.id;
+    const e = mark.evidence, b = e.candle, z = e.zone;
+    const n = v => Number(v).toFixed(2);
+    const hammer = mark.text === "H@S";
+    const at = localTimeLabel(curTimes[mark.time - 1], true);
+    const confirmed = localTimeLabel(curTimes[e.confirmedAt - 1], true);
+    output.textContent = `${mark.text} · ${at} · issue ${curFulls[mark.time - 1] || "—"}\n`
+      + `Closed 5m candle: O ${n(b.o)} · H ${n(b.h)} · L ${n(b.l)} · C ${n(b.c)}\n`
+      + `${hammer ? "Lower" : "Upper"} wick / body ${n((hammer ? e.lowerWick : e.upperWick) / e.body)}× (≥2×); `
+      + `main wick / range ${n((hammer ? e.lowerWick : e.upperWick) / e.range * 100)}% (≥50%); `
+      + `opposite wick / body ${n((hammer ? e.upperWick : e.lowerWick) / e.body)}× (≤1×).\n`
+      + `Close position ${n(e.closePosition * 100)}% (${hammer ? "≥65%" : "≤35%"}); prior 3-bar move ${n(e.priorMove)} (${hammer ? "falling" : "rising"}).\n`
+      + `Prior ${hammer ? "support" : "resistance"} ${n(z.L)} · zone ${n(z.L - z.tol)}–${n(z.L + z.tol)} `
+      + `· tolerance ${n(z.tol)} · ${z.strength} · ${z.c} touches · ${z.rejections} rejections.\n`
+      + `Candle ${hammer ? "low" : "high"} is within the permitted touch band `
+      + `${n(hammer ? z.L - z.tol * 2 : z.L - z.tol)}–${n(hammer ? z.L + z.tol : z.L + z.tol * 2)}; `
+      + `close ${hammer ? "≥" : "≤"} ${n(hammer ? z.L - z.tol * .2 : z.L + z.tol * .2)}.\n`
+      + `S/R uses ${e.priorBars} earlier candles only; candidate has 5 source rounds. `
+      + `Confirmed when the next bucket appeared: ${confirmed}.`;
+  }
+
+  function refreshHssDetails() {
+    const panel = $("hss-details"), select = $("hss-signal-select");
+    if (!panel || !select) return;
+    panel.hidden = !opts.hss;
+    select.replaceChildren();
+    for (const m of hssCandidates.slice().reverse()) {
+      const option = document.createElement("option");
+      option.value = m.id;
+      option.textContent = `${m.text} · ${localTimeLabel(curTimes[m.time - 1], true)}`;
+      select.appendChild(option);
+    }
+    select.disabled = !hssCandidates.length;
+    if (!hssCandidates.length) {
+      selectedHssId = null;
+      $("hss-evidence").textContent = group !== 5 ? "Switch to 5m to inspect H / SS signals." : "No closed H / SS candidates in the loaded history.";
+    } else showHssDetail(hssCandidates.some(m => m.id === selectedHssId) ? selectedHssId : hssCandidates.at(-1).id);
   }
 
   function drawSrLines(levels) {
@@ -1160,7 +1218,7 @@ window.TRXChart = (() => {
       ...baseChartOptions(container, container.clientHeight),
       watermark: {
         visible: true,
-        text: "TRX / ROUND · 10-DAY",
+        text: "TRX / ROUND · 30-DAY",
         color: "rgba(209,212,220,0.04)",
         fontSize: 46,
         horzAlign: "center",
@@ -1280,6 +1338,14 @@ window.TRXChart = (() => {
     initStochPane();
     syncRanges();
     syncCrosshairs();
+    chart.subscribeClick(param => {
+      if (!opts.hss || group !== 5) return;
+      const mark = hssCandidates.find(m => m.id === param.hoveredObjectId)
+        || hssCandidates.find(m => m.time === param.time);
+      if (mark) showHssDetail(mark.id);
+    });
+    const hssSelect = $("hss-signal-select");
+    if (hssSelect) hssSelect.addEventListener("change", () => showHssDetail(hssSelect.value));
     bindToolbar();
     updateLegend(null);
   }
@@ -1458,7 +1524,7 @@ window.TRXChart = (() => {
     const historyRangeSelect = $("history-range-select");
     if (historyRangeSelect) {
       historyRangeSelect.addEventListener("change", () => {
-        setHistoryRange(Number(historyRangeSelect.value) || 10);
+        setHistoryRange(Number(historyRangeSelect.value) || 30);
       });
     }
     const fitBtn = $("fit-btn");
@@ -1518,10 +1584,10 @@ window.TRXChart = (() => {
     srRescanNeeded = true;   // re-cluster S/R for the new timeframe
   }
 
-  function setHistoryRange(days = 10) {
+  function setHistoryRange(days = 30) {
     const n = curBars.length;
     if (!n) return false;
-    const wanted = Math.max(1, Math.ceil((Number(days) || 10) * 1440 / Math.max(1, group)));
+    const wanted = Math.max(1, Math.ceil((Number(days) || 30) * 1440 / Math.max(1, group)));
     const from = Math.max(1, n - wanted + 1);
     const range = { from, to: n + 4 };
     [chart, rsiChart, macdChart, stochChart].forEach((c) => {
@@ -1532,8 +1598,8 @@ window.TRXChart = (() => {
   }
 
   function anchorRecent() {
-    // RANGE 10D is the selected/data-loaded range, but do not crush ~14,400 1m
-    // bars into the first screen. Start with a readable recent window; 10D remains
+    // RANGE 30D is the selected/data-loaded range, but do not crush ~43,200 1m
+    // bars into the first screen. Start with a readable recent window; 30D remains
     // available via the selected RANGE button / FIT.
     const n = curBars.length;
     if (!n) return;
@@ -1621,7 +1687,7 @@ window.TRXChart = (() => {
 
     // ---- structure: pivots -> trendlines -> patterns -> S/R ----
     // Analysis Integrity v2: adaptive structural window. 1m uses the latest
-    // 3 days; higher timeframes can safely use the full 10-day chart buffer.
+    // 3 days; higher timeframes can safely use the full 30-day chart buffer.
     const TAIL = structuralLookbackBars(curBars.length);
     const tailStart = curBars.length - TAIL;
     const tailBars = curBars.slice(tailStart);
@@ -1658,8 +1724,10 @@ window.TRXChart = (() => {
       markers = markers.concat(pm);
       markers.sort((a, b) => a.time - b.time);
     }
+    hssCandidates = opts.hss && group === 5 ? detectHssCandidates(curBars, counts) : [];
+    refreshHssDetails();
     if (opts.hss && group === 5) {
-      markers = markers.concat(detectHssCandidates(curBars, counts));
+      markers = markers.concat(hssCandidates.map(({ evidence, ...marker }) => marker));
       markers.sort((a, b) => a.time - b.time);
     }
     markers = markers.filter((m) => m && typeof m.time === "number" && !isNaN(m.time));
@@ -1966,3 +2034,4 @@ window.TRXChart = (() => {
     _qa: { calcStoch, structuralLookbackBars, hssShape, detectHssCandidates, srLevels, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice()}) },
   };
 })();
+

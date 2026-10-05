@@ -1,9 +1,9 @@
 const $ = (id) => document.getElementById(id);
 const fmtInt = (n) => n.toLocaleString("en-US");
 
-/* ================= 10-day full history buffer ================= */
+/* ================= 30-day full history buffer ================= */
 let fullRows = [];            // from /api/history ([issue, number, blockTime] tuples)
-let fullIssueSet = new Set(); // O(1) membership for the 10-day browser buffer
+let fullIssueSet = new Set(); // O(1) membership for the 30-day browser buffer
 let lastHistFetch = 0;
 let mergedCount = 0;
 let lastResultUtc = null;
@@ -55,10 +55,10 @@ async function loadFullHistory(force) {
       type: number >= 5 ? "BIG" : "SMALL",
     }));
     if (inc.length) {
-      // A forced fetch is a fresh authoritative 10-day snapshot, not an append.
+      // A forced fetch is a fresh authoritative 30-day snapshot, not an append.
       // Incremental fetches append/replace by issue.
       fullRows = force ? mergeRows([], inc) : mergeRows(fullRows, inc);
-      if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
+      if (fullRows.length > 45200) fullRows = fullRows.slice(-45200);
       rebuildFullIssueSet();
     } else {
       // Initial page load can beat the background engine. Do not lock the chart
@@ -72,7 +72,7 @@ async function loadFullHistory(force) {
     else if (fullRows.length) lastResultTime = fullRows[fullRows.length - 1].block_time;
     const metaEl = $("chart-meta");
     if (metaEl) {
-      const days = data.meta && data.meta.days ? data.meta.days : 10;
+      const days = data.meta && data.meta.days ? data.meta.days : 30;
       metaEl.textContent = `${fullRows.length.toLocaleString("en-US")} rounds · ${days}D BUFFER`;
       metaEl.title = `Loaded chart history: ${fullRows.length.toLocaleString("en-US")} rounds`;
     }
@@ -396,7 +396,7 @@ function renderHistory(s) {
   const a = s.analysis;
   if (counts) {
     counts.innerHTML = a && a.ready
-      ? `Window ${s.config.long_window}: <b class="b">BIG ${a.big}</b> · <b class="s">SMALL ${a.small}</b> · Gap ${a.gap} · <span title="10-day buffer">Buffer ${mergedCount.toLocaleString("en-US")}</span>`
+      ? `Window ${s.config.long_window}: <b class="b">BIG ${a.big}</b> · <b class="s">SMALL ${a.small}</b> · Gap ${a.gap} · <span title="30-day buffer">Buffer ${mergedCount.toLocaleString("en-US")}</span>`
       : `Collecting… Buffer ${mergedCount.toLocaleString("en-US")}`;
   }
 }
@@ -451,7 +451,7 @@ async function refresh() {
     lastState = s;
     lastStateReceived = Date.now();
 
-    // refresh the 10-day chart buffer periodically or when it falls behind
+    // refresh the 30-day chart buffer periodically or when it falls behind
     const lastLocal = fullRows.length ? fullRows[fullRows.length - 1].issue : "";
     const lastLive = s.history && s.history.length ? s.history[s.history.length - 1].issue : "";
     if (!fullRows.length || (lastLive && lastLive > lastLocal)) {
@@ -647,7 +647,7 @@ async function pollLatest() {
         block_time: rd.block_time || "",
         type: rd.number >= 5 ? "BIG" : "SMALL",
       });
-      if (fullRows.length > 30000) fullRows = fullRows.slice(-30000);
+      if (fullRows.length > 45200) fullRows = fullRows.slice(-45200);
       rebuildFullIssueSet();
       if (rd.block_time) lastResultTime = rd.block_time;
       lastResultUtc = rd.block_time_utc || null;
@@ -752,3 +752,4 @@ if (tgBtn) {
     setTimeout(() => { tgBtn.textContent = "📡"; }, 3000);
   });
 }
+
