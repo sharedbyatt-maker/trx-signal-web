@@ -407,7 +407,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         return jsonify(health=health, maintenance=job,
                        telegram_configured=bool(core.load_tg_config()),
                        storage={'persistent': bool(os.environ.get('ADMIN_PERSISTENT_STORAGE') == '1'),
-                                'note': 'Export a backup before redeploying. Local settings and logs can reset on free hosting.'})
+                                'note': 'Free Render can lose local settings on deployment, platform restart or spin-down. Export backups; password and API keys require persistent storage.'})
 
     @app.route('/api/admin/settings', methods=['GET', 'PUT'])
     @protect
