@@ -88,8 +88,9 @@ class AdminStore:
             db.execute('UPDATE settings SET revision=?,value=? WHERE id=1', (rev, json.dumps(value)))
             db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',
                        (utcnow(), action, json.dumps({'before': json.loads(current[1]), 'after': value, 'revision': rev})))
-        self.cached = {'revision': rev, 'settings': value}
-        return self.cached
+            db.commit()
+            self.cached = {'revision': rev, 'settings': value}
+            return copy.deepcopy(self.cached)
 
     def refresh_controls(self):
         with self.lock, self.connect() as db:
