@@ -123,6 +123,13 @@ def _send_telegram(text, cfg):
     return "failed after 3 attempts: " + failure
 
 
+_admin_history_refresh_requested = threading.Event()
+_admin_history_refresh_result = {}
+
+def _admin_telegram_enabled():
+    store = globals().get('_admin_store')
+    return not store or store.cached['settings']['telegram']
+
 def _tg_worker():
     while True:
         text = _tg_queue.get()
@@ -130,7 +137,13 @@ def _tg_worker():
             if text is None:
                 break
             cfg = load_tg_config()
-            result = _send_telegram(text, cfg) if cfg else "skip — config မဖြည့်ရသေးပါ"
+            result = (_send_telegram(text, cfg) if cfg else "skip — config မဖြည့်ရသေးပါ") if _admin_telegram_enabled() else "disabled by admin"
+            store = globals().get('_admin_store')
+            if store:
+                try:
+                    store.event('telegram', {'message': text.splitlines()[0][:240], 'result': result})
+                except Exception:
+                    pass
             print(f"[TG] {result}: {text.splitlines()[0]}", flush=True)
             with LOCK:
                 STATE["tg_last"] = {
@@ -144,6 +157,8 @@ def _tg_worker():
 def tg_notify(text):
     """Bound Telegram memory pressure. Normal operation never approaches this cap."""
     global _tg_drop_count
+    if not _admin_telegram_enabled():
+        return True
     # Catch-up replay settles model history; never send expired actionable alerts.
     if getattr(_notification_context, "historical", False):
         return True
@@ -990,12 +1005,14 @@ def engine_loop():
     while True:
         poll_started = time.monotonic()
         _notification_context.historical = False
+        admin_refresh = False
         try:
             # Do not rely on the upstream bare-endpoint default size. Request an
             # explicit deep snapshot so the 30-day chart cannot silently collapse
             # to a small provider default after an upstream behavior change.
-            url = (URL_DATA + f"?limit={MAX_FULL_ROWS}") if not have_full else URL_DATA + f"?limit={TAIL_LIMIT}"
-            timeout_sec = 30 if not have_full else 6
+            admin_refresh = _admin_history_refresh_requested.is_set()
+            url = (URL_DATA + f"?limit={MAX_FULL_ROWS}") if not have_full or admin_refresh else URL_DATA + f"?limit={TAIL_LIMIT}"
+            timeout_sec = 30 if not have_full or admin_refresh else 6
             res = session.get(
                 url, timeout=timeout_sec,
                 headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
@@ -1006,15 +1023,28 @@ def engine_loop():
                     raise ValueError("invalid feed payload")
                 # boot full snapshot: upstream ships ~187k rows (~4.5MB) —
                 # parse only the newest MAX_FULL_ROWS slice (RAM safety on 512MB hosts)
-                if not have_full and len(data_list) > MAX_FULL_ROWS:
+                if (not have_full or admin_refresh) and len(data_list) > MAX_FULL_ROWS:
                     data_list = newest_raw_slice(data_list, MAX_FULL_ROWS)
                 parsed = parse_history(data_list)
                 if not parsed:
                     raise ValueError("feed contains no valid rounds")
-                if not have_full and len(parsed) > MAX_FULL_ROWS:
+                if (not have_full or admin_refresh) and len(parsed) > MAX_FULL_ROWS:
                     parsed = parsed[-MAX_FULL_ROWS:]
 
                 if parsed:
+                    if admin_refresh and have_full:
+                        merged = {r['issue']: r for r in all_rows}
+                        merged.update({r['issue']: r for r in parsed})
+                        all_rows = sorted(merged.values(), key=lambda r: r['issue_int'])[-MAX_FULL_ROWS:]
+                        seen_issues = set(r['issue'] for r in all_rows)
+                        full_hist = trim_full_history(all_rows)
+                        with LOCK:
+                            STATE['full_history'] = full_hist
+                            STATE['hist_meta'] = {'days': FULL_HISTORY_DAYS, 'count': len(full_hist),
+                                                  'from': full_hist[0]['issue'], 'to': full_hist[-1]['issue']}
+                        _admin_history_refresh_result.clear()
+                        _admin_history_refresh_result.update(ok=True, rows=len(full_hist))
+                        _admin_history_refresh_requested.clear()
                     if have_full:
                         # merge only genuinely-new tail rounds (ascending order)
                         fresh = [r for r in parsed if r["issue"] not in seen_issues]
@@ -1437,6 +1467,10 @@ def engine_loop():
                                           f"trade-wr {bt_result['buckets']['trade']['wr']}", flush=True)
                             print(f"[{now}] Issue {latest['short_issue']} -> {latest['number']} "
                                   f"({analysis['signal']} {analysis['score']:+.0f})", flush=True)
+                    if admin_refresh and _admin_history_refresh_requested.is_set():
+                        _admin_history_refresh_result.clear()
+                        _admin_history_refresh_result.update(ok=True, rows=len(all_rows))
+                        _admin_history_refresh_requested.clear()
                     _notification_context.historical = False
             else:
                 err_streak += 1
@@ -1453,6 +1487,10 @@ def engine_loop():
                 STATE["connected"] = False
                 STATE["error"] = f"{type(e).__name__}: {e}"
             print(f"Connection Exception (Auto-Retrying): {e}", flush=True)
+        if admin_refresh and _admin_history_refresh_requested.is_set():
+            _admin_history_refresh_result.clear()
+            _admin_history_refresh_result.update(ok=False, error='Upstream refresh failed. Check system status and try again.')
+            _admin_history_refresh_requested.clear()
         # Keep poll *start-to-start* cadence close to POLL_SEC. Previously we
         # slept POLL_SEC after network/parse/CPU work, so a nominal 0.5s poll
         # could become 0.7-1.0s. A small floor prevents hot-looping on slow/error paths.
@@ -1505,6 +1543,7 @@ def api_state():
         snap["last_update_utc"] = datetime.fromisoformat(updated).astimezone(timezone.utc).isoformat() if updated else None
         health = public_feed_health(STATE)
     snap["feed_health"] = health
+    snap["admin_alerts_enabled"] = getattr(globals().get("_admin_store"), "cached", {"settings": {"alerts": True}})["settings"]["alerts"]
     if health["status"] not in ("LIVE", "DEGRADED"):
         snap["pending"] = None
         snap["strat_pending"] = None
@@ -1559,6 +1598,8 @@ def api_telegram_test():
     """Header 📡 button — same-origin POST only, with a small anti-spam guard."""
     if not _allow_browser_action("telegram-test", min_interval=3.0):
         return jsonify({"ok": False, "error": "action blocked or rate-limited"}), 429
+    if not _admin_telegram_enabled():
+        return jsonify({"ok": False, "error": "Telegram disabled by admin"}), 409
     cfg = load_tg_config()
     if not cfg:
         return jsonify({"ok": False,

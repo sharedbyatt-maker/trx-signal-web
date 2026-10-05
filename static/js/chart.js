@@ -41,10 +41,10 @@ window.TRXChart = (() => {
   let stochDSeries = null;
 
   let replay = null, renderingReplay = false, replayTimer = null, replayStarting = false;
-  let group = 1;
+  let group = Number(document.body?.dataset.adminTimeframe) || 1;
   let viewMode = "candles";   // candles | line
   let opts = {
-    ema: true, sma: false, bb: false, rsi: true, sig: false,
+    ema: true, sma: false, bb: false, rsi: true, sig: document.body?.dataset.adminSignals === "1",
     pat: false, sr: false, tl: false, hss: false, macd: false, stoch: false,
   };
 

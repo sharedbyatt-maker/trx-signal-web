@@ -207,6 +207,25 @@ def generic_api(_path):
     return jsonify({"ok": True})
 
 
+# Exercise the real admin auth/settings API against deterministic fixture engines.
+import sys
+import tempfile
+import threading
+from types import SimpleNamespace
+sys.path.insert(0, str(ROOT))
+from admin_dashboard import install_admin, AdminStore
+from werkzeug.security import generate_password_hash
+_admin_core = SimpleNamespace(app=app, LOCK=threading.RLock(), STATE={'strat_log': []}, signal_history=[],
+                              load_tg_config=lambda: ('fixture', 'fixture'),
+                              _engine_thread=SimpleNamespace(is_alive=lambda: True),
+                              _send_telegram=lambda text, cfg: 'sent', api_strat_daily_report=api_daily12)
+_admin_health = lambda: jsonify(ok=True, status='LIVE', engine={'connected':True,'full_history_rows':43200,'thread_alive':True},
+                               feed={'last_issue':ROWS[-1]['issue'],'result_age_sec':2}, queues={'telegram_worker_alive':True},uptime_sec=120)
+install_admin(_admin_core, _admin_health, SimpleNamespace(public_snapshot=lambda: api_l1_capital().get_json()),
+              lambda: None, password_hash=generate_password_hash('fixture-admin-password'),
+              store=AdminStore(Path(tempfile.mkdtemp())/'admin.sqlite3'))
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=4173, debug=False, use_reloader=False)
+
 

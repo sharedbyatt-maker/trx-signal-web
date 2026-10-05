@@ -1,7 +1,8 @@
+from tests_admin_dashboard import render_terminal_defaults
 from pathlib import Path
 
 def test_clean_overlay_defaults_and_readable_10d_start():
-    html=Path('templates/index.html').read_text(encoding='utf-8')
+    html=render_terminal_defaults()
     js=Path('static/js/chart.js').read_text(encoding='utf-8')
     assert 'id="tl-toggle">' in html and 'id="tl-toggle" checked' not in html
     assert 'id="pat-toggle"' in html and 'id="pat-toggle" checked' not in html

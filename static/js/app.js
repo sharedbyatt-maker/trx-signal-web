@@ -411,6 +411,11 @@ function safeRender(fn, s) {
 }
 
 function render(s, merged) {
+  if (typeof s.admin_alerts_enabled === "boolean") {
+    document.body.dataset.adminAlerts = s.admin_alerts_enabled ? "1" : "0";
+    const bell = $("bell-btn");
+    if (bell) bell.disabled = !s.admin_alerts_enabled;
+  }
   const fh = s.feed_health || {};
   const fstat = fh.status || (s.connected ? "LIVE" : "OFFLINE");
   if (!s.connected || fstat === "OFFLINE") {
@@ -702,7 +707,7 @@ function notifySignal(label, issue) {
 const alertedIssues = new Map();
 window.TRXAlerts = {
   signal(engine, pending) {
-    if (!soundOn || !pending || !window.TRXContext?.isValidTarget(pending)) return;
+    if (document.body.dataset.adminAlerts === "0" || !soundOn || !pending || !window.TRXContext?.isValidTarget(pending)) return;
     const key = String(pending.issue) + ":" + pending.target;
     if (alertedIssues.get(engine) === key) return;
     alertedIssues.set(engine, key);
@@ -714,6 +719,7 @@ window.TRXAlerts = {
 const bellBtn = $("bell-btn");
 if (bellBtn) {
   bellBtn.classList.toggle("off", !soundOn);
+  bellBtn.disabled = document.body.dataset.adminAlerts === "0";
   bellBtn.addEventListener("click", () => {
     soundOn = !soundOn;
     try { localStorage.setItem("trx_sound", soundOn ? "1" : "0"); } catch (_e) {}

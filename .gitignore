@@ -19,3 +19,7 @@ drawings_backups/
 node_modules/
 playwright-report/
 test-results/
+
+
+# Private admin runtime settings and logs
+instance/
