@@ -6,6 +6,7 @@ with Base=500 and payout=1.96, then sends clearly namespaced Telegram alerts.
 It never places bets and never suppresses signals after TP/SL; TP/SL only change
 the displayed risk status to OBSERVE ONLY.
 """
+from strategy_settings import MONEY_DEFAULTS, MoneySchedule, ladder, risk_status
 import json
 import os
 import threading
@@ -72,7 +73,7 @@ def _rule_skip(rsi, i, step):
     return 0, None
 
 
-def replay_l1(rows):
+def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
     """Deterministic shadow replay over completed rows; returns current next-bet state."""
     rows = [r for r in rows if r.get("issue") and r.get("type") in ("BIG", "SMALL")]
     if len(rows) < RSI_PERIOD + 3:
@@ -85,6 +86,8 @@ def replay_l1(rows):
         walk.append(close)
     rsi = _rsi(walk)
 
+    schedule=MoneySchedule("l1",money_changes)
+    issued_stakes=issued_stakes or {}
     tier = 0
     active = None
     wait = None
@@ -94,14 +97,16 @@ def replay_l1(rows):
     # Same causal order as frozen rule_replay.py. rows[i+1] is the target round.
     for i in range(1, len(rows) - 1):
         cur, nxt = rows[i], rows[i + 1]
+        stakes=schedule.ladder_at(cur["issue"])
         if wait and i >= wait["enter_i"]:
             active = dict(wait)
             active["issue"] = nxt["issue"]
+            active["stake"]=stakes[active["tier"]][active["bets"]]
             active.pop("enter_i", None)
             wait = None
 
         if active and cur["issue"] == active["issue"]:
-            stake = active["stake"]
+            stake = issued_stakes.get(str(cur["issue"]),active["stake"])
             won = cur["type"] == active["target"]
             active["bets"] += 1
             pnl = int(round(stake * PAYOUT)) - stake if won else -stake
@@ -115,7 +120,7 @@ def replay_l1(rows):
                 tier = 0
                 active = None
             elif active["bets"] < len(STAKES[active["tier"]]):
-                next_stake = STAKES[active["tier"]][active["bets"]]
+                next_stake = stakes[active["tier"]][active["bets"]]
                 skip, rid = _rule_skip(rsi, i, active["bets"])
                 last_rule = rid
                 if skip:
@@ -152,7 +157,7 @@ def replay_l1(rows):
             if signal:
                 active = {
                     "issue": nxt["issue"], "target": signal, "tier": tier,
-                    "stake": STAKES[tier][0], "bets": 0, "trigger_rsi": rp,
+                    "stake": stakes[tier][0], "bets": 0, "trigger_rsi": rp,
                     "rule": None,
                 }
 
@@ -162,13 +167,16 @@ def replay_l1(rows):
     # transition here and let the service bind it to core.STATE[next_issue].
     i = len(rows) - 1
     cur = rows[i]
+    stakes=schedule.ladder_at(cur["issue"])
+    money=current_money or schedule.at(cur["issue"])
     if wait and i >= wait["enter_i"]:
         active = dict(wait)
         active["issue"] = None
+        active["stake"]=stakes[active["tier"]][active["bets"]]
         active.pop("enter_i", None)
         wait = None
     if active and cur["issue"] == active["issue"]:
-        stake = active["stake"]
+        stake = issued_stakes.get(str(cur["issue"]),active["stake"])
         won = cur["type"] == active["target"]
         active["bets"] += 1
         pnl = int(round(stake * PAYOUT)) - stake if won else -stake
@@ -181,7 +189,7 @@ def replay_l1(rows):
         if won:
             tier = 0; active = None
         elif active["bets"] < len(STAKES[active["tier"]]):
-            next_stake = STAKES[active["tier"]][active["bets"]]
+            next_stake = stakes[active["tier"]][active["bets"]]
             skip, rid = _rule_skip(rsi, i, active["bets"])
             last_rule = rid
             if skip:
@@ -204,7 +212,7 @@ def replay_l1(rows):
         elif rp is not None and rp >= OVERBOUGHT and cur["type"] == "SMALL":
             signal = "SMALL"
         if signal:
-            active = {"issue": None, "target": signal, "tier": tier, "stake": STAKES[tier][0],
+            active = {"issue": None, "target": signal, "tier": tier, "stake": stakes[tier][0],
                       "bets": 0, "trigger_rsi": rp, "rule": None}
 
     today = str(cur.get("block_time") or "")[:10]
@@ -221,12 +229,8 @@ def replay_l1(rows):
         "max_step": deepest["step"] if deepest else None,
     }
     total_pnl = sum(t["pnl"] for t in trades)
-    risk = "TRADE ALLOWED"
-    if day_pnl >= DAILY_TP:
-        risk = "OBSERVE ONLY — DAILY TP REACHED"
-    elif day_pnl <= -DAILY_SL:
-        risk = "OBSERVE ONLY — DAILY SL REACHED"
-    withdraw_units = max(0, total_pnl // WITHDRAW_MILESTONE)
+    risk = risk_status(money,day_pnl)
+    withdraw_units = max(0, total_pnl // money['withdrawal'])
 
     pending = None
     if active:
@@ -239,8 +243,9 @@ def replay_l1(rows):
         "last_rule": last_rule, "trades": trades[-100:],
         "today": today, "today_pnl": day_pnl, "model_total_pnl": total_pnl,
         "daily_summary": daily_summary,
-        "working_bankroll": WORKING_BANKROLL, "daily_tp": DAILY_TP,
-        "daily_sl": DAILY_SL, "withdraw_milestone": WITHDRAW_MILESTONE,
+        "money_settings": money, "money_ladder":ladder(money),
+        "working_bankroll": money["bankroll"], "daily_tp": money["tp"],
+        "daily_sl": money["sl"], "withdraw_milestone": money["withdrawal"],
         "withdraw_milestones_reached": withdraw_units, "risk_status": risk,
         "last_trade": trades[-1] if trades else None,
     }
@@ -314,8 +319,8 @@ def _fmt_wait(s):
     )
 
 
-def _fmt_withdrawal_milestone(units):
-    amount = int(units) * WITHDRAW_MILESTONE
+def _fmt_withdrawal_milestone(units, amount=WITHDRAW_MILESTONE):
+    amount = int(units) * amount
     return (
         f"💰 {ENGINE_NAME} — WITHDRAWAL MILESTONE\n\n"
         f"{amount:,} MMK profit milestone reached.\n"
@@ -330,6 +335,7 @@ class L1CapitalService:
         self._stop = threading.Event()
         self._last_alert_key = None
         self._last_withdraw_units = 0
+        self._last_withdraw_amount = WITHDRAW_MILESTONE
         self._last_result_key = None
         self._last_wait_key = None
         self._last_mode = None
@@ -348,6 +354,7 @@ class L1CapitalService:
             if isinstance(key, list) and len(key) == 5:
                 self._last_alert_key = tuple(key)
             self._last_withdraw_units = max(0, int(saved.get("last_withdraw_units") or 0))
+            self._last_withdraw_amount = max(1,int(saved.get("last_withdraw_amount") or WITHDRAW_MILESTONE))
             result_key = saved.get("last_result_key")
             if isinstance(result_key, list) and len(result_key) == 6:
                 self._last_result_key = tuple(result_key)
@@ -369,6 +376,7 @@ class L1CapitalService:
                 json.dump({
                     "last_alert_key": list(self._last_alert_key) if self._last_alert_key else None,
                     "last_withdraw_units": self._last_withdraw_units,
+                    "last_withdraw_amount": self._last_withdraw_amount,
                     "last_result_key": list(self._last_result_key) if self._last_result_key else None,
                     "last_wait_key": list(self._last_wait_key) if self._last_wait_key else None,
                     "last_mode": self._last_mode,
@@ -398,6 +406,10 @@ class L1CapitalService:
                                  "error": f"{type(exc).__name__}: {exc}"}
                 time.sleep(2.0)
 
+    def _notify(self,text,category):
+        fn=self.core.tg_notify
+        return fn(text,engine='l1',category=category) if getattr(fn,'supports_metadata',False) else fn(text)
+
     def refresh_once(self):
         """Build and publish one snapshot; split out for deterministic tests."""
         with self.core.LOCK:
@@ -405,10 +417,16 @@ class L1CapitalService:
             next_issue = self.core.STATE.get("next_issue")
         if not rows:
             return self.public_snapshot()
-        snap = replay_l1(rows)
+        store=getattr(self.core,"_admin_store",None)
+        changes,issued,current=store.money_snapshot("l1") if store else ((),{},None)
+        snap = replay_l1(rows, money_changes=changes, issued_stakes=issued, current_money=current)
         snap["source_issue"] = str(rows[-1]["issue"])
         if snap.get("pending") and next_issue:
             snap["pending"]["issue"] = str(next_issue)
+        if store and snap.get("pending") and next_issue:
+            snap["pending"]["stake"]=store.lock_stake(str(next_issue),snap["pending"]["stake"])
+        if store and snap.get("ready"):
+            snap["risk_status"]=risk_status(store.control("l1")["settings"],snap.get("today_pnl",0),int((snap.get("pending") or {}).get("stake") or 0))
         self.snapshot = snap
         published = self.public_snapshot()
         if not published.get("ready"):
@@ -423,7 +441,7 @@ class L1CapitalService:
                 int(last_trade.get("step") or 0), bool(last_trade.get("won")),
             )
             if result_key != self._last_result_key:
-                if self.core.tg_notify(_fmt_result(snap)):
+                if self._notify(_fmt_result(snap),"result"):
                     self._last_result_key = result_key
                     self._save_runtime_state()
 
@@ -432,7 +450,7 @@ class L1CapitalService:
         if p and p.get("issue"):
             key = (str(p["issue"]), p["target"], int(p["stake"]), int(p["tier"]), int(p["step"]))
             if key != self._last_alert_key:
-                if not self.core.tg_notify(_fmt_signal(snap)):
+                if not self._notify(_fmt_signal(snap),"signal"):
                     return published
                 self._last_alert_key = key
             self._last_mode = "SIGNAL"
@@ -445,22 +463,27 @@ class L1CapitalService:
                 int(wait.get("bets") or 0),
             )
             if self._last_mode != "WAIT_RULE" or wait_key != self._last_wait_key:
-                if not self.core.tg_notify(_fmt_wait(snap)):
+                if not self._notify(_fmt_wait(snap),"wait"):
                     return published
                 self._last_wait_key = wait_key
             self._last_mode = "WAIT_RULE"
             self._save_runtime_state()
         elif self._last_mode != "WAIT":
-            if not self.core.tg_notify(_fmt_wait(snap)):
+            if not self._notify(_fmt_wait(snap),"wait"):
                 return published
             self._last_mode = "WAIT"
             self._last_wait_key = None
             self._save_runtime_state()
 
         units = int(snap.get("withdraw_milestones_reached") or 0)
+        amount=int(snap.get("withdraw_milestone") or WITHDRAW_MILESTONE)
+        if amount!=self._last_withdraw_amount:
+            self._last_withdraw_amount=amount
+            self._last_withdraw_units=units
+            self._save_runtime_state()
         if units > self._last_withdraw_units:
-            for milestone in range(self._last_withdraw_units + 1, units + 1):
-                if not self.core.tg_notify(_fmt_withdrawal_milestone(milestone)):
+            for milestone in range(max(self._last_withdraw_units + 1,units - 4), units + 1):
+                if not self._notify(_fmt_withdrawal_milestone(milestone,snap.get("withdraw_milestone",WITHDRAW_MILESTONE)),"withdrawal"):
                     break
                 self._last_withdraw_units = milestone
                 self._save_runtime_state()
@@ -507,3 +530,4 @@ def install_l1_capital(core):
         return core.jsonify(service.public_snapshot())
 
     return service
+

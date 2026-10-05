@@ -193,7 +193,7 @@ class SixFixesTests(unittest.TestCase):
                 self.assertIn("STEP-LOSS", events)
                 self.assertIn("WIN", events)
                 self.assertEqual(core.STATE["next_issue"], "20261002103010021")
-                queued = list(core._tg_queue.queue)
+                queued = [m[0] if isinstance(m,tuple) else m for m in core._tg_queue.queue]
                 self.assertFalse(any("Target Issue: …010020" in m and "12-STEP SIGNAL" in m for m in queued))
             finally:
                 core.STATE.clear()
@@ -203,3 +203,4 @@ class SixFixesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

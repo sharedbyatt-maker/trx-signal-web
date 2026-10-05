@@ -254,10 +254,9 @@
       <div class="risk-banner" id="l1-risk" role="status">TRADE ALLOWED</div>
       <div class="manual-note">Manual execution only · Signals continue after TP/SL</div>
       <details class="terminal-details"><summary>L1 rules &amp; limits</summary>
-      <div class="stake-rule">FROZEN L1 · RSI 14 · 32/68 · Base 500 · Payout 1.96 · Skip R02/R03/R05/R06 · 12 steps</div>
-      <div class="stake-bottom">
-        <span>TP <b>+5,000</b></span><span>SL <b>−50,000</b></span><span>BR <b>100,000</b></span>
-      </div>
+      <div class="stake-rule" id="l1-frozen-rules">FROZEN L1 · RSI 14 · 32/68 · Payout 1.96 · Skip R02/R03/R05/R06 · 12 steps</div>
+      <div class="stake-rule" id="l1-money-settings">Loading current money settings…</div>
+      <div class="stake-rule" id="l1-money-ladder"></div>
       </details>
     </section>
 
@@ -304,8 +303,9 @@
 
       </div>
 
+      <div class="risk-banner" id="st-money-risk" role="status">Manual execution only</div>
       <details class="terminal-details"><summary>Signal details</summary>
-      <div class="stake-rule" id="st-source">waiting for confirmation round…</div>
+      <div class="stake-rule" id="st-source">waiting for confirmation round…</div><div class="stake-rule" id="st-money-settings">Loading current money settings…</div><div class="stake-rule" id="st-money-ladder"></div>
       <div class="stake-bottom">
         <span>LAST <b id="st-last">No settled episode yet</b></span>
         <span>BUSTS <b id="st-busts">0</b></span>

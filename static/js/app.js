@@ -186,6 +186,8 @@ function renderAnalytics(s) {
 
   /* ---- 🎰 12-step staking panel (display-only detail; strategy unchanged) ---- */
   const st = s.strat || {};
+  if(s.money_settings){const m=s.money_settings;const fmt=v=>Number(v).toLocaleString();const limit=v=>v?fmt(v)+' MMK':'Disabled';if($('st-money-settings'))$('st-money-settings').textContent=`Bankroll ${fmt(m.bankroll)} · Base ${fmt(m.base)} · TP ${limit(m.tp)} · SL ${limit(m.sl)}`;if($('st-money-ladder'))$('st-money-ladder').textContent=(s.money_ladder||[]).map((r,t)=>`T${t+1}: `+r.map(fmt).join(' → ')).join(' / ');if($('st-money-risk')){$('st-money-risk').textContent=s.money_risk_status||'Manual execution only';$('st-money-risk').classList.toggle('is-observe',s.money_risk_status!=='TRADE ALLOWED');}}
+
   {
     const tierEl = $("st-tier"), stepEl = $("st-step");
     if (tierEl) {

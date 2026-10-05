@@ -427,9 +427,9 @@ test('risk remains distinct from feed state and rules are available on demand', 
   await expect(page.locator('#l1-risk')).toHaveClass(/is-observe/);
   await expect(page.locator('#focus-connection b')).toHaveText('LIVE');
   await expect(page.locator('#l1-status')).toBeHidden();
-  await expect(page.locator('#l1-capital-card .stake-rule')).toBeHidden();
+  await expect(page.locator('#l1-frozen-rules')).toBeHidden();
   await page.locator('#l1-capital-card .terminal-details summary').click();
-  await expect(page.locator('#l1-capital-card .stake-rule')).toContainText('Skip R02/R03/R05/R06');
+  await expect(page.locator('#l1-frozen-rules')).toContainText('Skip R02/R03/R05/R06');
 });
 
 test('last result uses the viewer clock with a labelled timezone and elapsed age', async ({ browser, baseURL }) => {
