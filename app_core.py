@@ -24,6 +24,7 @@ if sys_stdout := __import__("sys").stdout:
 # available from app_core for backward compatibility with tests and callers.
 from strategy_settings import MONEY_DEFAULTS, MoneySchedule, ladder, risk_status
 from telegram_controls import TELEGRAM_DEFAULTS, classify, allowed
+from feed_connection import DEFAULT_FEED, request_feed
 from telegram_messages import MESSAGE_DEFAULTS, render_message
 from core_config import *  # noqa: F401,F403
 from feed_utils import next_issue_number, feed_delay_seconds, source_time_iso
@@ -209,7 +210,7 @@ def _tg_worker():
             store = globals().get('_admin_store')
             if store:
                 try:
-                    store.event('telegram', {'message': original.split('\n')[0][:240], 'text':rendered['text'][:4096], 'result': result, 'engine':engine, 'category':category,'template_fallback':rendered['fallback']})
+                    store.event('telegram', {'message': original.split('\n')[0][:240], 'original':original[:4096], 'text':rendered['text'][:4096], 'result': result, 'engine':engine, 'category':category,'template_fallback':rendered['fallback']})
                 except Exception:
                     pass
             print(f"[TG] {result}: {original.split(chr(10))[0]}", flush=True)
@@ -1070,6 +1071,20 @@ def completed_prefixes(rows, previous_issue):
             yield rows[:i + 1]
 
 
+def feed_profile():
+    store=globals().get('_admin_store')
+    return store.feed_config() if store and hasattr(store,'feed_config') else (0,{**DEFAULT_FEED,'url':URL_DATA})
+
+
+def fetch_feed(limit,timeout):
+    store=globals().get('_admin_store')
+    revision,config=feed_profile()
+    response=request_feed(session,config,limit,timeout)
+    if store and hasattr(store,'feed_config') and store.feed_config()[0]!=revision:
+        raise ValueError('API connection changed during fetch; retrying with current settings.')
+    return response
+
+
 def engine_loop():
     global last_issue, pending, units, lose_streak, cooldown, unresolved_signal
     global tg_armed_up, tg_armed_down, _tg_up_ts, _tg_down_ts
@@ -1094,11 +1109,8 @@ def engine_loop():
             # explicit deep snapshot so the 30-day chart cannot silently collapse
             # to a small provider default after an upstream behavior change.
             admin_refresh = _admin_history_refresh_requested.is_set()
-            url = (URL_DATA + f"?limit={MAX_FULL_ROWS}") if not have_full or admin_refresh else URL_DATA + f"?limit={TAIL_LIMIT}"
             timeout_sec = 30 if not have_full or admin_refresh else 6
-            res = session.get(
-                url, timeout=timeout_sec,
-                headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+            res = fetch_feed(MAX_FULL_ROWS if not have_full or admin_refresh else TAIL_LIMIT,timeout_sec)
             if res.status_code == 200:
                 data = res.json()
                 data_list = data if isinstance(data, list) else data.get("data", []) if isinstance(data, dict) else []
@@ -1777,10 +1789,7 @@ _rsi_ext_compute_lock = threading.Lock()
 def compute_rsi_extremes(days=30):
     """Upstream ကနေ 30 ရက်စာ rounds ဆွဲပြီး chart-identical walk-RSI min/max."""
     try:
-        res = session.get(
-            URL_DATA + f"?limit={days * 1440 + 2000}",
-            timeout=40,
-            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+        res = fetch_feed(days * 1440 + 2000,40)
         if res.status_code != 200:
             return None
         payload = res.json()

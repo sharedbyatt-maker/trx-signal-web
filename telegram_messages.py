@@ -10,6 +10,10 @@ VARIABLES = {'original': 'Complete original engine message', 'title': 'Original 
 MESSAGE_DEFAULTS = {'templates': {f'{e}.{k}': '{original}' for e in ENGINES for k in KINDS}}
 
 def validate_template(template):
+    if isinstance(template,dict):
+        if set(template)!={'heading','before','after'} or any(not isinstance(v,str) or len(v)>800 for v in template.values()) or sum(map(len,template.values()))>1800:
+            raise ValueError('Use a heading, opening text and closing text, up to 1800 characters in total.')
+        return copy.deepcopy(template)
     if not isinstance(template, str) or not template.strip() or len(template) > 1800:
         raise ValueError('Message template must contain 1–1800 characters.')
     try:
@@ -30,6 +34,10 @@ def validate_messages(value):
 def render_message(template, original, engine, category):
     validate_template(template)
     original = str(original)
+    if isinstance(template,dict):
+        text='\n\n'.join(v.strip() for v in (template['heading'],template['before'],original,template['after']) if v.strip())
+        fallback=len(text.encode('utf-16-le'))//2>4096
+        return {'text':original if fallback else text,'fallback':fallback,'details_appended':False}
     title, _, body = original.partition('\n')
     fields = {f for _, f, _, _ in Formatter().parse(template) if f is not None}
     text = template.format(original=original, title=title, body=body,

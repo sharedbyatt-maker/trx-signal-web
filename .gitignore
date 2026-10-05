@@ -23,3 +23,6 @@ test-results/
 
 # Private admin runtime settings and logs
 instance/
+
+# Local Telegram bot credentials
+telegram.json

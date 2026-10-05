@@ -130,12 +130,13 @@ test('message studio preserves drafts and chart/master saves stay separate',asyn
     await expect(page.locator('#notice')).toContainText('Telegram credentials saved.');
     if(originalChannel)await expect(page.locator('#policy-engines-l1')).not.toBeChecked();else await expect(page.locator('#policy-engines-l1')).toBeChecked();
     await page.getByRole('button',{name:'Reload policy',exact:true}).click();
+    await page.locator('#message-mode').selectOption('advanced');
     await page.locator('#message-template').fill('မင်္ဂလာပါ {engine}\n{body}');
     await page.getByRole('button',{name:'Preview message',exact:true}).click();
     await expect(page.locator('#message-preview')).toContainText('မင်္ဂလာပါ L1 CAPITAL');
     await expect(page.locator('#message-preview')).toContainText('500 MMK');
     await page.locator('#message-category').selectOption('result');
-    await expect(page.locator('#message-template')).toHaveValue('{original}');
+    await expect(page.locator('#message-mode')).toHaveValue('simple');
     await page.locator('#message-category').selectOption('signal');
     await expect(page.locator('#message-template')).toHaveValue('မင်္ဂလာပါ {engine}\n{body}');
     await page.getByRole('button',{name:'Save message templates',exact:true}).click();
@@ -160,5 +161,61 @@ test('message studio preserves drafts and chart/master saves stay separate',asyn
     await page.request.put('/api/admin/settings',{headers:{'X-CSRF-Token':csrf},data:{revision:current.revision,settings:initial}});
     const messages=(await (await page.request.get('/api/admin/telegram/messages')).json());
     await page.request.put('/api/admin/telegram/messages',{headers:{'X-CSRF-Token':csrf},data:{revision:messages.revision,settings:templates}});
+  }
+});
+
+test('easy message editor, password change and API connection controls',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('/admin/login');
+  await page.getByLabel('Admin password').fill('fixture-admin-password');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page.locator('#notice')).toContainText('Connected.');
+  const csrf=await page.locator('meta[name="csrf-token"]').getAttribute('content');
+  const original=(await (await page.request.get('/api/admin/telegram/messages')).json()).settings;
+  const newPassword='fixture-new-password-123';
+  try{
+    await page.goto('/admin#notifications');
+    await expect(page.locator('#message-mode')).toHaveValue('simple');
+    await expect(page.locator('#message-advanced')).toBeHidden();
+    await page.locator('#message-heading').fill('ဒီအကြိမ် Signal');
+    await page.locator('#message-before').fill('မင်္ဂလာပါ — {ရိုးရိုးစာ}');
+    await page.locator('#message-after').fill('Manual only');
+    await expect(page.locator('#message-preview')).toContainText('ဒီအကြိမ် Signal');
+    await expect(page.locator('#message-preview')).toContainText('500 MMK');
+    await page.getByRole('button',{name:'Save message templates',exact:true}).click();
+    await expect(page.locator('#message-state')).toContainText('Saved');
+    await page.locator('#message-category').selectOption('result');
+    await page.locator('#message-category').selectOption('signal');
+    await expect(page.locator('#message-heading')).toHaveValue('ဒီအကြိမ် Signal');
+    await page.screenshot({path:test.info().outputPath('admin-easy-message-studio.png'),fullPage:true});
+    await page.goto('/admin#connection');
+    await expect(page.locator('#feed-url')).toHaveValue('https://trxchart.com/api/trx-data');
+    await page.locator('#feed-auth').selectOption('bearer');
+    await expect(page.locator('#feed-key-label')).toBeVisible();
+    await expect(page.locator('#feed-key-name-label')).toBeHidden();
+    await page.locator('#feed-key').fill('fixture-api-key');
+    await page.route('**/api/admin/feed/check',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,rows:50,matched_rounds:20,latest_issue:'20261005103010099'})}));
+    await page.getByRole('button',{name:'Check connection first',exact:true}).click();
+    await expect(page.locator('#feed-state')).toContainText('20 matching rounds');
+    await page.getByRole('button',{name:'Reload saved',exact:true}).click();
+    await page.goto('/admin#security');
+    await page.locator('#current-password').fill('fixture-admin-password');
+    await page.locator('#new-password').fill(newPassword);
+    await page.locator('#confirm-password').fill('different-password-123');
+    await page.getByRole('button',{name:'Change password & sign out',exact:true}).click();
+    await expect(page.locator('#notice')).toContainText('do not match');
+    await page.locator('#confirm-password').fill(newPassword);
+    await page.getByRole('button',{name:'Change password & sign out',exact:true}).click();
+    await expect(page.getByRole('heading',{name:'Admin sign in'})).toBeVisible();
+    await page.getByLabel('Admin password').fill(newPassword);
+    await page.getByRole('button',{name:'Sign in',exact:true}).click();
+    await expect(page.locator('#notice')).toContainText('Connected.');
+    expect(errors).toEqual([]);
+  }finally{
+    let token=await page.locator('meta[name="csrf-token"]').getAttribute('content');
+    const messages=(await (await page.request.get('/api/admin/telegram/messages')).json());
+    if(messages.settings)await page.request.put('/api/admin/telegram/messages',{headers:{'X-CSRF-Token':token},data:{revision:messages.revision,settings:original}});
+    const response=await page.request.post('/api/admin/password',{headers:{'X-CSRF-Token':token},data:{current:newPassword,new:'fixture-admin-password',confirm:'fixture-admin-password'}});
+    if(response.ok())await page.goto('/admin/login');
   }
 });
