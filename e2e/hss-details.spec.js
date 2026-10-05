@@ -1,6 +1,6 @@
 const {test,expect}=require('@playwright/test');
 
-test('H/SS evidence is selectable and scoped to closed 5m signals',async({page})=>{
+test('H/SS toggle works without a reason panel or popup',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   // Deterministic 1m source data, grouped by the production chart code.
   let seed=73;
@@ -16,19 +16,13 @@ test('H/SS evidence is selectable and scoped to closed 5m signals',async({page})
   await page.locator('.tf-btn[data-g="5"]').click();
   await page.locator('#ind-toggle-btn').click();
   await page.locator('#hss-toggle').check();
-  await expect(page.locator('#hss-details')).toBeVisible();
-  await expect.poll(()=>page.locator('#hss-signal-select option').count()).toBeGreaterThan(1);
-  const ids=await page.locator('#hss-signal-select option').evaluateAll(opts=>opts.map(o=>o.value));
-  for(const id of [ids[0],ids.at(-1)]){
-    await page.locator('#hss-signal-select').selectOption(id);
-    await expect(page.locator('#hss-evidence')).toContainText('Closed 5m candle:');
-    await expect(page.locator('#hss-evidence')).toContainText('wick / body');
-    await expect(page.locator('#hss-evidence')).toContainText('earlier candles only');
-    await expect(page.locator('#hss-evidence')).toContainText('Confirmed when the next bucket appeared:');
-  }
+  await expect(page.locator('#hss-toggle')).toBeChecked();
+  await expect(page.locator('#hss-details')).toHaveCount(0);
+  await expect(page.locator('#hss-signal-select')).toHaveCount(0);
+  await expect(page.locator('#hss-evidence')).toHaveCount(0);
+  await expect(page.locator('#history-range-select')).toHaveValue('30');
   await page.locator('.tf-btn[data-g="1"]').click();
-  await expect(page.locator('#hss-evidence')).toHaveText('Switch to 5m to inspect H / SS signals.');
   await page.locator('#hss-toggle').uncheck();
-  await expect(page.locator('#hss-details')).toBeHidden();
+  await expect(page.locator('#hss-toggle')).not.toBeChecked();
   expect(errors).toEqual([]);
 });
