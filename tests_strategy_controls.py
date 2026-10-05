@@ -204,3 +204,20 @@ def test_changed_withdrawal_threshold_notifies_next_actual_milestone():
     snap['withdraw_milestones_reached']=1
     with patch.object(l1,'replay_l1',return_value=snap):service.refresh_once()
     assert len(core.messages)==1 and '100,000' in core.messages[0]
+
+
+
+def test_large_source_issue_survives_browser_backup_and_fresh_restore(admin,tmp_path):
+    client,store,core,_=admin;login(client)
+    issue=20261005103010409 # larger than JavaScript's exact Number range
+    money=copy.deepcopy(MONEY_DEFAULTS['l1']);money['base']=600
+    store.save_control('l1',money,0,issue)
+    backup=client.get('/api/admin/backup').json
+    assert backup['money_changes']['l1'][0]['after_issue']==str(issue)
+    # Strings preserve every digit through JSON.parse / JSON.stringify in the UI.
+    fresh,restored,_,_=globals()['admin'].__wrapped__(tmp_path/'fresh')
+    login(fresh);backup['expected_revision']=0
+    assert fresh.post('/api/admin/restore',json=backup,headers=headers(fresh)).status_code==200
+    assert restored.money_history('l1')[0]['after_issue']==issue
+    schedule=MoneySchedule('l1',restored.money_history('l1'))
+    assert schedule.at(issue)['base']==500 and schedule.at(issue+1)['base']==600

@@ -118,7 +118,7 @@ class AdminStore:
                 if type(after_issue) is not int or after_issue<=0:raise ValueError('A live source issue is required.')
                 db.execute('INSERT INTO money_changes VALUES(?,?,?,?)',(name,rev,str(after_issue),json.dumps(value)))
             db.execute('UPDATE controls SET revision=?,value=? WHERE name=?',(rev,json.dumps(value),name))
-            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_settings_saved',json.dumps({'before':json.loads(old[1]),'after':value,'revision':rev,'after_issue':after_issue})))
+            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_settings_saved',json.dumps({'before':json.loads(old[1]),'after':value,'revision':rev,'after_issue':str(after_issue) if after_issue is not None else None})))
             db.commit()
             self.refresh_controls()
             return self.control(name)
@@ -278,7 +278,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         else:result=store.control(name)
         return jsonify(**result, defaults=MONEY_DEFAULTS[name], info=STRATEGY_INFO[name], ladder=ladder(result['settings']),
                        effective='New stakes use settings after the current completed source issue. Already issued stakes stay fixed.',
-                       changes=store.money_history(name)[-20:])
+                       changes=[{**c,'after_issue':str(c['after_issue'])} for c in store.money_history(name)[-20:]])
 
     @app.route('/api/admin/telegram', methods=['GET','PUT'])
     @protect
@@ -358,7 +358,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                 kept.append(event)
                 size += event_size
             response = jsonify(schema=1, exported_at=utcnow(), **store.read(), events=kept,
-                               events_truncated=len(kept) < len(events), controls=store.controls, money_changes=store.timelines, issued_stakes=store.issued)
+                               events_truncated=len(kept) < len(events), controls=store.controls, money_changes={name:[{**c,"after_issue":str(c["after_issue"])} for c in changes] for name,changes in store.timelines.items()}, issued_stakes=store.issued)
             response.headers['Content-Disposition'] = 'attachment; filename="trx-admin-backup.json"'
             return response
 
@@ -381,7 +381,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             controls=data.get('controls',{})
             if not isinstance(controls,dict) or (controls and set(controls)!={'l1','twelve','telegram'}):raise ValueError('Invalid control backup.')
             for name,item in controls.items():
-                if not isinstance(item,dict) or type(item.get('revision')) is not int or item['revision']<0:raise ValueError('Invalid control revision.')
+                if not isinstance(item,dict) or type(item.get('revision')) is not int or not 0<=item['revision']<=1000000000:raise ValueError('Invalid control revision.')
                 (validate_telegram if name=='telegram' else lambda v:validate_money(name,v))(item.get('settings'))
             timelines=data.get('money_changes',{})
             issued=data.get('issued_stakes',{})
@@ -392,10 +392,11 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                     seen=set()
                     for c in changes:
                         if not isinstance(c,dict):raise ValueError('Invalid monetary history.')
+                        if isinstance(c.get('after_issue'),str) and c['after_issue'].isdigit():c['after_issue']=int(c['after_issue'])
                         if type(c.get('revision')) is not int:raise ValueError('Invalid monetary revision.')
                         if c.get('revision') in seen:raise ValueError('Duplicate monetary revision.')
                         seen.add(c.get('revision'))
-                        if type(c.get('revision')) is not int or c['revision']<=0 or type(c.get('after_issue')) is not int or c['after_issue']<=0:raise ValueError('Invalid monetary boundary.')
+                        if type(c.get('revision')) is not int or not 0<c['revision']<=1000000000 or type(c.get('after_issue')) is not int or c['after_issue']<=0:raise ValueError('Invalid monetary boundary.')
                         validate_money(name,c.get('settings'))
                     if changes and (max(c['revision'] for c in changes)!=controls[name]['revision'] or max(changes,key=lambda c:c['revision'])['settings']!=controls[name]['settings']):raise ValueError('Control and monetary history disagree.')
                     if not changes and (controls[name]['revision'] or controls[name]['settings']!=MONEY_DEFAULTS[name]):raise ValueError('Missing monetary history.')
