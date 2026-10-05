@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -53,19 +54,28 @@ class CredentialVault:
         self.path=Path(db_path).with_suffix('.credentials')
         key_path=Path(db_path).with_suffix('.key')
         if not key_path.exists():
+            fd,tmp=tempfile.mkstemp(dir=key_path.parent,prefix='.vault-key-')
             try:
-                fd=os.open(key_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
                 with os.fdopen(fd,'wb') as f:f.write(Fernet.generate_key())
-            except FileExistsError:pass
+                try:os.link(tmp,key_path)
+                except FileExistsError:pass
+            finally:os.unlink(tmp)
         self.cipher=Fernet(key_path.read_bytes())
     def read(self):
         if not self.path.exists():return None
-        return json.loads(self.cipher.decrypt(self.path.read_bytes()))
+        try:
+            value=json.loads(self.cipher.decrypt(self.path.read_bytes()))
+            validate_credentials(value['token'],value['chat'])
+            return value
+        except Exception:
+            raise ValueError('Telegram credential override is unreadable. Replace credentials or use server configuration.') from None
     def save(self,token,chat):
-        tmp=self.path.with_suffix('.tmp')
-        fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
-        with os.fdopen(fd,'wb') as f:f.write(self.cipher.encrypt(json.dumps({'token':token,'chat':chat}).encode()))
-        os.replace(tmp,self.path)
+        fd,tmp=tempfile.mkstemp(dir=self.path.parent,prefix='.vault-write-')
+        try:
+            with os.fdopen(fd,'wb') as f:f.write(self.cipher.encrypt(json.dumps({'token':token,'chat':chat}).encode()))
+            os.replace(tmp,self.path)
+        finally:
+            if os.path.exists(tmp):os.unlink(tmp)
     def clear(self):
         self.path.unlink(missing_ok=True)
 

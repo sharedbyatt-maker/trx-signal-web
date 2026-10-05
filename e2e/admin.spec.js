@@ -98,3 +98,54 @@ test('strategy money drafts, fixed rules and Telegram policy controls',async({pa
   }
   expect(errors).toEqual([]);
 });
+
+test('message studio preserves drafts and chart/master saves stay separate',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('/admin/login');
+  await page.getByLabel('Admin password').fill('fixture-admin-password');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page.locator('#notice')).toContainText('Connected.');
+  const csrf=await page.locator('meta[name="csrf-token"]').getAttribute('content');
+  const initial=(await (await page.request.get('/api/admin/settings')).json()).settings;
+  const templates=(await (await page.request.get('/api/admin/telegram/messages')).json()).settings;
+  try{
+    await page.goto('/admin#chart');
+    const draft=initial.timeframe===15?'5':'15';
+    await page.locator('#timeframe').selectOption(draft);
+    await page.goto('/admin#notifications');
+    await page.locator('#alerts').setChecked(!initial.alerts);
+    await page.getByRole('button',{name:'Save master switches',exact:true}).click();
+    await expect(page.locator('#notice')).toContainText('Settings saved.');
+    const saved=(await (await page.request.get('/api/admin/settings')).json()).settings;
+    expect(saved.timeframe).toBe(initial.timeframe);
+    await expect(page.locator('#draft-summary')).toContainText('Chart');
+    await page.locator('#message-template').fill('မင်္ဂလာပါ {engine}\n{body}');
+    await page.getByRole('button',{name:'Preview message',exact:true}).click();
+    await expect(page.locator('#message-preview')).toContainText('မင်္ဂလာပါ L1 CAPITAL');
+    await expect(page.locator('#message-preview')).toContainText('500 MMK');
+    await page.locator('#message-category').selectOption('result');
+    await expect(page.locator('#message-template')).toHaveValue('{original}');
+    await page.locator('#message-category').selectOption('signal');
+    await expect(page.locator('#message-template')).toHaveValue('မင်္ဂလာပါ {engine}\n{body}');
+    await page.getByRole('button',{name:'Save message templates',exact:true}).click();
+    await expect(page.locator('#message-state')).toContainText('Saved');
+    await page.goto('/admin#chart');
+    await expect(page.locator('#timeframe')).toHaveValue(draft);
+    await page.getByRole('button',{name:'Save chart & alert settings',exact:true}).click();
+    await expect(page.locator('#notice')).toContainText('Settings saved.');
+    expect((await (await page.request.get('/api/admin/settings')).json()).settings.alerts).toBe(!initial.alerts);
+    await page.goto('/admin#notifications');
+    await page.locator('#message-template').fill('{secret}');
+    await page.getByRole('button',{name:'Preview message',exact:true}).click();
+    await expect(page.locator('#notice')).toContainText('Invalid placeholder');
+    await page.getByRole('button',{name:'Reload saved templates',exact:true}).click();
+    await expect(page.locator('#message-template')).toHaveValue('မင်္ဂလာပါ {engine}\n{body}');
+    await page.screenshot({path:test.info().outputPath('admin-message-studio.png'),fullPage:true});
+    expect(errors).toEqual([]);
+  }finally{
+    const current=(await (await page.request.get('/api/admin/settings')).json());
+    await page.request.put('/api/admin/settings',{headers:{'X-CSRF-Token':csrf},data:{revision:current.revision,settings:initial}});
+    const messages=(await (await page.request.get('/api/admin/telegram/messages')).json());
+    await page.request.put('/api/admin/telegram/messages',{headers:{'X-CSRF-Token':csrf},data:{revision:messages.revision,settings:templates}});
+  }
+});
