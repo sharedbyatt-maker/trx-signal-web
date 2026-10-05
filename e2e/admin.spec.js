@@ -119,6 +119,15 @@ test('message studio preserves drafts and chart/master saves stay separate',asyn
     const saved=(await (await page.request.get('/api/admin/settings')).json()).settings;
     expect(saved.timeframe).toBe(initial.timeframe);
     await expect(page.locator('#draft-summary')).toContainText('Chart');
+    const originalChannel=await page.locator('#policy-engines-l1').isChecked();
+    await page.locator('#policy-engines-l1').setChecked(!originalChannel);
+    await page.route('**/api/admin/telegram/credentials',route=>route.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'}));
+    await page.locator('#bot-token').fill('123456:abcdefghijklmnopqrstuvwxyz123456');
+    await page.locator('#bot-chat').fill('123456');
+    await page.getByRole('button',{name:'Save credentials',exact:true}).click();
+    await expect(page.locator('#notice')).toContainText('Telegram credentials saved.');
+    if(originalChannel)await expect(page.locator('#policy-engines-l1')).not.toBeChecked();else await expect(page.locator('#policy-engines-l1')).toBeChecked();
+    await page.getByRole('button',{name:'Reload policy',exact:true}).click();
     await page.locator('#message-template').fill('မင်္ဂလာပါ {engine}\n{body}');
     await page.getByRole('button',{name:'Preview message',exact:true}).click();
     await expect(page.locator('#message-preview')).toContainText('မင်္ဂလာပါ L1 CAPITAL');
