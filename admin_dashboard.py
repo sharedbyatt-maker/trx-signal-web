@@ -14,10 +14,11 @@ from pathlib import Path
 
 from strategy_settings import MONEY_DEFAULTS, STRATEGY_INFO, validate_money, ladder
 from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, CredentialVault, validate_credentials
+from feed_connection import DEFAULT_FEED, validate_feed, public_feed, request_feed
 from telegram_messages import MESSAGE_DEFAULTS, VARIABLES, ENGINES, KINDS, validate_messages, render_message
 
 from flask import jsonify, redirect, render_template, request, session
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 DEFAULTS = {'timeframe': 1, 'range': 30, 'telegram': True, 'alerts': True,
             'indicators': {'ema': True, 'sma': False, 'bb': False, 'rsi': True,
@@ -54,7 +55,8 @@ class AdminStore:
         with self.connect() as db:
             db.executescript('CREATE TABLE IF NOT EXISTS controls(name TEXT PRIMARY KEY, revision INTEGER, value TEXT);'
                              'CREATE TABLE IF NOT EXISTS money_changes(engine TEXT, revision INTEGER, after_issue TEXT, value TEXT, PRIMARY KEY(engine,revision));'
-                             'CREATE TABLE IF NOT EXISTS issued_stakes(issue TEXT PRIMARY KEY, stake INTEGER);')
+                             'CREATE TABLE IF NOT EXISTS issued_stakes(issue TEXT PRIMARY KEY, stake INTEGER);'
+                             'CREATE TABLE IF NOT EXISTS private_state(name TEXT PRIMARY KEY, revision INTEGER, value TEXT);')
             for name, value in {**MONEY_DEFAULTS, 'telegram': TELEGRAM_DEFAULTS, 'messages': MESSAGE_DEFAULTS}.items():
                 db.execute('INSERT OR IGNORE INTO controls VALUES(?,0,?)', (name,json.dumps(value)))
         self.vault = CredentialVault(self.path)
@@ -181,6 +183,33 @@ class AdminStore:
         with self.lock:
             return copy.deepcopy(self.timelines[name]),dict(self.issued),copy.deepcopy(self.controls[name]["settings"])
 
+    def private_get(self,name):
+        with self.lock, self.connect() as db:
+            row=db.execute('SELECT revision,value FROM private_state WHERE name=?',(name,)).fetchone()
+            return {'revision':row[0],'value':row[1]} if row else {'revision':0,'value':None}
+
+    def private_save(self,name,value,revision,detail):
+        with self.lock, self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            old=db.execute('SELECT revision FROM private_state WHERE name=?',(name,)).fetchone()
+            current=old[0] if old else 0
+            if type(revision) is not int or current!=revision:raise RuntimeError('Settings changed. Reload before saving.')
+            db.execute('INSERT OR REPLACE INTO private_state VALUES(?,?,?)',(name,current+1,value))
+            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_changed',json.dumps(detail)))
+            return current+1
+
+    def feed_config(self):
+        state=self.private_get('feed')
+        if state['value']:
+            try:value=json.loads(self.vault.cipher.decrypt(state['value'].encode()))
+            except Exception:raise ValueError('API credentials could not be read. Re-enter the connection settings.') from None
+        else:value=copy.deepcopy(DEFAULT_FEED)
+        return state['revision'],value
+
+    def save_feed(self,value,revision):
+        encrypted=self.vault.cipher.encrypt(json.dumps(value).encode()).decode()
+        return self.private_save('feed',encrypted,revision,public_feed(value))
+
     def credential_override(self):
         with self.lock:
             return self.vault.read()
@@ -207,8 +236,12 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     action_times = {}
     csrf = lambda: session.setdefault('csrf', secrets.token_urlsafe(32))
 
+    def current_auth():
+        state=store.private_get('password')
+        return state['revision'],state['value'] or password_hash
+
     def authorized():
-        return bool(session.get('admin') and time.time() - session.get('authenticated_at', 0) < 8 * 3600)
+        return bool(session.get('auth_revision',0)==current_auth()[0] and session.get('admin') and time.time() - session.get('authenticated_at', 0) < 8 * 3600)
 
     def protect(fn):
         @wraps(fn)
@@ -247,11 +280,12 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                 while len(attempts) > 1000:
                     attempts.popitem(last=False)
             password = request.form.get('password', '')
-            if password_hash and len(password) <= 256 and check_password_hash(password_hash, password):
+            auth_revision,active_hash=current_auth()
+            if active_hash and len(password) <= 256 and check_password_hash(active_hash, password):
                 with auth_lock:
                     attempts.pop(key, None)
                 session.clear()
-                session.update(admin=True, authenticated_at=time.time(), csrf=secrets.token_urlsafe(32))
+                session.update(admin=True, auth_revision=auth_revision, authenticated_at=time.time(), csrf=secrets.token_urlsafe(32))
                 session.permanent = True
                 store.event('login', {'result': 'success'})
                 return redirect('/admin')
@@ -263,6 +297,97 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         if not authorized():
             return redirect('/admin/login')
         return render_template('admin.html', csrf=csrf())
+
+    @app.post('/api/admin/password')
+    @protect
+    def change_password():
+        data=request.get_json(silent=True)
+        data=data if isinstance(data,dict) else {}
+        old,new,confirm=data.get('current'),data.get('new'),data.get('confirm')
+        if not all(isinstance(v,str) for v in (old,new,confirm)):return jsonify(error='Enter current, new and confirmation passwords.'),400
+        if not 12<=len(new)<=128 or new!=confirm:return jsonify(error='Use 12–128 characters and matching confirmation.'),400
+        with auth_lock:
+            key='change:'+str(request.remote_addr)
+            recent=[t for t in attempts.get(key,[]) if time.monotonic()-t<300]
+            if len(recent)>=5:return jsonify(error='Too many attempts. Wait five minutes.'),429
+            attempts[key]=recent+[time.monotonic()]
+            rev,active_hash=current_auth()
+            if len(old)>256 or not check_password_hash(active_hash,old):return jsonify(error='Current password is incorrect.'),403
+            if new==old:return jsonify(error='Choose a different new password.'),400
+            try:store.private_save('password',generate_password_hash(new),rev,{'sessions':'invalidated'})
+            except RuntimeError as exc:return jsonify(error=str(exc)),409
+        session.clear()
+        return jsonify(ok=True,login_required=True)
+
+    def candidate_feed(data):
+        try:revision,current=store.feed_config()
+        except ValueError:
+            if not all(k in data for k in DEFAULT_FEED):raise ValueError('Re-enter the complete API connection to replace unreadable credentials.')
+            revision,current=store.private_get('feed')['revision'],copy.deepcopy(DEFAULT_FEED)
+        value={key:data.get(key,current[key]) for key in DEFAULT_FEED}
+        if not data.get('key') and value['auth']==current['auth'] and value['url']==current['url'] and value['key_name']==current['key_name']:
+            value['key']=current['key']
+        if value['auth']=='none':value['key']=''
+        return revision,validate_feed(value)
+
+    def probe_feed(value):
+        import requests
+        from types import SimpleNamespace
+        response=request_feed(SimpleNamespace(get=getattr(core,'_feed_probe_get',requests.get)),value,50,10)
+        if response.status_code!=200:raise ValueError('API check failed: HTTP '+str(response.status_code))
+        try:payload=response.json()
+        except ValueError:raise ValueError('API must return JSON.') from None
+        raw=payload if isinstance(payload,list) else payload.get('data',[]) if isinstance(payload,dict) else []
+        if not isinstance(raw,list) or len(raw)>10000:raise ValueError('API check returned an invalid data array.')
+        if not hasattr(core,'parse_history'):raise ValueError('Feed parser is unavailable.')
+        rows=core.parse_history(raw)
+        if len(rows)<14:raise ValueError('At least 14 valid rounds are required. Expected issueNumber/issue, number and blockTime fields.')
+        if hasattr(core,'source_time_iso') and not core.source_time_iso(rows[-1].get('block_time')):
+            raise ValueError('Candidate API must include a valid blockTime/time for the latest round.')
+        if hasattr(core,'feed_delay_seconds'):
+            age=core.feed_delay_seconds(rows[-1].get('block_time'))
+            if age is None or age>300 or age< -90:raise ValueError('Candidate API round time is stale or in the future.')
+        with core.LOCK:live=copy.deepcopy(core.STATE.get('history') or [])
+        if not live:raise ValueError('Wait for a live connection before switching API sources.')
+        recent={r['issue']:r['number'] for r in live[-50:]}
+        overlap=[r for r in rows if r['issue'] in recent]
+        if len(overlap)<3 or any(recent[r['issue']]!=r['number'] for r in overlap):raise ValueError('Candidate API does not match recent live TRX rounds.')
+        if int(rows[-1]['issue'])<int(live[-1]['issue']):raise ValueError('Candidate API is behind the live source. Try again after it updates.')
+        return {'ok':True,'rows':len(rows),'latest_issue':str(rows[-1]['issue']),'matched_rounds':len(overlap)}
+
+    @app.route('/api/admin/feed',methods=['GET','PUT'])
+    @protect
+    def feed_settings():
+        if request.method=='PUT':
+            data=request.get_json(silent=True)
+            data=data if isinstance(data,dict) else {}
+            try:
+                revision,value=candidate_feed(data)
+                if type(data.get('revision')) is not int or data['revision']!=revision:raise RuntimeError('API settings changed. Reload before saving.')
+                check=probe_feed(value)
+                if not authorized():return jsonify(error='Admin session expired during API verification.'),401
+                store.save_feed(value,revision)
+                if hasattr(core,'_admin_history_refresh_requested'):core._admin_history_refresh_requested.set()
+                try:cache_clear()
+                except Exception:pass
+            except ValueError as exc:return jsonify(error=str(exc)),400
+            except RuntimeError as exc:return jsonify(error=str(exc)),409
+            except Exception:return jsonify(error='API connection could not be checked. Settings were not changed.'),502
+        try:
+            revision,value=store.feed_config()
+            return jsonify(revision=revision,settings=public_feed(value),defaults=public_feed(DEFAULT_FEED))
+        except ValueError as exc:return jsonify(revision=store.private_get('feed')['revision'],settings=public_feed(DEFAULT_FEED),defaults=public_feed(DEFAULT_FEED),error=str(exc))
+
+    @app.post('/api/admin/feed/check')
+    @protect
+    def check_feed():
+        data=request.get_json(silent=True)
+        data=data if isinstance(data,dict) else {}
+        try:
+            _,value=candidate_feed(data)
+            return jsonify(probe_feed(value))
+        except ValueError as exc:return jsonify(error=str(exc)),400
+        except Exception:return jsonify(error='API check unavailable. No settings were changed.'),502
 
     @app.post('/api/admin/logout')
     @protect
@@ -282,7 +407,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         return jsonify(health=health, maintenance=job,
                        telegram_configured=bool(core.load_tg_config()),
                        storage={'persistent': bool(os.environ.get('ADMIN_PERSISTENT_STORAGE') == '1'),
-                                'note': 'Export a backup before redeploying. Local settings and logs can reset on free hosting.'})
+                                'note': 'Free Render can lose local settings on deployment, platform restart or spin-down. Export backups; password and API keys require persistent storage.'})
 
     @app.route('/api/admin/settings', methods=['GET', 'PUT'])
     @protect
@@ -378,8 +503,11 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         data = data if isinstance(data,dict) else {}
         engine,category = data.get('engine'),data.get('category')
         if engine not in ENGINES or category not in KINDS:return jsonify(error='Unknown message channel.'),400
-        sample = f'{ENGINES[engine]} · {category.upper()} · SAMPLE\nPreview only — no message sent.\nIssue: 20261005103010001\nStake: 500 MMK\nTarget: B'
-        try:return jsonify(**render_message(data.get('template'),sample,engine,category),sample=True)
+        base=store.control(engine)['settings']['base'] if engine in MONEY_DEFAULTS else None
+        sample = f'{ENGINES[engine]} · {category.upper()} · SAMPLE\nPreview only — no message sent.\nIssue: 20261005103010001\n' + (f'Stake: {base:,} MMK\nTarget: B' if base else 'Market alert example · RSI: 61.0')
+        recent=next((e['detail']['original'] for e in store.events(200,'telegram') if e['detail'].get('engine')==engine and e['detail'].get('category')==category and e['detail'].get('original')),None)
+        if recent:sample=recent
+        try:return jsonify(**render_message(data.get('template'),sample,engine,category),sample=not bool(recent))
         except ValueError as exc:return jsonify(error=str(exc)),400
 
     @app.post('/api/admin/telegram/check')

@@ -23,10 +23,10 @@ def test_trim_full_history_keeps_ten_calendar_days():
     assert out[-1]["day_int"] == 20260914
 
 
-def test_boot_requests_explicit_deep_history_limit():
-    src = Path("app_core.py").read_text(encoding="utf-8")
-    assert 'URL_DATA + f"?limit={MAX_FULL_ROWS}"' in src
-    assert 'timeout_sec = 30 if not have_full or admin_refresh else 6' in src
+def test_boot_requests_explicit_deep_history_limit(monkeypatch):
+    from tests_admin_dashboard import test_engine_owned_refresh_preserves_latest_and_pending
+    # Exercise the actual boot + admin refresh requests, not their source spelling.
+    test_engine_owned_refresh_preserves_latest_and_pending(monkeypatch)
 
 
 def test_large_history_requests_are_not_live_tail():

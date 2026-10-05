@@ -14,6 +14,7 @@ from collections import Counter
 from datetime import datetime
 
 import requests
+from feed_connection import feed_request_parts
 
 # Prevent app_core from starting its background engine before we replace the
 # decision paths. Tests already set TRX_NO_ENGINE=1 and remain engine-free.
@@ -124,23 +125,23 @@ def _recovery_fetch(previous_issue):
 
     # First try a substantially different query/cache key while keeping payload bounded.
     recovery_limit = max(1000, min(int(getattr(core, "TAIL_LIMIT", 50)) * 20, 5000))
-    urls = [
-        f"{core.URL_DATA}?limit={recovery_limit}&_trx_recover={time.time_ns()}",
-        f"{core.URL_DATA}?_trx_full_recover={time.time_ns()}",
-    ]
-    for idx, recovery_url in enumerate(urls):
+    revision,profile=core.feed_profile()
+    requests_to_try = [feed_request_parts(profile,recovery_limit,{'_trx_recover':time.time_ns()}),
+                       feed_request_parts(profile,getattr(core,'MAX_FULL_ROWS',45200),{'_trx_full_recover':time.time_ns()})]
+    for idx, (recovery_url,recovery_headers) in enumerate(requests_to_try):
         try:
             timeout = (3.0, 8.0 if idx == 0 else 18.0)
             r = _original_session_get(
                 recovery_url,
                 timeout=timeout,
-                headers={"Cache-Control": "no-cache, no-store, max-age=0", "Pragma": "no-cache"},
+                headers={**recovery_headers,"Cache-Control": "no-cache, no-store, max-age=0", "Pragma": "no-cache"},
+                allow_redirects=False,
             )
-            if r.status_code != 200:
+            if r.status_code != 200 or core.feed_profile()[0]!=revision:
                 continue
             newest = _newest_issue_from_response(r)
             if newest and (not previous_issue or int(newest) > int(previous_issue)):
-                _accept_feed_response(r, core.URL_DATA + f"?limit={getattr(core, 'TAIL_LIMIT', 50)}")
+                _accept_feed_response(r, feed_request_parts(profile,getattr(core,'TAIL_LIMIT',50))[0])
                 _publish_feed_health("LIVE", f"recovered feed via {'large-tail' if idx == 0 else 'full-snapshot'}")
                 print(f"[FEED] recovered: {previous_issue or 'none'} -> {newest}", flush=True)
                 return r
@@ -157,17 +158,23 @@ def _feed_limit(url_s):
         return None
 
 
+def _is_feed_url(url):
+    current=urlparse(core.feed_profile()[1]['url'])
+    candidate=urlparse(str(url))
+    return (candidate.scheme,candidate.netloc,candidate.path)==(current.scheme,current.netloc,current.path)
+
+
 def _is_live_tail_url(url_s):
     """Only small bounded polling requests get tail timeouts/cache rescue."""
     limit = _feed_limit(url_s)
-    return str(url_s).startswith(core.URL_DATA) and limit is not None and limit <= max(500, int(getattr(core, "TAIL_LIMIT", 50)))
+    return _is_feed_url(url_s) and limit is not None and limit <= max(500, int(getattr(core, "TAIL_LIMIT", 50)))
 
 
 def _resilient_session_get(url, *args, **kwargs):
     """Freshness-aware upstream fetch with active stale-feed recovery."""
     request_started = time.monotonic()
     url_s = str(url)
-    is_feed = url_s.startswith(core.URL_DATA)
+    is_feed = _is_feed_url(url_s)
     is_tail = _is_live_tail_url(url_s)
     actual_url = url_s
 
@@ -239,6 +246,7 @@ def _resilient_session_get(url, *args, **kwargs):
         raise
 
 
+core._feed_probe_get = _original_session_get
 core.session.get = _resilient_session_get
 core.FEED_STALE_SEC = FEED_STALE_SEC
 

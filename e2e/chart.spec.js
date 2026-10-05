@@ -234,8 +234,7 @@ test('withdrawal progress targets the next 50,000 milestone at boundary values',
     current = item;
     await page.goto('/');
     await expect(page.locator('#l1r-withdraw')).toHaveText(item[2]);
-    const width = await page.locator('#l1r-withdraw-bar').evaluate(el => parseFloat(el.style.width));
-    expect(width).toBeCloseTo(item[3], 2);
+    await expect.poll(()=>page.locator('#l1r-withdraw-bar').evaluate(el=>parseFloat(el.style.width))).toBeCloseTo(item[3],2);
   }
 });
 
