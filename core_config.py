@@ -69,9 +69,9 @@ HISTORY_KEEP = 400
 LOG_KEEP = 200
 SIGNALS_KEEP = 300
 
-# ================= FULL CHART HISTORY (10 DAYS) =================
-FULL_HISTORY_DAYS = 10          # chart အတွက် သိမ်းဆည်းမယ့် ရက်အရေအတွက်
-MAX_FULL_ROWS = 30000           # memory safety cap
+# ================= FULL CHART HISTORY (30 DAYS) =================
+FULL_HISTORY_DAYS = 30          # chart အတွက် သိမ်းဆည်းမယ့် ရက်အရေအတွက်
+MAX_FULL_ROWS = 45200           # memory safety cap
 
 # ================= TELEGRAM NOTIFICATIONS =================
 # telegram.json → {"token": "<BotFather token>", "chat_id": "<your chat id>"}
@@ -96,3 +96,4 @@ RADAR_RESET_UP = 55.0
 # continues (9, 10, 11, ...). This is notification-only and does not affect
 # signal generation, risk, 12-step, L1, chart, or settlement logic.
 TG_STREAK_ALERT_FROM = 8
+

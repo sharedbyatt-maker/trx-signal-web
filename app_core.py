@@ -992,7 +992,7 @@ def engine_loop():
         _notification_context.historical = False
         try:
             # Do not rely on the upstream bare-endpoint default size. Request an
-            # explicit deep snapshot so the 10-day chart cannot silently collapse
+            # explicit deep snapshot so the 30-day chart cannot silently collapse
             # to a small provider default after an upstream behavior change.
             url = (URL_DATA + f"?limit={MAX_FULL_ROWS}") if not have_full else URL_DATA + f"?limit={TAIL_LIMIT}"
             timeout_sec = 30 if not have_full else 6
@@ -1471,7 +1471,7 @@ signal_history = load_signal_history()
 
 @app.after_request
 def compress_response(response):
-    """Gzip-compress large JSON payloads (10-day history ≈ 700KB → ~120KB)
+    """Gzip-compress large JSON payloads (30-day history; incremental responses remain small)
        + basic security headers."""
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
@@ -1530,7 +1530,7 @@ def public_feed_health(state):
 
 @app.route("/api/history")
 def api_history():
-    """Full chart history (default: last 10 days) — compact [issue, number, time] rows.
+    """Full chart history (default: last 30 days) — compact [issue, number, time] rows.
        `?since=<issue>` returns only newer rounds (incremental sync)."""
     days = request.args.get("days", default=FULL_HISTORY_DAYS, type=int)
     days = max(1, min(days, FULL_HISTORY_DAYS))
@@ -1781,3 +1781,4 @@ if __name__ == "__main__":
 # TRX_NO_ENGINE=1 → disable (tests, tooling)
 if os.environ.get("TRX_NO_ENGINE") != "1":
     start_engine()
+
