@@ -346,20 +346,21 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     @app.get('/api/admin/backup')
     @protect
     def backup():
-        events = store.events(2000)
-        monetary_size=len(json.dumps({"controls":store.controls,"money_changes":store.timelines,"issued_stakes":store.issued}).encode("utf-8"))
-        event_budget=max(0,800000-monetary_size)
-        kept, size = [], 0
-        for event in events:
-            event_size = len(json.dumps(event).encode('utf-8')) + 2
-            if size + event_size > event_budget:
-                break
-            kept.append(event)
-            size += event_size
-        response = jsonify(schema=1, exported_at=utcnow(), **store.read(), events=kept,
-                           events_truncated=len(kept) < len(events), controls=store.controls, money_changes=store.timelines, issued_stakes=store.issued)
-        response.headers['Content-Disposition'] = 'attachment; filename="trx-admin-backup.json"'
-        return response
+        with store.lock:
+            events = store.events(2000)
+            monetary_size=len(json.dumps({"controls":store.controls,"money_changes":store.timelines,"issued_stakes":store.issued}).encode("utf-8"))
+            event_budget=max(0,800000-monetary_size)
+            kept, size = [], 0
+            for event in events:
+                event_size = len(json.dumps(event).encode('utf-8')) + 2
+                if size + event_size > event_budget:
+                    break
+                kept.append(event)
+                size += event_size
+            response = jsonify(schema=1, exported_at=utcnow(), **store.read(), events=kept,
+                               events_truncated=len(kept) < len(events), controls=store.controls, money_changes=store.timelines, issued_stakes=store.issued)
+            response.headers['Content-Disposition'] = 'attachment; filename="trx-admin-backup.json"'
+            return response
 
     @app.post('/api/admin/restore')
     @protect
@@ -378,7 +379,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                     raise ValueError('Backup event is too large.')
                 imported.append(e)
             controls=data.get('controls',{})
-            if controls and (not isinstance(controls,dict) or set(controls)!={'l1','twelve','telegram'}):raise ValueError('Invalid control backup.')
+            if not isinstance(controls,dict) or (controls and set(controls)!={'l1','twelve','telegram'}):raise ValueError('Invalid control backup.')
             for name,item in controls.items():
                 if not isinstance(item,dict) or type(item.get('revision')) is not int or item['revision']<0:raise ValueError('Invalid control revision.')
                 (validate_telegram if name=='telegram' else lambda v:validate_money(name,v))(item.get('settings'))

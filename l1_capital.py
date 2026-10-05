@@ -335,6 +335,7 @@ class L1CapitalService:
         self._stop = threading.Event()
         self._last_alert_key = None
         self._last_withdraw_units = 0
+        self._last_withdraw_amount = WITHDRAW_MILESTONE
         self._last_result_key = None
         self._last_wait_key = None
         self._last_mode = None
@@ -353,6 +354,7 @@ class L1CapitalService:
             if isinstance(key, list) and len(key) == 5:
                 self._last_alert_key = tuple(key)
             self._last_withdraw_units = max(0, int(saved.get("last_withdraw_units") or 0))
+            self._last_withdraw_amount = max(1,int(saved.get("last_withdraw_amount") or WITHDRAW_MILESTONE))
             result_key = saved.get("last_result_key")
             if isinstance(result_key, list) and len(result_key) == 6:
                 self._last_result_key = tuple(result_key)
@@ -374,6 +376,7 @@ class L1CapitalService:
                 json.dump({
                     "last_alert_key": list(self._last_alert_key) if self._last_alert_key else None,
                     "last_withdraw_units": self._last_withdraw_units,
+                    "last_withdraw_amount": self._last_withdraw_amount,
                     "last_result_key": list(self._last_result_key) if self._last_result_key else None,
                     "last_wait_key": list(self._last_wait_key) if self._last_wait_key else None,
                     "last_mode": self._last_mode,
@@ -473,6 +476,11 @@ class L1CapitalService:
             self._save_runtime_state()
 
         units = int(snap.get("withdraw_milestones_reached") or 0)
+        amount=int(snap.get("withdraw_milestone") or WITHDRAW_MILESTONE)
+        if amount!=self._last_withdraw_amount:
+            self._last_withdraw_amount=amount
+            self._last_withdraw_units=units
+            self._save_runtime_state()
         if units > self._last_withdraw_units:
             for milestone in range(max(self._last_withdraw_units + 1,units - 4), units + 1):
                 if not self._notify(_fmt_withdrawal_milestone(milestone,snap.get("withdraw_milestone",WITHDRAW_MILESTONE)),"withdrawal"):

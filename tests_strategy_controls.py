@@ -189,3 +189,18 @@ def test_backup_budget_reserves_space_for_monetary_history(admin):
     assert len(result.data)<1024*1024
     assert len(result.json['issued_stakes'])==12000
     assert result.json['events_truncated'] is True
+
+
+
+def test_changed_withdrawal_threshold_notifies_next_actual_milestone():
+    core=FakeCore(make_rows(18));service=l1.L1CapitalService(core,state_file='')
+    snap={'ready':True,'pending':None,'today_pnl':0,'withdraw_milestone':50000,'withdraw_milestones_reached':1}
+    with patch.object(l1,'replay_l1',return_value=snap):service.refresh_once()
+    assert '50,000' in core.messages[-1]
+    core.messages.clear()
+    snap.update(withdraw_milestone=100000,withdraw_milestones_reached=0)
+    with patch.object(l1,'replay_l1',return_value=snap):service.refresh_once()
+    assert not core.messages # settings changes do not send retrospective milestones
+    snap['withdraw_milestones_reached']=1
+    with patch.object(l1,'replay_l1',return_value=snap):service.refresh_once()
+    assert len(core.messages)==1 and '100,000' in core.messages[0]
