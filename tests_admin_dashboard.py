@@ -154,3 +154,22 @@ def test_engine_owned_refresh_preserves_latest_and_pending(monkeypatch):
     assert core.STATE['full_history'][0]['number'] == 7
     assert core._admin_history_refresh_result['ok'] is True
     assert not core._admin_history_refresh_requested.is_set()
+
+
+def test_malformed_json_bodies_are_rejected(admin):
+    client, store, *_ = admin
+    login(client)
+    for path, method in (('settings','put'), ('maintenance','post'), ('restore','post')):
+        assert getattr(client, method)('/api/admin/'+path, headers=headers(client), json=['invalid']).status_code == 400
+    assert store.cached['revision'] == 0
+
+
+def test_restore_keeps_delivery_records_visible(admin):
+    client, store, *_ = admin
+    login(client)
+    backup = {'schema':1,'settings':DEFAULTS,'expected_revision':0,
+              'events':[{'at':'2026-10-05T12:00:00+00:00','kind':'telegram','detail':{'message':'fixture','result':'sent'}}]}
+    assert client.post('/api/admin/restore',headers=headers(client),json=backup).status_code == 200
+    delivered = [e for e in client.get('/api/admin/events').json['events'] if e['kind']=='telegram']
+    assert delivered[0]['detail']['result'] == 'sent'
+    assert delivered[0]['detail']['imported_from_backup_at'] == backup['events'][0]['at']

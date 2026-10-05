@@ -1,6 +1,5 @@
 """Private operations console. No betting or strategy mutation controls."""
 import copy
-import hashlib
 import hmac
 import json
 import os
@@ -184,7 +183,8 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     def settings():
         if request.method == 'GET':
             return jsonify(store.read())
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        data = data if isinstance(data, dict) else {}
         try:
             result = store.save(data.get('settings'), data.get('revision'))
         except ValueError as exc:
@@ -222,7 +222,8 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     @app.post('/api/admin/restore')
     @protect
     def restore():
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        data = data if isinstance(data, dict) else {}
         if data.get('schema') != 1 or not isinstance(data.get('events', []), list) or len(data.get('events', [])) > 2000:
             return jsonify(error='Invalid backup file.'), 400
         try:
@@ -236,7 +237,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                 imported.append(e)
             result = store.save(value, data.get('expected_revision'), 'backup_restored')
             for e in reversed(imported):
-                store.event('imported:' + e['kind'][:60], {'original_at': e['at'], 'detail': e['detail']})
+                store.event(e['kind'], {**e['detail'], 'imported_from_backup_at': e['at']})
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
         except RuntimeError as exc:
@@ -246,7 +247,8 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     @app.post('/api/admin/maintenance')
     @protect
     def run_maintenance():
-        action = (request.get_json(silent=True) or {}).get('action')
+        data = request.get_json(silent=True)
+        action = data.get('action') if isinstance(data, dict) else None
         if action not in ('history_refresh', 'cache_refresh', 'telegram_test'):
             return jsonify(error='Unknown maintenance action.'), 400
         if action == 'telegram_test' and not store.cached['settings']['telegram']:
