@@ -1,3 +1,4 @@
+from tests_admin_dashboard import render_terminal_defaults
 import os
 os.environ["TRX_NO_ENGINE"] = "1"
 
@@ -25,7 +26,7 @@ def test_trim_full_history_keeps_ten_calendar_days():
 def test_boot_requests_explicit_deep_history_limit():
     src = Path("app_core.py").read_text(encoding="utf-8")
     assert 'URL_DATA + f"?limit={MAX_FULL_ROWS}"' in src
-    assert 'timeout_sec = 30 if not have_full else 6' in src
+    assert 'timeout_sec = 30 if not have_full or admin_refresh else 6' in src
 
 
 def test_large_history_requests_are_not_live_tail():
@@ -38,7 +39,7 @@ def test_large_history_requests_are_not_live_tail():
 def test_frontend_has_10day_range_and_authoritative_merge():
     js = Path("static/js/app.js").read_text(encoding="utf-8")
     chart = Path("static/js/chart.js").read_text(encoding="utf-8")
-    html = Path("templates/index.html").read_text(encoding="utf-8")
+    html=render_terminal_defaults()
     assert '(b || []).forEach((r) => m.set(r.issue, r));' in js
     assert 'fullRows = force ? mergeRows([], inc)' in js
     assert 'setHistoryRange(days = 30)' in chart

@@ -1,3 +1,4 @@
+{% set defaults = admin_defaults|default({'timeframe':1,'range':30,'alerts':true,'indicators':{'ema':true,'rsi':true}}) %}
 <!doctype html>
 <html lang="my">
 <head>
@@ -12,7 +13,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=67">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/polish.css') }}?v=1">
 </head>
-<body>
+<body data-admin-timeframe="{{ defaults.timeframe }}" data-admin-alerts="{{ '1' if defaults.alerts else '0' }}" data-admin-signals="{{ '1' if defaults.indicators.sig|default(false) else '0' }}">
 <header>
   <div class="brand">
     <span class="logo">📈</span>
@@ -61,18 +62,18 @@
     <div class="card-title-row">
       <div class="chart-toolbar">
         <span class="tb-group-label">TF</span>
-        <button class="tf-btn active" data-g="1">1m</button>
-        <button class="tf-btn" data-g="5">5m</button>
-        <button class="tf-btn" data-g="15">15m</button>
-        <button class="tf-btn" data-g="60">1h</button>
+        <button class="tf-btn{% if defaults.timeframe == 1 %} active{% endif %}" data-g="1">1m</button>
+        <button class="tf-btn{% if defaults.timeframe == 5 %} active{% endif %}" data-g="5">5m</button>
+        <button class="tf-btn{% if defaults.timeframe == 15 %} active{% endif %}" data-g="15">15m</button>
+        <button class="tf-btn{% if defaults.timeframe == 60 %} active{% endif %}" data-g="60">1h</button>
         <span class="tb-sep"></span>
         <label class="range-select-wrap" for="history-range-select">
           <span class="tb-group-label">RANGE</span>
           <select id="history-range-select" class="range-select" title="Chart history range">
-            <option value="1">1D</option>
-            <option value="3">3D</option>
-            <option value="10">10D</option>
-            <option value="30" selected>30D</option>
+            <option value="1"{% if defaults.range == 1 %} selected{% endif %}>1D</option>
+            <option value="3"{% if defaults.range == 3 %} selected{% endif %}>3D</option>
+            <option value="10"{% if defaults.range == 10 %} selected{% endif %}>10D</option>
+            <option value="30"{% if defaults.range == 30 %} selected{% endif %}>30D</option>
           </select>
         </label>
         <span id="chart-meta" hidden aria-hidden="true"></span>
@@ -86,7 +87,7 @@
           <svg viewBox="0 0 24 24" class="btn-ico"><circle cx="10.5" cy="10.5" r="6"/><line x1="15" y1="15" x2="20" y2="20"/></svg>
           S/R
         </button>
-        <button class="tf-btn" id="sig-btn" title="Signal arrows ဖွင့်/ပိတ်">
+        <button class="tf-btn{% if defaults.indicators.sig|default(false) %} active{% endif %}" id="sig-btn" title="Signal arrows ဖွင့်/ပိတ်">
           <svg viewBox="0 0 24 24" class="btn-ico"><path d="M12 4l5 8h-3v7h-4v-7H7z" fill="currentColor" stroke="none"/></svg>
           SIG
         </button>
@@ -97,18 +98,18 @@
 
     <div class="ind-bar collapsed" id="ind-bar">
       <span class="tb-group-label">INDICATORS</span>
-      <label class="chart-toggle"><input type="checkbox" id="ema-toggle" checked> EMA</label>
-      <label class="chart-toggle" title="SMA 20 = short trend · SMA 50 = medium trend"><input type="checkbox" id="sma-toggle"> SMA 20/50</label>
-      <label class="chart-toggle"><input type="checkbox" id="bb-toggle"> BB</label>
-      <label class="chart-toggle"><input type="checkbox" id="rsi-toggle" checked> RSI 14</label>
-      <label class="chart-toggle"><input type="checkbox" id="macd-toggle"> MACD</label>
-      <label class="chart-toggle"><input type="checkbox" id="stoch-toggle"> STOCH</label>
+      <label class="chart-toggle"><input type="checkbox" id="ema-toggle"{% if defaults.indicators.ema|default(false) %} checked{% endif %}> EMA</label>
+      <label class="chart-toggle" title="SMA 20 = short trend · SMA 50 = medium trend"><input type="checkbox" id="sma-toggle"{% if defaults.indicators.sma|default(false) %} checked{% endif %}> SMA 20/50</label>
+      <label class="chart-toggle"><input type="checkbox" id="bb-toggle"{% if defaults.indicators.bb|default(false) %} checked{% endif %}> BB</label>
+      <label class="chart-toggle"><input type="checkbox" id="rsi-toggle"{% if defaults.indicators.rsi|default(false) %} checked{% endif %}> RSI 14</label>
+      <label class="chart-toggle"><input type="checkbox" id="macd-toggle"{% if defaults.indicators.macd|default(false) %} checked{% endif %}> MACD</label>
+      <label class="chart-toggle"><input type="checkbox" id="stoch-toggle"{% if defaults.indicators.stoch|default(false) %} checked{% endif %}> STOCH</label>
       <span class="tb-sep"></span>
       <span class="tb-group-label">OVERLAYS</span>
-      <label class="chart-toggle"><input type="checkbox" id="tl-toggle"> Trend</label>
-      <label class="chart-toggle"><input type="checkbox" id="sr-toggle"> S/R</label>
-      <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle"> Patterns</label>
-      <label class="chart-toggle" title="5m grouped BIG/SMALL candles only. Closed-bar Hammer at prior support / Shooting Star at prior resistance candidates."><input type="checkbox" id="hss-toggle"> H / SS · S/R <small class="chart-toggle-note">5m</small></label>
+      <label class="chart-toggle"><input type="checkbox" id="tl-toggle"{% if defaults.indicators.tl|default(false) %} checked{% endif %}> Trend</label>
+      <label class="chart-toggle"><input type="checkbox" id="sr-toggle"{% if defaults.indicators.sr|default(false) %} checked{% endif %}> S/R</label>
+      <label class="chart-toggle" title="Patterns — DT ▼: Double Top (ထိပ်၂ခု၊ ဆင်းဖိုမ်) · DB ▲: Double Bottom (အောက်ခြေ၂ခု၊ တက်ဖိုမ်) · HS ▼: Head &amp; Shoulders · IHS ▲: Inverse H&amp;S · BO ↑↓: S/R Breakout (ဖြတ်ထွက်) · ▲×N / ▼×N: Momentum run (N ဆက်တိုက်)"><input type="checkbox" id="pat-toggle"{% if defaults.indicators.pat|default(false) %} checked{% endif %}> Patterns</label>
+      <label class="chart-toggle" title="5m grouped BIG/SMALL candles only. Closed-bar Hammer at prior support / Shooting Star at prior resistance candidates."><input type="checkbox" id="hss-toggle"{% if defaults.indicators.hss|default(false) %} checked{% endif %}> H / SS · S/R <small class="chart-toggle-note">5m</small></label>
     </div>
 
     <div class="tv-wrap">
@@ -360,10 +361,10 @@
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/transport.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=59"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=60"></script>
 <script src="{{ url_for('static', filename='js/draw.js') }}?v=48"></script>
 <script src="{{ url_for('static', filename='js/market-context.js') }}?v=5"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=55"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=56"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=4"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=7"></script>
 <script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=7"></script>

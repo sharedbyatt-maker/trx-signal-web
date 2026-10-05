@@ -527,6 +527,17 @@ drawings_store = install_drawings_persistence(core.app)
 # Frozen L1 CAPITAL observer: Telegram/manual execution only; no bet placement.
 l1_capital_service = install_l1_capital(core)
 
+from admin_dashboard import install_admin
+
+def _admin_clear_caches():
+    with _feed_cache_lock:
+        _feed_cache.clear()
+    with core.LOCK:
+        core._rsi_ext_cache = {'ts': 0.0, 'data': None}
+
+admin_store = install_admin(core, api_health, l1_capital_service, _admin_clear_caches)
+
+
 # Restore caller intent and start only after all decision paths/routes are wired.
 if _engine_disabled_by_caller:
     os.environ["TRX_NO_ENGINE"] = "1"
@@ -547,3 +558,4 @@ if __name__ == "__main__":
     print("=" * 52, flush=True)
     port = int(os.environ.get("PORT", 10000))
     core.app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+
