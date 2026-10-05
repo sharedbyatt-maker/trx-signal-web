@@ -71,7 +71,6 @@ window.TRXChart = (() => {
     return srLevelsCache;
   }
 
-  let hssCandidates = [], selectedHssId = null;
 
   let curBars = [];           // [{time,o,h,l,c}]
   let curCloses = [];         // hot-path close cache; kept in lockstep with curBars
@@ -973,52 +972,6 @@ window.TRXChart = (() => {
     return marks;
   }
 
-  function showHssDetail(id) {
-    const mark = hssCandidates.find(m => m.id === id);
-    const output = $("hss-evidence");
-    if (!output) return;
-    selectedHssId = mark ? mark.id : null;
-    if (!mark) { output.textContent = "Choose a signal or click its candle / marker."; return; }
-    const select = $("hss-signal-select");
-    if (select) select.value = mark.id;
-    const e = mark.evidence, b = e.candle, z = e.zone;
-    const n = v => Number(v).toFixed(2);
-    const hammer = mark.text === "H@S";
-    const at = localTimeLabel(curTimes[mark.time - 1], true);
-    const confirmed = localTimeLabel(curTimes[e.confirmedAt - 1], true);
-    output.textContent = `${mark.text} · ${at} · issue ${curFulls[mark.time - 1] || "—"}\n`
-      + `Closed 5m candle: O ${n(b.o)} · H ${n(b.h)} · L ${n(b.l)} · C ${n(b.c)}\n`
-      + `${hammer ? "Lower" : "Upper"} wick / body ${n((hammer ? e.lowerWick : e.upperWick) / e.body)}× (≥2×); `
-      + `main wick / range ${n((hammer ? e.lowerWick : e.upperWick) / e.range * 100)}% (≥50%); `
-      + `opposite wick / body ${n((hammer ? e.upperWick : e.lowerWick) / e.body)}× (≤1×).\n`
-      + `Close position ${n(e.closePosition * 100)}% (${hammer ? "≥65%" : "≤35%"}); prior 3-bar move ${n(e.priorMove)} (${hammer ? "falling" : "rising"}).\n`
-      + `Prior ${hammer ? "support" : "resistance"} ${n(z.L)} · zone ${n(z.L - z.tol)}–${n(z.L + z.tol)} `
-      + `· tolerance ${n(z.tol)} · ${z.strength} · ${z.c} touches · ${z.rejections} rejections.\n`
-      + `Candle ${hammer ? "low" : "high"} is within the permitted touch band `
-      + `${n(hammer ? z.L - z.tol * 2 : z.L - z.tol)}–${n(hammer ? z.L + z.tol : z.L + z.tol * 2)}; `
-      + `close ${hammer ? "≥" : "≤"} ${n(hammer ? z.L - z.tol * .2 : z.L + z.tol * .2)}.\n`
-      + `S/R uses ${e.priorBars} earlier candles only; candidate has 5 source rounds. `
-      + `Confirmed when the next bucket appeared: ${confirmed}.`;
-  }
-
-  function refreshHssDetails() {
-    const panel = $("hss-details"), select = $("hss-signal-select");
-    if (!panel || !select) return;
-    panel.hidden = !opts.hss;
-    select.replaceChildren();
-    for (const m of hssCandidates.slice().reverse()) {
-      const option = document.createElement("option");
-      option.value = m.id;
-      option.textContent = `${m.text} · ${localTimeLabel(curTimes[m.time - 1], true)}`;
-      select.appendChild(option);
-    }
-    select.disabled = !hssCandidates.length;
-    if (!hssCandidates.length) {
-      selectedHssId = null;
-      $("hss-evidence").textContent = group !== 5 ? "Switch to 5m to inspect H / SS signals." : "No closed H / SS candidates in the loaded history.";
-    } else showHssDetail(hssCandidates.some(m => m.id === selectedHssId) ? selectedHssId : hssCandidates.at(-1).id);
-  }
-
   function drawSrLines(levels) {
     srLines.forEach((pl)=>{ try { candleSeries.removePriceLine(pl); } catch(e){} });
     srLines=[]; if(!opts.sr) return;
@@ -1338,14 +1291,6 @@ window.TRXChart = (() => {
     initStochPane();
     syncRanges();
     syncCrosshairs();
-    chart.subscribeClick(param => {
-      if (!opts.hss || group !== 5) return;
-      const mark = hssCandidates.find(m => m.id === param.hoveredObjectId)
-        || hssCandidates.find(m => m.time === param.time);
-      if (mark) showHssDetail(mark.id);
-    });
-    const hssSelect = $("hss-signal-select");
-    if (hssSelect) hssSelect.addEventListener("change", () => showHssDetail(hssSelect.value));
     bindToolbar();
     updateLegend(null);
   }
@@ -1724,10 +1669,8 @@ window.TRXChart = (() => {
       markers = markers.concat(pm);
       markers.sort((a, b) => a.time - b.time);
     }
-    hssCandidates = opts.hss && group === 5 ? detectHssCandidates(curBars, counts) : [];
-    refreshHssDetails();
     if (opts.hss && group === 5) {
-      markers = markers.concat(hssCandidates.map(({ evidence, ...marker }) => marker));
+      markers = markers.concat(detectHssCandidates(curBars, counts).map(({ evidence, ...marker }) => marker));
       markers.sort((a, b) => a.time - b.time);
     }
     markers = markers.filter((m) => m && typeof m.time === "number" && !isNaN(m.time));

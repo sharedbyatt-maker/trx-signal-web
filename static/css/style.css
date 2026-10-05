@@ -445,9 +445,3 @@ main { padding-top:12px; }
 }
 
 
-.hss-details { padding: 14px 18px; border-top: 1px solid #2a2e39; color: #d1d4dc; background: #131722; }
-.hss-details[hidden] { display: none; }
-.hss-details label { font-size: 12px; font-weight: 700; display: block; margin-bottom: 8px; }
-.hss-details select { max-width: 100%; padding: 8px; color: inherit; background: #1e222d; border: 1px solid #434651; border-radius: 6px; }
-#hss-evidence { white-space: pre-line; overflow-wrap: anywhere; line-height: 1.7; font-size: 13px; margin: 10px 0; }
-.hss-details small { color: #9598a1; }
