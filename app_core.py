@@ -4,6 +4,7 @@ import csv
 import copy
 import gzip
 import json
+import math
 import os
 import queue
 import statistics
@@ -23,6 +24,7 @@ if sys_stdout := __import__("sys").stdout:
 # available from app_core for backward compatibility with tests and callers.
 from strategy_settings import MONEY_DEFAULTS, MoneySchedule, ladder, risk_status
 from telegram_controls import TELEGRAM_DEFAULTS, classify, allowed
+from telegram_messages import MESSAGE_DEFAULTS, render_message
 from core_config import *  # noqa: F401,F403
 from feed_utils import next_issue_number, feed_delay_seconds, source_time_iso
 from core_notifications import consecutive_bs_streak, format_streak_telegram, rsi_alert_state
@@ -94,7 +96,12 @@ def load_tg_config():
         token = os.environ.get("TG_TOKEN", "").strip()
         chat = os.environ.get("TG_CHAT", "").strip()
     store = globals().get('_admin_store')
-    override = store.credential_override() if store else None
+    try:
+        override = store.credential_override() if store else None
+        globals()['_tg_config_error'] = None
+    except ValueError as exc:
+        globals()['_tg_config_error'] = str(exc)
+        return None  # Never silently redirect alerts to an unrelated server destination.
     if override:
         token, chat = override['token'], override['chat']
     if token and chat:
@@ -102,22 +109,39 @@ def load_tg_config():
     return None
 
 
-def _send_telegram(text, cfg):
+_tg_rate_limited_until = 0
+
+def _send_telegram(text, cfg, delivery_check=None):
     """Bounded retries for transient failures; no retry for permanent 4xx errors."""
     token, chat = cfg[0], cfg[1]
+    if time.monotonic() < _tg_rate_limited_until:
+        return 'rate limited — message discarded'
     for attempt in range(3):
+        if delivery_check:
+            reason=delivery_check()
+            if reason:return reason
         retry_delay = 2 ** attempt
         try:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": chat, "text": text}, timeout=10)
             if response.status_code == 200:
+                try:
+                    payload=response.json()
+                    if not isinstance(payload,dict) or payload.get('ok') is not True:
+                        return 'Telegram rejected response'
+                except (ValueError,AttributeError,TypeError):
+                    return 'Invalid Telegram response'
+                globals()['_tg_rate_limited_until']=0
                 return "sent" if attempt == 0 else "sent (retry)"
             if response.status_code == 429:
                 try:
                     retry_delay = max(1, float(response.json().get("parameters", {}).get("retry_after", 2)))
                 except (ValueError, TypeError, AttributeError):
                     retry_delay = 3
+                globals()['_tg_rate_limited_until']=time.monotonic() + (retry_delay if math.isfinite(retry_delay) else 60)
+                if not math.isfinite(retry_delay) or retry_delay > 10:
+                    return 'rate limited — message discarded'
             elif response.status_code < 500:
                 return f"HTTP {response.status_code}"
             failure = f"HTTP {response.status_code}"
@@ -127,6 +151,15 @@ def _send_telegram(text, cfg):
         if attempt < 2:
             time.sleep(retry_delay)
     return "failed after 3 attempts: " + failure
+
+_send_telegram.supports_delivery_context=True
+
+class TelegramNotification(str):
+    def __new__(cls,text,engine=None,category=None):
+        obj=super().__new__(cls,text)
+        obj.engine,obj.category=engine,category
+        obj.created=time.monotonic()
+        return obj
 
 
 _admin_history_refresh_requested = threading.Event()
@@ -152,22 +185,48 @@ def _tg_worker():
                 break
             engine=category=None
             if isinstance(text,tuple):text,engine,category=text
+            engine=engine or getattr(text,'engine',None) or classify(text)[0]
+            category=category or getattr(text,'category',None) or classify(text)[1]
+            original=str(text)
+            created=getattr(text,'created',None)
             store=globals().get('_admin_store')
-            permit=_admin_telegram_enabled() and (not store or allowed(store.controls['telegram']['settings'],engine or classify(text)[0],category or classify(text)[1]))
-            cfg = load_tg_config()
-            result = (_send_telegram(text, cfg) if cfg else "skip — config မဖြည့်ရသေးပါ") if permit else "disabled by admin"
+            def delivery_check():
+                if not _admin_telegram_enabled() or (store and not allowed(store.controls['telegram']['settings'],engine,category)):
+                    return 'disabled by admin'
+                if category=='signal' and created is not None and time.monotonic()-created>=55:
+                    return 'expired signal — discarded'
+                return None
+            result=delivery_check()
+            rendered={'text':original,'fallback':False}
+            if not result:
+                cfg = load_tg_config()
+                if cfg:
+                    template=(store.controls.get('messages',{}).get('settings') or MESSAGE_DEFAULTS)['templates'].get(f'{engine}.{category}','{original}') if store else '{original}'
+                    rendered=render_message(template,original,engine,category)
+                    sender=_send_telegram
+                    result=sender(rendered['text'],cfg,delivery_check=delivery_check) if getattr(sender,'supports_delivery_context',False) is True else sender(rendered['text'],cfg)
+                else:result=globals().get('_tg_config_error') or 'skip — config မဖြည့်ရသေးပါ'
             store = globals().get('_admin_store')
             if store:
                 try:
-                    store.event('telegram', {'message': text.splitlines()[0][:240], 'result': result, 'engine':engine or classify(text)[0], 'category':category or classify(text)[1]})
+                    store.event('telegram', {'message': original.split('\n')[0][:240], 'text':rendered['text'][:4096], 'result': result, 'engine':engine, 'category':category,'template_fallback':rendered['fallback']})
                 except Exception:
                     pass
-            print(f"[TG] {result}: {text.splitlines()[0]}", flush=True)
+            print(f"[TG] {result}: {original.split(chr(10))[0]}", flush=True)
             with LOCK:
                 STATE["tg_last"] = {
                     "time": datetime.now().strftime("%H:%M:%S"),
-                    "msg": text.splitlines()[0], "result": result,
+                    "msg": original.split('\n')[0], "result": result,
                 }
+        except Exception as exc:
+            # Keep the worker alive; exception strings may contain credentials.
+            result='delivery error: '+type(exc).__name__
+            print('[TG] '+result,flush=True)
+            with LOCK:STATE['tg_last']={'time':datetime.now().strftime('%H:%M:%S'),'msg':'Delivery unavailable','result':result}
+            try:
+                store=globals().get('_admin_store')
+                if store:store.event('telegram',{'message':'Delivery unavailable','result':result})
+            except Exception:pass
         finally:
             _tg_queue.task_done()
 
@@ -182,7 +241,7 @@ def tg_notify(text, engine=None, category=None):
     if getattr(_notification_context, "historical", False):
         return True
     try:
-        _tg_queue.put_nowait((text,engine,category) if engine or category else text)
+        _tg_queue.put_nowait(TelegramNotification(text,engine,category))
         return True
     except queue.Full:
         _tg_drop_count += 1
@@ -1860,4 +1919,3 @@ if __name__ == "__main__":
 # TRX_NO_ENGINE=1 → disable (tests, tooling)
 if os.environ.get("TRX_NO_ENGINE") != "1":
     start_engine()
-

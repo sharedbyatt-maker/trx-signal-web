@@ -14,6 +14,7 @@ from pathlib import Path
 
 from strategy_settings import MONEY_DEFAULTS, STRATEGY_INFO, validate_money, ladder
 from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, CredentialVault, validate_credentials
+from telegram_messages import MESSAGE_DEFAULTS, VARIABLES, ENGINES, KINDS, validate_messages, render_message
 
 from flask import jsonify, redirect, render_template, request, session
 from werkzeug.security import check_password_hash
@@ -54,7 +55,7 @@ class AdminStore:
             db.executescript('CREATE TABLE IF NOT EXISTS controls(name TEXT PRIMARY KEY, revision INTEGER, value TEXT);'
                              'CREATE TABLE IF NOT EXISTS money_changes(engine TEXT, revision INTEGER, after_issue TEXT, value TEXT, PRIMARY KEY(engine,revision));'
                              'CREATE TABLE IF NOT EXISTS issued_stakes(issue TEXT PRIMARY KEY, stake INTEGER);')
-            for name, value in {**MONEY_DEFAULTS, 'telegram': TELEGRAM_DEFAULTS}.items():
+            for name, value in {**MONEY_DEFAULTS, 'telegram': TELEGRAM_DEFAULTS, 'messages': MESSAGE_DEFAULTS}.items():
                 db.execute('INSERT OR IGNORE INTO controls VALUES(?,0,?)', (name,json.dumps(value)))
         self.vault = CredentialVault(self.path)
         self.refresh_controls()
@@ -72,10 +73,19 @@ class AdminStore:
             db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)', (utcnow(), kind, json.dumps(detail)))
             db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 2000)')
 
-    def events(self, limit=100):
+    def events(self, limit=100, kind=None, before=None, search=''):
         with self.lock, self.connect() as db:
+            clauses, args = [], []
+            if kind in ('audit', 'telegram'):
+                clauses.append('kind != ?' if kind == 'audit' else 'kind = ?'); args.append('telegram')
+            if before is not None:
+                clauses.append('id < ?'); args.append(before)
+            if search:
+                # Literal substring matching: SQL wildcard characters are not search syntax.
+                clauses.append('(instr(lower(kind || detail), lower(?)) > 0 OR instr(detail, ?) > 0)'); args.extend((search,json.dumps(search)[1:-1]))
+            where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
             return [{'id': i, 'at': at, 'kind': kind, 'detail': json.loads(detail)} for i, at, kind, detail in
-                    db.execute('SELECT id,at,kind,detail FROM events ORDER BY id DESC LIMIT ?', (limit,))]
+                    db.execute('SELECT id,at,kind,detail FROM events' + where + ' ORDER BY id DESC LIMIT ?', (*args, limit))]
 
     def save(self, value, revision, action='settings_saved'):
         value = validate_settings(value)
@@ -107,21 +117,58 @@ class AdminStore:
             return copy.deepcopy(self.timelines[name])
 
     def save_control(self,name,value,revision,after_issue=None):
-        value = validate_telegram(value) if name=='telegram' else validate_money(name,value)
+        value = validate_telegram(value) if name=='telegram' else validate_messages(value) if name=='messages' else validate_money(name,value)
         with self.lock, self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT revision,value FROM controls WHERE name=?',(name,)).fetchone()
             if type(revision) is not int or revision!=old[0]:
                 raise RuntimeError('Settings changed in another session. Reload before saving.')
             rev=old[0]+1
-            if name!='telegram':
+            if name in MONEY_DEFAULTS:
                 if type(after_issue) is not int or after_issue<=0:raise ValueError('A live source issue is required.')
                 db.execute('INSERT INTO money_changes VALUES(?,?,?,?)',(name,rev,str(after_issue),json.dumps(value)))
             db.execute('UPDATE controls SET revision=?,value=? WHERE name=?',(rev,json.dumps(value),name))
-            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_settings_saved',json.dumps({'before':json.loads(old[1]),'after':value,'revision':rev,'after_issue':str(after_issue) if after_issue is not None else None})))
+            detail = {'before':json.loads(old[1]),'after':value,'revision':rev,'after_issue':str(after_issue) if after_issue is not None else None}
+            if name == 'messages':
+                previous=json.loads(old[1])['templates']
+                detail={'revision':rev,'changed_templates':[key for key,text in value['templates'].items() if text!=previous[key]]}
+            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_settings_saved',json.dumps(detail)))
+            db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 2000)')
             db.commit()
             self.refresh_controls()
             return self.control(name)
+
+    def restore_bundle(self, value, revision, controls, timelines, issued, imported, boundary):
+        """Commit the complete validated bundle once; failures leave caches and SQL untouched."""
+        with self.lock, self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            old = db.execute('SELECT revision,value FROM settings WHERE id=1').fetchone()
+            if type(revision) is not int or revision != old[0]:
+                raise RuntimeError('Settings changed in another session. Reload before restoring.')
+            rev = old[0] + 1
+            db.execute('UPDATE settings SET revision=?,value=? WHERE id=1', (rev,json.dumps(value)))
+            for name,item in controls.items():
+                if boundary is None:
+                    newrev = item['revision']
+                else:
+                    newrev = db.execute('SELECT revision FROM controls WHERE name=?',(name,)).fetchone()[0] + 1
+                    if name in MONEY_DEFAULTS:
+                        db.execute('INSERT INTO money_changes VALUES(?,?,?,?)',(name,newrev,str(boundary),json.dumps(item['settings'])))
+                db.execute('UPDATE controls SET revision=?,value=? WHERE name=?',(newrev,json.dumps(item['settings']),name))
+            if controls and boundary is None:
+                for name,changes in timelines.items():
+                    for change in changes:
+                        db.execute('INSERT INTO money_changes VALUES(?,?,?,?)',(name,change['revision'],str(change['after_issue']),json.dumps(change['settings'])))
+                for issue,amount in issued.items():
+                    db.execute('INSERT OR IGNORE INTO issued_stakes VALUES(?,?)',(str(issue),amount))
+            for event in reversed(imported):
+                db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),event['kind'],json.dumps({**event['detail'],'imported_from_backup_at':event['at']})))
+            db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),'backup_restored',json.dumps({'revision':rev,'groups':list(controls),'after_issue':str(boundary) if boundary else None})))
+            db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 2000)')
+            db.commit()
+            self.cached = {'revision':rev,'settings':copy.deepcopy(value)}
+            self.refresh_controls()
+            return copy.deepcopy(self.cached)
 
     def lock_stake(self,issue,stake):
         with self.lock, self.connect() as db:
@@ -290,9 +337,11 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             except ValueError as exc:return jsonify(error=str(exc)),400
             except RuntimeError as exc:return jsonify(error=str(exc)),409
         cfg=core.load_tg_config()
+        try:override=store.credential_override()
+        except ValueError:override=None
         return jsonify(**store.control('telegram'),defaults=TELEGRAM_DEFAULTS,
-                       credentials={'configured':bool(cfg),'source':'Admin override' if store.credential_override() else 'Server configuration',
-                                    'chat_mask':('…'+str(cfg[1])[-4:]) if cfg else '', 'token_set':bool(cfg)},timezone='Asia/Bangkok')
+                       credentials={'configured':bool(cfg),'source':'Admin override' if override else 'Server configuration',
+                                    'chat_mask':('…'+str(cfg[1])[-4:]) if cfg else '', 'token_set':bool(cfg),'error':getattr(core,'_tg_config_error',None)},timezone='Asia/Bangkok')
 
     @app.route('/api/admin/telegram/credentials',methods=['PUT','DELETE'])
     @protect
@@ -311,6 +360,28 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             return jsonify(ok=True)
         except ValueError as exc:return jsonify(error=str(exc)),400
 
+    @app.route('/api/admin/telegram/messages', methods=['GET','PUT'])
+    @protect
+    def message_settings():
+        if request.method == 'PUT':
+            data = request.get_json(silent=True)
+            data = data if isinstance(data,dict) else {}
+            try:store.save_control('messages',data.get('settings'),data.get('revision'))
+            except ValueError as exc:return jsonify(error=str(exc)),400
+            except RuntimeError as exc:return jsonify(error=str(exc)),409
+        return jsonify(**store.control('messages'),defaults=MESSAGE_DEFAULTS,variables=VARIABLES,engines=ENGINES,categories=KINDS)
+
+    @app.post('/api/admin/telegram/messages/preview')
+    @protect
+    def message_preview():
+        data = request.get_json(silent=True)
+        data = data if isinstance(data,dict) else {}
+        engine,category = data.get('engine'),data.get('category')
+        if engine not in ENGINES or category not in KINDS:return jsonify(error='Unknown message channel.'),400
+        sample = f'{ENGINES[engine]} · {category.upper()} · SAMPLE\nPreview only — no message sent.\nIssue: 20261005103010001\nStake: 500 MMK\nTarget: B'
+        try:return jsonify(**render_message(data.get('template'),sample,engine,category),sample=True)
+        except ValueError as exc:return jsonify(error=str(exc)),400
+
     @app.post('/api/admin/telegram/check')
     @protect
     def check_bot():
@@ -327,7 +398,14 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     @app.get('/api/admin/events')
     @protect
     def events():
-        return jsonify(events=store.events(500))
+        try:
+            before=int(request.args['before']) if 'before' in request.args else None
+            limit=min(500,max(1,int(request.args.get('limit',500))))
+        except ValueError:return jsonify(error='Invalid log cursor.'),400
+        kind=request.args.get('kind')
+        if kind not in (None,'audit','telegram'):return jsonify(error='Unknown log type.'),400
+        rows=store.events(limit,kind,before,request.args.get('search','')[:200])
+        return jsonify(events=rows,next_before=rows[-1]['id'] if len(rows)==limit else None)
 
     @app.get('/api/admin/reports')
     @protect
@@ -375,14 +453,14 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             for e in data.get('events', []):
                 if not isinstance(e, dict) or not isinstance(e.get('at'), str) or not isinstance(e.get('kind'), str) or not isinstance(e.get('detail'), dict):
                     raise ValueError('Invalid backup event.')
-                if len(e['at']) > 40 or len(e['kind']) > 80 or len(json.dumps(e['detail'])) > 16000:
+                if len(e['at']) > 40 or len(e['kind']) > 80 or len(json.dumps(e['detail'])) > 65536:
                     raise ValueError('Backup event is too large.')
                 imported.append(e)
             controls=data.get('controls',{})
-            if not isinstance(controls,dict) or (controls and set(controls)!={'l1','twelve','telegram'}):raise ValueError('Invalid control backup.')
+            if not isinstance(controls,dict) or (controls and set(controls) not in ({'l1','twelve','telegram'}, {'l1','twelve','telegram','messages'})):raise ValueError('Invalid control backup.')
             for name,item in controls.items():
                 if not isinstance(item,dict) or type(item.get('revision')) is not int or not 0<=item['revision']<=1000000000:raise ValueError('Invalid control revision.')
-                (validate_telegram if name=='telegram' else lambda v:validate_money(name,v))(item.get('settings'))
+                (validate_telegram if name=='telegram' else validate_messages if name=='messages' else lambda v:validate_money(name,v))(item.get('settings'))
             timelines=data.get('money_changes',{})
             issued=data.get('issued_stakes',{})
             if controls:
@@ -392,7 +470,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                     seen=set()
                     for c in changes:
                         if not isinstance(c,dict):raise ValueError('Invalid monetary history.')
-                        if isinstance(c.get('after_issue'),str) and c['after_issue'].isdigit():c['after_issue']=int(c['after_issue'])
+                        if isinstance(c.get('after_issue'),str) and len(c['after_issue'])<=20 and c['after_issue'].isascii() and c['after_issue'].isdigit():c['after_issue']=int(c['after_issue'])
                         if type(c.get('revision')) is not int:raise ValueError('Invalid monetary revision.')
                         if c.get('revision') in seen:raise ValueError('Duplicate monetary revision.')
                         seen.add(c.get('revision'))
@@ -400,30 +478,22 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                         validate_money(name,c.get('settings'))
                     if changes and (max(c['revision'] for c in changes)!=controls[name]['revision'] or max(changes,key=lambda c:c['revision'])['settings']!=controls[name]['settings']):raise ValueError('Control and monetary history disagree.')
                     if not changes and (controls[name]['revision'] or controls[name]['settings']!=MONEY_DEFAULTS[name]):raise ValueError('Missing monetary history.')
-                if any(not str(i).isdigit() or type(v) is not int or not 0<v<=1000000000 for i,v in issued.items()):raise ValueError('Invalid issued stake history.')
-                # Historical timelines may be restored only into a fresh install.
-                # On an active install, changes apply causally after the live issue.
-                with core.LOCK:
-                    boundary=live_boundary() if any(store.control(n)['revision'] for n in MONEY_DEFAULTS) else None
-            result = store.save(value, data.get('expected_revision'), 'backup_restored')
-            if controls:
-                with core.LOCK, store.lock, store.connect() as db:
-                    if boundary is None:
-                        for name,item in controls.items():
-                            db.execute('UPDATE controls SET revision=?,value=? WHERE name=?',(item['revision'],json.dumps(item['settings']),name))
-                        for name,changes in timelines.items():
-                            for c in changes:db.execute('INSERT INTO money_changes VALUES(?,?,?,?)',(name,c['revision'],str(c['after_issue']),json.dumps(c['settings'])))
-                        for issue,amount in issued.items():db.execute('INSERT OR IGNORE INTO issued_stakes VALUES(?,?)',(issue,amount))
-                        db.commit();store.refresh_controls()
-                    else:
-                        for name,item in controls.items():store.save_control(name,item['settings'],store.control(name)['revision'],boundary)
-
-            for e in reversed(imported):
-                store.event(e['kind'], {**e['detail'], 'imported_from_backup_at': e['at']})
+                if any(not str(i).isascii() or not str(i).isdigit() or len(str(i))>20 or type(v) is not int or not 0<v<=1000000000 for i,v in issued.items()):raise ValueError('Invalid issued stake history.')
+                ordered = {name: sorted(changes,key=lambda c:c['revision']) for name,changes in timelines.items()}
+                for changes in ordered.values():
+                    if any(b['after_issue'] < a['after_issue'] for a,b in zip(changes,changes[1:])):
+                        raise ValueError('Monetary boundaries must be chronological.')
+            # Hold the engine boundary and store locks across the complete transaction.
+            with core.LOCK, store.lock:
+                fresh = not any(store.control(n)['revision'] for n in MONEY_DEFAULTS)
+                boundary = live_boundary() if controls and not fresh else None
+                result = store.restore_bundle(value,data.get('expected_revision'),controls,timelines,issued,imported,boundary)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
         except RuntimeError as exc:
             return jsonify(error=str(exc)), 409
+        except sqlite3.Error:
+            return jsonify(error='Backup could not be committed. No settings were changed.'),503
         return jsonify(result)
 
     @app.post('/api/admin/maintenance')

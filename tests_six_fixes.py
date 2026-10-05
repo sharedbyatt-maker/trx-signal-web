@@ -132,7 +132,7 @@ class SixFixesTests(unittest.TestCase):
         cfg = ("fake-token", "fake-chat")
         with patch.object(core.requests, "post", side_effect=[
             core.requests.ReadTimeout("test"), SimpleNamespace(status_code=503),
-            SimpleNamespace(status_code=200),
+            SimpleNamespace(status_code=200, json=lambda: {'ok':True}),
         ]) as post, patch.object(core.time, "sleep") as sleep:
             self.assertEqual(core._send_telegram("test", cfg), "sent (retry)")
             self.assertEqual(post.call_count, 3)
@@ -143,7 +143,7 @@ class SixFixesTests(unittest.TestCase):
 
     def test_telegram_429_respects_retry_after_and_exhaustion_is_visible(self):
         rate = SimpleNamespace(status_code=429, json=lambda: {"parameters": {"retry_after": 7}})
-        with patch.object(core.requests, "post", side_effect=[rate, SimpleNamespace(status_code=200)]), \
+        with patch.object(core.requests, "post", side_effect=[rate, SimpleNamespace(status_code=200, json=lambda: {'ok':True})]), \
              patch.object(core.time, "sleep") as sleep:
             self.assertEqual(core._send_telegram("test", ("token", "chat")), "sent (retry)")
             sleep.assert_called_once_with(7)
