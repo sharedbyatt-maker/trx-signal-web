@@ -42,6 +42,7 @@ def test_message_revision_preview_backup_and_old_backup_compatibility(admin):
     assert client.post('/api/admin/restore',json=backup,headers=headers(client)).status_code==200
     del backup['controls']['messages']
     backup['expected_revision']=1
+    backup['expected_control_revisions']={name:item['revision'] for name,item in store.controls.items()}
     assert client.post('/api/admin/restore',json=backup,headers=headers(client)).status_code==200
     assert store.control('messages')['settings']==data['settings']
 
