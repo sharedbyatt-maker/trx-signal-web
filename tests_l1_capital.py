@@ -200,6 +200,8 @@ class L1CapitalTests(unittest.TestCase):
             "issue": "102", "target": "BIG", "actual": "SMALL", "stake": 500,
             "tier": 1, "step": 1, "pnl": -500, "won": False,
         }, pending={"issue": "103", "target": "BIG", "stake": 1000, "tier": 1, "step": 2})
+        # A new engine history publication invalidates the replay cache.
+        core.STATE['full_history'] = list(core.STATE['full_history'])
         with patch.object(l1, "replay_l1", return_value=loss):
             service.refresh_once()
             service.refresh_once()

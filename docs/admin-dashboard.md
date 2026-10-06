@@ -45,3 +45,64 @@ Password changes require the current password and 12–128 character confirmatio
 Data API Connection supports public, bearer, dedicated header and query key authentication. Only HTTPS public hosts on port 443 without embedded credentials/query strings are accepted. Keys are write-only and encrypted in private state. Candidate endpoints must return compatible TRX JSON history with at least 14 valid rounds, at least 3 matching recent issues and no conflicting result digits; candidates behind the live source are rejected. Checks use a separate fetch path without altering active feed health. Saves use revision guards, queue a deep history refresh, preserve already issued stakes and discard responses fetched under an old connection revision. Tail recovery and RSI history requests use the selected endpoint/authentication. Redirects are disabled and network errors do not expose key-bearing URLs. Corrupt configuration can be replaced from the dashboard. Future providers with different game IDs or response shapes require an adapter; arbitrary APIs are not interchangeable.
 
 Easy message editing is now the default: heading, opening text and closing text, with original engine facts included automatically. Auto preview uses a recent matching original engine message when available, otherwise a labeled sample with the current base stake. Advanced placeholder templates remain compatible. Saving locks input fields briefly to avoid overwriting concurrent drafts. Password/API/Telegram credential overrides are excluded from ordinary backups and remain ephemeral on free hosting.
+
+## Strategy-preserving correctness and restart recovery
+
+The RSI period, 32/68 entry thresholds, confirmation, L1 R02/R03/R05/R06,
+three-tier/four-step progression, configured money settings, payout and manual
+TP/SL behavior remain unchanged. On complete history, L1 outputs are checked
+against golden results from commit 1286466. Missing exact target issues now have
+no settlement; later results cannot substitute for the missing round. Skip
+durations count provider issues, including the midnight calendar rollover.
+
+Confluence backtests now use the existing live trailing-window digit RSI and
+the same rounded decision score. Chart/12-Step/L1 Wilder RSI is unchanged.
+Historical backtest metrics can change because they now describe live decisions.
+API checks use signed timestamp age to reject future rounds; displayed delays
+remain nonnegative.
+
+The existing single engine saves its completed issue, pending stake, ladder,
+risk counters and matching 12-Step daily ledger in one atomic SQLite checkpoint.
+By default this table lives in `ADMIN_DB_PATH`; `TRX_RUNTIME_DB_PATH` optionally
+selects a separate SQLite file. Startup resumes only a valid matching policy
+checkpoint. Catch-up settles only exact issues, suppresses historical alerts,
+and does not reprice recovered pending stakes. A corrupt or incompatible
+checkpoint blocks engine startup; a checkpoint-write failure stops the engine
+and exposes unhealthy status instead of silently losing recovery progress.
+
+The dashboard JSON backup deliberately excludes the runtime checkpoint and
+credentials. Use a full database backup for engine recovery. Telegram delivery
+is still a separate network side effect, so a crash does not guarantee exactly
+once notification delivery. CSV logs are not an atomic account ledger.
+
+L1 replay results are reused while the published history, next target and money
+revision/issued ledger are unchanged. Freshness is still checked on every read;
+new history publications and corrections invalidate the cache. Unchanged
+notification keys no longer rewrite the L1 runtime file every half second.
+
+### Deployment and rollback
+
+1. Keep Gunicorn at one worker. `requirements.txt` uses tested Python constraints;
+   CI installs the committed JavaScript lockfile with `npm ci`.
+2. Before the first upgrade, choose a time with no open 12-Step/legacy target.
+   The old process has no checkpoint, so its in-memory pending state cannot be
+   recovered automatically by the first deployment. Later restarts can resume
+   checkpoints created by this version.
+3. Export the dashboard backup and take a SQLite online backup (using Python's
+   `sqlite3.Connection.backup` or the SQLite backup command). Do not copy a live
+   database file alone. Store its matching `.key` and `.credentials` files
+   privately; the JSON export does not contain them.
+4. Provision durable storage externally and point `ADMIN_DB_PATH` at that mount.
+   Set `ADMIN_PERSISTENT_STORAGE=1` only after verifying that the mount survives
+   a restart. Set a stable `ADMIN_SESSION_SECRET` and HTTPS secure cookies.
+   Local report/CSV/L1 dedupe files retain their documented hosting limits.
+5. Check `/api/health`, an exact target settlement, repeated unchanged-source
+   polling, and a controlled restart. Verify that the pending stake and daily
+   count survive without duplicate settlement before accepting the rollout.
+6. For rollback, stop the process and restore the matching pre-upgrade database
+   and private vault files with the prior release. The prior code cannot resume
+   the new checkpoint table; roll back at a boundary without an open target.
+
+This change does not provision a persistent disk or change the live host's
+configuration. It adds the recovery mechanism, tested cache optimization and
+repeatable deployment procedure without changing the strategy presets.

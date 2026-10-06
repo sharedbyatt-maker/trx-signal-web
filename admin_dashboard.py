@@ -15,6 +15,7 @@ from pathlib import Path
 from strategy_settings import MONEY_DEFAULTS, STRATEGY_INFO, validate_money, ladder
 from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, CredentialVault, validate_credentials
 from feed_connection import DEFAULT_FEED, validate_feed, public_feed, request_feed
+from feed_utils import source_age_seconds
 from telegram_messages import MESSAGE_DEFAULTS, VARIABLES, ENGINES, KINDS, validate_messages, render_message
 
 from flask import jsonify, redirect, render_template, request, session
@@ -344,9 +345,8 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         if len(rows)<14:raise ValueError('At least 14 valid rounds are required. Expected issueNumber/issue, number and blockTime fields.')
         if hasattr(core,'source_time_iso') and not core.source_time_iso(rows[-1].get('block_time')):
             raise ValueError('Candidate API must include a valid blockTime/time for the latest round.')
-        if hasattr(core,'feed_delay_seconds'):
-            age=core.feed_delay_seconds(rows[-1].get('block_time'))
-            if age is None or age>300 or age< -90:raise ValueError('Candidate API round time is stale or in the future.')
+        age=source_age_seconds(rows[-1].get('block_time'))
+        if age is None or age>300 or age< -90:raise ValueError('Candidate API round time is stale or in the future.')
         with core.LOCK:live=copy.deepcopy(core.STATE.get('history') or [])
         if not live:raise ValueError('Wait for a live connection before switching API sources.')
         recent={r['issue']:r['number'] for r in live[-50:]}

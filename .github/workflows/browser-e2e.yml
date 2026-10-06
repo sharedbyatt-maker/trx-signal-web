@@ -53,7 +53,7 @@ jobs:
         run: node tests_transport_stability.js
       - name: Install Playwright
         run: |
-          npm install
+          npm ci
           npx playwright install --with-deps chromium
       - name: Run browser E2E suite
         run: npm run test:e2e
