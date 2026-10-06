@@ -29,6 +29,10 @@ DEFAULTS = {'timeframe': 1, 'range': 30, 'telegram': True, 'alerts': True,
 def utcnow():
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
+def csrf_matches(supplied, expected):
+    return bool(isinstance(supplied, str) and isinstance(expected, str) and supplied and
+                expected and supplied.isascii() and expected.isascii() and hmac.compare_digest(supplied, expected))
+
 def validate_settings(value):
     if not isinstance(value, dict) or set(value) != set(DEFAULTS):
         raise ValueError('Provide all chart and alert settings.')
@@ -101,6 +105,7 @@ class AdminStore:
             db.execute('UPDATE settings SET revision=?,value=? WHERE id=1', (rev, json.dumps(value)))
             db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',
                        (utcnow(), action, json.dumps({'before': json.loads(current[1]), 'after': value, 'revision': rev})))
+            db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 2000)')
             db.commit()
             self.cached = {'revision': rev, 'settings': value}
             return copy.deepcopy(self.cached)
@@ -141,18 +146,24 @@ class AdminStore:
             self.refresh_controls()
             return self.control(name)
 
-    def restore_bundle(self, value, revision, controls, timelines, issued, imported, boundary):
+    def restore_bundle(self, value, revision, controls, timelines, issued, imported, boundary, expected_controls=None):
         """Commit the complete validated bundle once; failures leave caches and SQL untouched."""
         with self.lock, self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT revision,value FROM settings WHERE id=1').fetchone()
             if type(revision) is not int or revision != old[0]:
                 raise RuntimeError('Settings changed in another session. Reload before restoring.')
+            if expected_controls is not None:
+                for name in controls:
+                    current = db.execute('SELECT revision FROM controls WHERE name=?', (name,)).fetchone()[0]
+                    if expected_controls.get(name) != current:
+                        raise RuntimeError('Control settings changed in another session. Reload before restoring.')
             rev = old[0] + 1
             db.execute('UPDATE settings SET revision=?,value=? WHERE id=1', (rev,json.dumps(value)))
             for name,item in controls.items():
                 if boundary is None:
-                    newrev = item['revision']
+                    current = db.execute('SELECT revision FROM controls WHERE name=?',(name,)).fetchone()[0]
+                    newrev = item['revision'] if name in MONEY_DEFAULTS else max(current+1,item['revision'])
                 else:
                     newrev = db.execute('SELECT revision FROM controls WHERE name=?',(name,)).fetchone()[0] + 1
                     if name in MONEY_DEFAULTS:
@@ -197,6 +208,7 @@ class AdminStore:
             if type(revision) is not int or current!=revision:raise RuntimeError('Settings changed. Reload before saving.')
             db.execute('INSERT OR REPLACE INTO private_state VALUES(?,?,?)',(name,current+1,value))
             db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',(utcnow(),name+'_changed',json.dumps(detail)))
+            db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 2000)')
             return current+1
 
     def feed_config(self):
@@ -251,7 +263,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                 return jsonify(error='Admin login required.'), 401
             if request.method != 'GET':
                 supplied = request.headers.get('X-CSRF-Token', '')
-                if not supplied or not hmac.compare_digest(supplied, session.get('csrf', '')):
+                if not csrf_matches(supplied, session.get('csrf', '')):
                     return jsonify(error='Session verification failed. Reload the dashboard.'), 403
             return fn(*args, **kwargs)
         return wrapped
@@ -268,7 +280,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     def admin_login():
         error = None
         if request.method == 'POST':
-            if not hmac.compare_digest(request.form.get('csrf', ''), session.get('csrf', '')) or not session.get('csrf'):
+            if not csrf_matches(request.form.get('csrf', ''), session.get('csrf', '')):
                 return render_template('admin_login.html', csrf=csrf(), error='Reload and try again.'), 403
             key = request.remote_addr or 'unknown'
             now = time.monotonic()
@@ -291,7 +303,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                 store.event('login', {'result': 'success'})
                 return redirect('/admin')
             error = 'Incorrect password.'
-        return render_template('admin_login.html', csrf=csrf(), error=error, configured=bool(password_hash))
+        return render_template('admin_login.html', csrf=csrf(), error=error, configured=bool(current_auth()[1]))
 
     @app.get('/admin')
     def admin_page():
@@ -502,7 +514,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         data = request.get_json(silent=True)
         data = data if isinstance(data,dict) else {}
         engine,category = data.get('engine'),data.get('category')
-        if engine not in ENGINES or category not in KINDS:return jsonify(error='Unknown message channel.'),400
+        if not isinstance(engine,str) or not isinstance(category,str) or engine not in ENGINES or category not in KINDS:return jsonify(error='Unknown message channel.'),400
         base=store.control(engine)['settings']['base'] if engine in MONEY_DEFAULTS else None
         sample = f'{ENGINES[engine]} · {category.upper()} · SAMPLE\nPreview only — no message sent.\nIssue: 20261005103010001\n' + (f'Stake: {base:,} MMK\nTarget: B' if base else 'Market alert example · RSI: 61.0')
         recent=next((e['detail']['original'] for e in store.events(200,'telegram') if e['detail'].get('engine')==engine and e['detail'].get('category')==category and e['detail'].get('original')),None)
@@ -563,7 +575,8 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                     break
                 kept.append(event)
                 size += event_size
-            response = jsonify(schema=1, exported_at=utcnow(), **store.read(), events=kept,
+            response = jsonify(schema=2, exported_at=utcnow(), **store.read(), events=kept,
+                               expected_control_revisions={name:item['revision'] for name,item in store.controls.items()},
                                events_truncated=len(kept) < len(events), controls=store.controls, money_changes={name:[{**c,"after_issue":str(c["after_issue"])} for c in changes] for name,changes in store.timelines.items()}, issued_stakes=store.issued)
             response.headers['Content-Disposition'] = 'attachment; filename="trx-admin-backup.json"'
             return response
@@ -573,7 +586,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     def restore():
         data = request.get_json(silent=True)
         data = data if isinstance(data, dict) else {}
-        if data.get('schema') != 1 or not isinstance(data.get('events', []), list) or len(data.get('events', [])) > 2000:
+        if type(data.get('schema')) is not int or data['schema'] not in (1,2) or not isinstance(data.get('events', []), list) or len(data.get('events', [])) > 2000:
             return jsonify(error='Invalid backup file.'), 400
         try:
             value = validate_settings(data.get('settings'))
@@ -586,6 +599,10 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                 imported.append(e)
             controls=data.get('controls',{})
             if not isinstance(controls,dict) or (controls and set(controls) not in ({'l1','twelve','telegram'}, {'l1','twelve','telegram','messages'})):raise ValueError('Invalid control backup.')
+            expected_controls=data.get('expected_control_revisions')
+            if expected_controls is not None or (data['schema']==2 and controls):
+                if not isinstance(expected_controls,dict) or not set(controls)<=set(expected_controls) or any(type(expected_controls[n]) is not int or expected_controls[n]<0 for n in controls):
+                    raise ValueError('Reload control settings before restoring this backup.')
             for name,item in controls.items():
                 if not isinstance(item,dict) or type(item.get('revision')) is not int or not 0<=item['revision']<=1000000000:raise ValueError('Invalid control revision.')
                 (validate_telegram if name=='telegram' else validate_messages if name=='messages' else lambda v:validate_money(name,v))(item.get('settings'))
@@ -613,9 +630,16 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                         raise ValueError('Monetary boundaries must be chronological.')
             # Hold the engine boundary and store locks across the complete transaction.
             with core.LOCK, store.lock:
-                fresh = not any(store.control(n)['revision'] for n in MONEY_DEFAULTS)
+                # Default money does not mean a running engine is a fresh install.
+                fresh = not (any(store.control(n)['revision'] for n in MONEY_DEFAULTS) or
+                             any(store.timelines.values()) or store.issued or
+                             core.STATE.get('history') or core.STATE.get('full_history') or
+                             getattr(core,'last_issue',None) or getattr(core,'_money_processing_issue',None) or
+                             core.STATE.get('pending') or core.STATE.get('strat_pending') or
+                             (getattr(core,'_engine_thread',None) and core._engine_thread.is_alive()) or
+                             getattr(l1_service,'snapshot',{}).get('source_issue'))
                 boundary = live_boundary() if controls and not fresh else None
-                result = store.restore_bundle(value,data.get('expected_revision'),controls,timelines,issued,imported,boundary)
+                result = store.restore_bundle(value,data.get('expected_revision'),controls,timelines,issued,imported,boundary,expected_controls)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
         except RuntimeError as exc:
@@ -645,7 +669,13 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                 return jsonify(error='Wait 30 seconds before repeating this action.'), 429
             action_times[action] = now
             maintenance.update(status='queued', action=action, updated=utcnow(), error=None)
-        store.event('maintenance_queued', {'action': action})
+        try:
+            store.event('maintenance_queued', {'action': action})
+        except sqlite3.Error:
+            with maintenance_lock:
+                maintenance.update(status='failed', updated=utcnow(), error='Audit storage unavailable. No maintenance action was started.')
+                action_times.pop(action, None)
+            return jsonify(error=maintenance['error']),503
         def finish(ok, error=None):
             with maintenance_lock:
                 maintenance.update(status='complete' if ok else 'failed', updated=utcnow(), error=error)

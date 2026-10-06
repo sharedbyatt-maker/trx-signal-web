@@ -219,6 +219,7 @@ def test_large_source_issue_survives_browser_backup_and_fresh_restore(admin,tmp_
     # Strings preserve every digit through JSON.parse / JSON.stringify in the UI.
     fresh,restored,_,_=globals()['admin'].__wrapped__(tmp_path/'fresh')
     login(fresh);backup['expected_revision']=0
+    backup['expected_control_revisions']={name:item['revision'] for name,item in restored.controls.items()}
     assert fresh.post('/api/admin/restore',json=backup,headers=headers(fresh)).status_code==200
     assert restored.money_history('l1')[0]['after_issue']==issue
     schedule=MoneySchedule('l1',restored.money_history('l1'))

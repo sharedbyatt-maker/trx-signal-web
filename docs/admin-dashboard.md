@@ -106,3 +106,30 @@ notification keys no longer rewrite the L1 runtime file every half second.
 This change does not provision a persistent disk or change the live host's
 configuration. It adds the recovery mechanism, tested cache optimization and
 repeatable deployment procedure without changing the strategy presets.
+
+## Admin restore and input safety audit
+
+Default money settings do not identify a fresh install. If the engine has loaded
+history, processed an issue or issued a stake, restoration applies money only
+after the live source boundary. It retains local issued stakes and does not
+import foreign monetary timelines over a running model. An inactive, unused
+installation can still restore its original causal timeline. An offline active
+engine must recover a live source before restoring money controls.
+
+New exports use schema 2 and include `expected_control_revisions`. The dashboard
+replaces these with the revisions it loaded for the target installation. Restore
+checks both the chart revision and every included control revision inside the
+SQLite transaction; a concurrent edit returns 409 without changing any group.
+Reload saved controls before retrying. Direct API clients must supply target
+revisions too. Schema 1 files remain readable; the dashboard adds the same
+revision guards when restoring them. Delivery/template revisions never rewind
+to an imported older revision.
+
+Controls stay disabled during initial loading and Connected appears only after
+all groups load. Log pagination keeps its server-derived disabled state after
+operations. Non-ASCII CSRF tokens and malformed message channel/Unicode inputs
+are rejected without a server error. Chart and private-state changes enforce
+the same 2,000-event retention as other audit writers. A failed maintenance audit
+write starts no action and leaves the job retryable instead of stuck queued.
+CI exercises the complete Python and desktop/mobile browser suites on Python
+3.12 and 3.14. No entry, skip, payout or progression rules change in this audit.

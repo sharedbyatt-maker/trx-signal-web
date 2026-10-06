@@ -14,11 +14,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.14']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -61,10 +65,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-python-${{ matrix.python-version }}
           path: |
             playwright-report/
             test-results/
           if-no-files-found: ignore
           retention-days: 7
-

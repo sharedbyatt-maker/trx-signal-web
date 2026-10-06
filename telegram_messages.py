@@ -10,6 +10,11 @@ VARIABLES = {'original': 'Complete original engine message', 'title': 'Original 
 MESSAGE_DEFAULTS = {'templates': {f'{e}.{k}': '{original}' for e in ENGINES for k in KINDS}}
 
 def validate_template(template):
+    texts = template.values() if isinstance(template,dict) else (template,)
+    for text in texts:
+        if isinstance(text,str):
+            try:text.encode('utf-16-le')
+            except UnicodeEncodeError:raise ValueError('Message text contains an invalid Unicode character.') from None
     if isinstance(template,dict):
         if set(template)!={'heading','before','after'} or any(not isinstance(v,str) or len(v)>800 for v in template.values()) or sum(map(len,template.values()))>1800:
             raise ValueError('Use a heading, opening text and closing text, up to 1800 characters in total.')

@@ -1,4 +1,46 @@
 const {test,expect}=require('@playwright/test');
+test('failed connection settings load keeps dependent actions disabled and can be retried',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/admin/feed',route=>route.fulfill({status:503,contentType:'application/json',body:'{"error":"Connection settings unavailable."}'}));
+  await page.goto('/admin/login');
+  await page.getByLabel('Admin password').fill('fixture-admin-password');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.goto('/admin#connection');
+  await expect(page.locator('#notice')).toContainText('Connection settings unavailable.');
+  await expect(page.locator('#default-feed')).toBeDisabled();
+  await expect(page.locator('#reload-feed')).toBeEnabled();
+  await page.unroute('**/api/admin/feed');
+  await page.locator('#reload-feed').click();
+  await expect(page.locator('#notice')).toContainText('Saved API connection loaded.');
+  await expect(page.locator('#default-feed')).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test('admin initialization waits for all controls and keeps empty log pagination disabled',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  let release;
+  const gate=new Promise(resolve=>release=resolve);
+  await page.route('**/api/admin/feed',async route=>{await gate;await route.continue();});
+  await page.route('**/api/admin/events?**',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({events:[],next_before:null})}));
+  try{
+    await page.goto('/admin/login');
+    await page.getByLabel('Admin password').fill('fixture-admin-password');
+    await page.getByRole('button',{name:'Sign in',exact:true}).click();
+    await page.goto('/admin#connection');
+    await expect(page.locator('#default-feed')).toBeDisabled();
+    await expect(page.locator('#notice')).toContainText('Connecting');
+    release();
+    await expect(page.locator('#notice')).toContainText('Connected.');
+    await expect(page.locator('#default-feed')).toBeEnabled();
+    await page.goto('/admin#audit');
+    await expect(page.locator('#more-audit')).toBeDisabled();
+    await page.locator('#refresh-all').click();
+    await expect(page.locator('#notice')).toContainText('Status and reports refreshed.');
+    await expect(page.locator('#more-audit')).toBeDisabled();
+    expect(errors).toEqual([]);
+  }finally{release();}
+});
+
 test('admin access, settings, reports and maintenance work together',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('/admin');
