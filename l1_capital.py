@@ -7,7 +7,9 @@ It never places bets and never suppresses signals after TP/SL; TP/SL only change
 the displayed risk status to OBSERVE ONLY.
 """
 from strategy_settings import MONEY_DEFAULTS, MoneySchedule, ladder, risk_status
+from feed_utils import next_issue_number
 import json
+import copy
 import os
 import threading
 import time
@@ -73,6 +75,16 @@ def _rule_skip(rsi, i, step):
     return 0, None
 
 
+def _skip_boundary(issue, rounds):
+    for _ in range(rounds):
+        issue = next_issue_number(issue)
+    return issue
+
+
+def _wait_matured(wait, issue):
+    return wait and int(issue) >= int(wait['enter_issue'])
+
+
 def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
     """Deterministic shadow replay over completed rows; returns current next-bet state."""
     rows = [r for r in rows if r.get("issue") and r.get("type") in ("BIG", "SMALL")]
@@ -98,11 +110,12 @@ def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
     for i in range(1, len(rows) - 1):
         cur, nxt = rows[i], rows[i + 1]
         stakes=schedule.ladder_at(cur["issue"])
-        if wait and i >= wait["enter_i"]:
+        if _wait_matured(wait, cur['issue']):
             active = dict(wait)
-            active["issue"] = nxt["issue"]
+            active["issue"] = next_issue_number(cur['issue'])
             active["stake"]=stakes[active["tier"]][active["bets"]]
             active.pop("enter_i", None)
+            active.pop("enter_issue", None)
             wait = None
 
         if active and cur["issue"] == active["issue"]:
@@ -126,13 +139,14 @@ def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
                 if skip:
                     wait = {
                         "enter_i": i + skip, "target": active["target"],
+                        "enter_issue": _skip_boundary(cur['issue'], skip),
                         "tier": active["tier"], "stake": next_stake,
                         "bets": active["bets"], "rule": rid,
                     }
                     active = None
                 else:
                     active["stake"] = next_stake
-                    active["issue"] = nxt["issue"]
+                    active["issue"] = next_issue_number(cur['issue'])
             elif active["tier"] >= len(STAKES) - 1:
                 tier = 0
                 active = None
@@ -156,7 +170,7 @@ def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
                 signal = "SMALL"
             if signal:
                 active = {
-                    "issue": nxt["issue"], "target": signal, "tier": tier,
+                    "issue": next_issue_number(cur['issue']), "target": signal, "tier": tier,
                     "stake": stakes[tier][0], "bets": 0, "trigger_rsi": rp,
                     "rule": None,
                 }
@@ -169,11 +183,12 @@ def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
     cur = rows[i]
     stakes=schedule.ladder_at(cur["issue"])
     money=current_money or schedule.at(cur["issue"])
-    if wait and i >= wait["enter_i"]:
+    if _wait_matured(wait, cur['issue']):
         active = dict(wait)
         active["issue"] = None
         active["stake"]=stakes[active["tier"]][active["bets"]]
         active.pop("enter_i", None)
+        active.pop("enter_issue", None)
         wait = None
     if active and cur["issue"] == active["issue"]:
         stake = issued_stakes.get(str(cur["issue"]),active["stake"])
@@ -194,6 +209,7 @@ def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
             last_rule = rid
             if skip:
                 wait = {"enter_i": i + skip, "target": active["target"], "tier": active["tier"],
+                        "enter_issue": _skip_boundary(cur['issue'], skip),
                         "stake": next_stake, "bets": active["bets"], "rule": rid}
                 active = None
             else:
@@ -203,6 +219,10 @@ def replay_l1(rows, money_changes=(), issued_stakes=None, current_money=None):
             tier = 0; active = None
         else:
             tier = active["tier"] + 1; active = None
+
+    elif active and active.get('issue') and int(cur['issue']) > int(active['issue']):
+        # A missing exact target has no settlement; never borrow a later result.
+        active = None
 
     if active is None and wait is None:
         rp = rsi[i - 1]
@@ -342,6 +362,9 @@ class L1CapitalService:
         self._state_file = (os.path.join(getattr(core, "BASE_DIR", "."), "l1_capital_runtime.json")
                             if state_file is None else state_file)
         self.snapshot = {"ready": False, "engine": ENGINE_NAME, "version": VERSION}
+        self._replay_key = None
+        self._replay_snapshot = None
+        self._saved_runtime = None
         self._load_runtime_state()
 
     def _load_runtime_state(self):
@@ -350,6 +373,7 @@ class L1CapitalService:
         try:
             with open(self._state_file, "r", encoding="utf-8") as handle:
                 saved = json.load(handle)
+            self._saved_runtime = saved
             key = saved.get("last_alert_key")
             if isinstance(key, list) and len(key) == 5:
                 self._last_alert_key = tuple(key)
@@ -370,18 +394,22 @@ class L1CapitalService:
     def _save_runtime_state(self):
         if not self._state_file:
             return
+        saved = {
+            'last_alert_key': list(self._last_alert_key) if self._last_alert_key else None,
+            'last_withdraw_units': self._last_withdraw_units,
+            'last_withdraw_amount': self._last_withdraw_amount,
+            'last_result_key': list(self._last_result_key) if self._last_result_key else None,
+            'last_wait_key': list(self._last_wait_key) if self._last_wait_key else None,
+            'last_mode': self._last_mode,
+        }
+        if saved == self._saved_runtime:
+            return
         tmp = self._state_file + f".tmp.{os.getpid()}.{threading.get_ident()}"
         try:
             with open(tmp, "w", encoding="utf-8") as handle:
-                json.dump({
-                    "last_alert_key": list(self._last_alert_key) if self._last_alert_key else None,
-                    "last_withdraw_units": self._last_withdraw_units,
-                    "last_withdraw_amount": self._last_withdraw_amount,
-                    "last_result_key": list(self._last_result_key) if self._last_result_key else None,
-                    "last_wait_key": list(self._last_wait_key) if self._last_wait_key else None,
-                    "last_mode": self._last_mode,
-                }, handle)
+                json.dump(saved, handle)
             os.replace(tmp, self._state_file)
+            self._saved_runtime = saved
         except OSError:
             try:
                 if os.path.exists(tmp):
@@ -413,13 +441,32 @@ class L1CapitalService:
     def refresh_once(self):
         """Build and publish one snapshot; split out for deterministic tests."""
         with self.core.LOCK:
-            rows = list(self.core.STATE.get("full_history") or self.core.STATE.get("history") or [])
+            source_rows = self.core.STATE.get("full_history") or self.core.STATE.get("history") or []
+            rows = list(source_rows)
+            # Engine history publications replace the list, including corrected
+            # deep refreshes. Keep its reference to prevent identity reuse.
+            history_key = (id(source_rows), len(rows), str(rows[-1]['issue']) if rows else None)
             next_issue = self.core.STATE.get("next_issue")
         if not rows:
             return self.public_snapshot()
         store=getattr(self.core,"_admin_store",None)
-        changes,issued,current=store.money_snapshot("l1") if store else ((),{},None)
-        snap = replay_l1(rows, money_changes=changes, issued_stakes=issued, current_money=current)
+        if store:
+            with store.lock:
+                money_key = (store.controls['l1']['revision'], id(store.issued), len(store.issued))
+                replay_key = (history_key, next_issue, money_key)
+                changed = replay_key != self._replay_key
+                changes,issued,current = store.money_snapshot('l1') if changed else (None,None,None)
+        else:
+            replay_key = (history_key, next_issue, None)
+            changed = replay_key != self._replay_key
+            changes,issued,current = (),{},None
+        if changed:
+            snap = replay_l1(rows, money_changes=changes, issued_stakes=issued, current_money=current)
+            self._replay_key = replay_key
+            self._replay_snapshot = copy.deepcopy(snap)
+            self._source_rows = source_rows
+        else:
+            snap = copy.deepcopy(self._replay_snapshot)
         snap["source_issue"] = str(rows[-1]["issue"])
         if snap.get("pending") and next_issue:
             snap["pending"]["issue"] = str(next_issue)
@@ -530,4 +577,3 @@ def install_l1_capital(core):
         return core.jsonify(service.public_snapshot())
 
     return service
-

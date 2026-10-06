@@ -7,6 +7,7 @@ import json
 import math
 import os
 import queue
+import sqlite3
 import statistics
 import threading
 import time
@@ -29,6 +30,7 @@ from telegram_messages import MESSAGE_DEFAULTS, render_message
 from core_config import *  # noqa: F401,F403
 from feed_utils import next_issue_number, feed_delay_seconds, source_time_iso
 from core_notifications import consecutive_bs_streak, format_streak_telegram, rsi_alert_state
+from engine_checkpoint import EngineCheckpoint
 
 session = requests.Session()
 session.headers.update(HEADERS)
@@ -327,6 +329,58 @@ strat_state = {
     "pending": None,
 }
 strat_pending = None   # {"issue","target","tier","step","stake",...}
+_runtime_checkpoint = None
+
+
+def _checkpoint_policy():
+    return {'twelve_rsi': [RSI_STRAT_PERIOD, RSI_STRAT_OVERSOLD, RSI_STRAT_OVERBOUGHT],
+            'payout': STAKE_PAYOUT, 'confluence': [FAST_EMA, SLOW_EMA, RSI_PERIOD,
+            MOM_WINDOW, VOL_WINDOW, VOL_MIN, LONG_WINDOW, SR_WINDOW, SR_WEIGHT,
+            SCORE_TRADE, SCORE_WATCH], 'risk': [BET_SIZE, STOP_LOSS_UNITS,
+            TAKE_PROFIT_UNITS, MAX_LOSE_STREAK, COOLDOWN_ROUNDS]}
+
+
+def _save_engine_checkpoint():
+    if _runtime_checkpoint is None or last_issue is None:
+        return
+    with strat_daily_lock:
+        reports = copy.deepcopy(strat_daily_reports)
+    _runtime_checkpoint.save({'schema': 1, 'policy': _checkpoint_policy(),
+        'last_issue': str(last_issue), 'strat_state': copy.deepcopy(strat_state),
+        'strat_pending': copy.deepcopy(strat_pending), 'pending': copy.deepcopy(pending),
+        'stats': dict(stats), 'recent_results': list(recent_results), 'units': units,
+        'lose_streak': lose_streak, 'cooldown': cooldown,
+        'unresolved_signal': copy.deepcopy(unresolved_signal),
+        'strat_daily_reports': reports})
+
+
+def _restore_engine_checkpoint(checkpoint):
+    global last_issue, strat_state, strat_pending, pending, units, lose_streak, cooldown
+    global unresolved_signal, strat_daily_reports
+    value = checkpoint.load()
+    if value is None:
+        return False
+    if value['policy'] != _checkpoint_policy():
+        raise ValueError('Engine checkpoint uses different rules; review recovery before starting.')
+    last_issue = value['last_issue']
+    strat_state = copy.deepcopy(value['strat_state'])
+    strat_pending = copy.deepcopy(value['strat_pending'])
+    pending = copy.deepcopy(value['pending'])
+    stats.clear(); stats.update(value['stats'])
+    recent_results.clear(); recent_results.extend(value['recent_results'])
+    units, lose_streak, cooldown = value['units'], value['lose_streak'], value['cooldown']
+    unresolved_signal = copy.deepcopy(value.get('unresolved_signal'))
+    # The report snapshot and engine position commit atomically. If a process
+    # died after writing a report but before checkpointing the round, restore
+    # the matching ledger and let catch-up record that round exactly once.
+    with strat_daily_lock:
+        strat_daily_reports = copy.deepcopy(value['strat_daily_reports'])
+        _save_strat_daily_reports_locked()
+    with LOCK:
+        STATE.update(strat=copy.deepcopy(strat_state), strat_pending=copy.deepcopy(strat_pending),
+                     pending=copy.deepcopy(pending), stats=dict(stats), units=units,
+                     lose_streak=lose_streak, cooldown=cooldown)
+    return True
 
 
 def _empty_strat_daily(day):
@@ -701,6 +755,26 @@ def rsi_series(nums, period=RSI_PERIOD):
             ag = (ag * (period - 1) + max(d, 0)) / period
             al = (al * (period - 1) + max(-d, 0)) / period
         out[i] = 100.0 if al == 0 else 100.0 - 100.0 / (1.0 + ag / al)
+    return out
+
+
+def rolling_rsi_series(nums, period=RSI_PERIOD):
+    """The live confluence RSI over each trailing window, without smoothing.
+
+    Keep Wilder rsi_series unchanged for the chart and staking strategies.
+    """
+    out = [None] * len(nums)
+    gains = losses = 0
+    for i in range(1, len(nums)):
+        delta = nums[i] - nums[i - 1]
+        gains += max(delta, 0)
+        losses += max(-delta, 0)
+        if i > period:
+            old = nums[i - period] - nums[i - period - 1]
+            gains -= max(old, 0)
+            losses -= max(-old, 0)
+        if i >= period:
+            out[i] = 100.0 if losses == 0 else 100.0 - 100.0 / (1.0 + (gains / period) / (losses / period))
     return out
 
 
@@ -1165,6 +1239,24 @@ def engine_loop():
                             STATE["connected"] = True
                             STATE["error"] = None
                     received_at = time.monotonic()
+                    if last_issue and issue_relation(all_rows[-1]['issue'], last_issue) == 'exact':
+                        # A restart may fetch the same completed issue. Publish
+                        # it without settling or rearming the recovered target.
+                        with LOCK:
+                            needs_snapshot = not STATE.get('history')
+                        if needs_snapshot:
+                            full_hist = trim_full_history(all_rows)
+                            analysis = analyze_all_in_one(all_rows)
+                            latest = all_rows[-1]
+                            with LOCK:
+                                STATE.update(connected=True, error=None, history=all_rows[-HISTORY_KEEP:],
+                                    full_history=full_hist, analysis=analysis,
+                                    next_issue=next_issue_number(latest['issue']),
+                                    last_result_received_mono=received_at,
+                                    feed_delay=feed_delay_seconds(latest.get('block_time')),
+                                    last_update=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    hist_meta={'days':FULL_HISTORY_DAYS,'count':len(full_hist),
+                                        'from':full_hist[0]['issue'],'to':full_hist[-1]['issue']})
                     for parsed_history in completed_prefixes(all_rows, last_issue):
                         is_latest = parsed_history[-1]["issue"] == all_rows[-1]["issue"]
                         _notification_context.historical = not is_latest
@@ -1567,6 +1659,15 @@ def engine_loop():
                                           f"trade-wr {bt_result['buckets']['trade']['wr']}", flush=True)
                             print(f"[{now}] Issue {latest['short_issue']} -> {latest['number']} "
                                   f"({analysis['signal']} {analysis['score']:+.0f})", flush=True)
+                            try:
+                                _save_engine_checkpoint()
+                            except (OSError, ValueError, sqlite3.Error) as exc:
+                                # Do not silently continue with unrecoverable engine progress.
+                                with LOCK:
+                                    STATE['connected'] = False
+                                    STATE['error'] = 'Engine checkpoint failed: ' + type(exc).__name__
+                                print('[ENGINE] checkpoint failed; engine stopped', flush=True)
+                                return
                     if admin_refresh and _admin_history_refresh_requested.is_set():
                         _admin_history_refresh_result.clear()
                         _admin_history_refresh_result.update(ok=True, rows=len(all_rows))
@@ -1881,10 +1982,15 @@ def api_backtest_refresh():
 def start_engine():
     """Idempotent engine bootstrap — dev (`python app.py`) နှင့် cloud
        (gunicorn post_fork) နှစ်မျိုးလုံးမှာ တစ်ခါပဲ စဖြစ်ရမယ်။"""
-    global _engine_started
+    global _engine_started, _runtime_checkpoint
     with _ENGINE_LOCK:
         if _engine_started:
             return
+        store = globals().get('_admin_store')
+        path = os.environ.get('TRX_RUNTIME_DB_PATH') or (str(store.path) if store else os.path.join(BASE_DIR, 'instance', 'admin.sqlite3'))
+        checkpoint = EngineCheckpoint(path)
+        _restore_engine_checkpoint(checkpoint)
+        _runtime_checkpoint = checkpoint
         _engine_started = True
     STATE["log"][:] = load_trade_log()
     if not os.path.exists(TG_CONFIG_FILE):

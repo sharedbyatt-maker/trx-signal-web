@@ -25,14 +25,20 @@ def source_time_utc(value):
         return None
 
 
-def feed_delay_seconds(value, now=None):
+def source_age_seconds(value, now=None):
+    """Signed source age for validation; future timestamps stay negative."""
     dt = source_time_utc(value)
     if dt is None:
         return None
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
         raise ValueError("feed delay requires a timezone-aware clock")
-    return max(0, int((current.astimezone(timezone.utc) - dt).total_seconds()))
+    return int((current.astimezone(timezone.utc) - dt).total_seconds())
+
+
+def feed_delay_seconds(value, now=None):
+    age = source_age_seconds(value, now)
+    return max(0, age) if age is not None else None
 
 
 def source_time_iso(value):

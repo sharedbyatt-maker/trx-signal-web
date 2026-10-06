@@ -385,7 +385,7 @@ def run_backtest(parsed):
     typ = [x["type"] for x in parsed]
     ef = core.ema_series(m, core.FAST_EMA)
     es = core.ema_series(m, core.SLOW_EMA)
-    rs = core.rsi_series(nums)
+    rs = core.rolling_rsi_series(nums)
 
     pref = [0] * (len(typ) + 1)
     for i, v in enumerate(typ):
@@ -471,7 +471,7 @@ def run_backtest(parsed):
         # when predicting target round i.
         mtf = {"x5": mtf5[i], "x15": mtf15[i]}
         decision = decide_signal(
-            score,
+            round(score, 1),
             td,
             m[i - 1],
             mtf,

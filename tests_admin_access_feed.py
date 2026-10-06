@@ -3,6 +3,7 @@ import json
 import re
 from types import SimpleNamespace
 from urllib.parse import parse_qs,urlsplit
+from datetime import datetime, timedelta, timezone
 import pytest
 from werkzeug.security import check_password_hash
 from tests_admin_dashboard import admin,login,headers
@@ -71,7 +72,7 @@ def test_auth_modes_and_secret_safe_network_failure():
 def test_feed_save_checks_overlap_encryption_revisions_and_secret_exclusion(admin,monkeypatch):
     client,store,core,_=admin;login(client)
     monkeypatch.setattr('feed_connection.socket.getaddrinfo',lambda *a,**k:[(None,None,None,None,('1.1.1.1',443))])
-    rows=[{'issue':str(20261005103010001+i),'number':i%10} for i in range(20)]
+    rows=[{'issue':str(20261005103010001+i),'number':i%10,'block_time':datetime.now(timezone.utc).isoformat()} for i in range(20)]
     core.STATE['history']=rows
     core.parse_history=lambda raw:raw
     monkeypatch.setattr('requests.get',lambda *a,**k:SimpleNamespace(status_code=200,json=lambda:rows))
@@ -139,7 +140,7 @@ def test_corrupt_feed_config_can_be_replaced_without_exposing_ciphertext(admin,m
     response=client.get('/api/admin/feed')
     assert response.status_code==200 and response.json['error'] and response.json['revision']==1
     monkeypatch.setattr('feed_connection.socket.getaddrinfo',lambda *a,**k:[(None,None,None,None,('1.1.1.1',443))])
-    rows=[{'issue':str(20261005103010001+i),'number':i%10} for i in range(20)]
+    rows=[{'issue':str(20261005103010001+i),'number':i%10,'block_time':datetime.now(timezone.utc).isoformat()} for i in range(20)]
     core.STATE['history']=rows;core.parse_history=lambda raw:raw
     monkeypatch.setattr('requests.get',lambda *a,**k:SimpleNamespace(status_code=200,json=lambda:rows))
     assert client.put('/api/admin/feed',json={**DEFAULT_FEED,'revision':1},headers=headers(client)).status_code==200
@@ -152,12 +153,14 @@ def test_api_check_rejects_missing_stale_or_future_round_time(admin,monkeypatch)
     rows=[{'issue':str(20261005103010001+i),'number':i%10,'block_time':''} for i in range(20)]
     core.STATE['history']=copy.deepcopy(rows);core.parse_history=lambda raw:raw
     core.source_time_iso=lambda value:'converted' if value else None
-    age=[20];core.feed_delay_seconds=lambda value:age[0]
     monkeypatch.setattr('requests.get',lambda *a,**k:SimpleNamespace(status_code=200,json=lambda:rows))
     def check():return client.post('/api/admin/feed/check',json=DEFAULT_FEED,headers=headers(client))
     assert check().status_code==400
-    for row in rows:row['block_time']='2026-10-05 23:00:00'
-    for bad_age in (301,-91):
-        age[0]=bad_age;assert check().status_code==400
-    age[0]=20;assert check().status_code==200
+    now=datetime.now(timezone.utc)
+    for offset in (-360, 120):
+        for row in rows:row['block_time']=(now+timedelta(seconds=offset)).isoformat()
+        assert check().status_code==400
+    for row in rows:row['block_time']=(now-timedelta(seconds=20)).isoformat()
+    assert check().status_code==200
     assert store.feed_config()[0]==0
+

@@ -199,9 +199,11 @@ def test_changed_withdrawal_threshold_notifies_next_actual_milestone():
     assert '50,000' in core.messages[-1]
     core.messages.clear()
     snap.update(withdraw_milestone=100000,withdraw_milestones_reached=0)
+    core.STATE['full_history']=list(core.STATE['full_history'])
     with patch.object(l1,'replay_l1',return_value=snap):service.refresh_once()
     assert not core.messages # settings changes do not send retrospective milestones
     snap['withdraw_milestones_reached']=1
+    core.STATE['full_history']=list(core.STATE['full_history'])
     with patch.object(l1,'replay_l1',return_value=snap):service.refresh_once()
     assert len(core.messages)==1 and '100,000' in core.messages[0]
 
