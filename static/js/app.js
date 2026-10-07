@@ -412,24 +412,26 @@ function safeRender(fn, s) {
   try { fn(s); } catch (e) { console.error("render step failed:", e && e.message); }
 }
 
-function render(s, merged) {
+function render(s, merged, received = true) {
   if (typeof s.admin_alerts_enabled === "boolean") {
     document.body.dataset.adminAlerts = s.admin_alerts_enabled ? "1" : "0";
     const bell = $("bell-btn");
     if (bell) bell.disabled = !s.admin_alerts_enabled;
   }
-  const fh = s.feed_health || {};
-  const fstat = fh.status || (s.connected ? "LIVE" : "OFFLINE");
-  if (!s.connected || fstat === "OFFLINE") {
-    setConn(false, s.error ? "OFFLINE: " + s.error : "OFFLINE");
-  } else if (fstat === "STALE") {
-    setConn(false, `STALE FEED${fh.seconds_since_advance != null ? " · " + Math.round(fh.seconds_since_advance) + "s" : ""}`);
-  } else if (fstat === "DEGRADED") {
-    setConn(true, "DEGRADED · retrying feed");
-  } else {
-    setConn(true, "LIVE");
+  if (received) {
+    const fh = s.feed_health || {};
+    const fstat = fh.status || (s.connected ? "LIVE" : "OFFLINE");
+    if (!s.connected || fstat === "OFFLINE") {
+      setConn(false, s.error ? "OFFLINE: " + s.error : "OFFLINE");
+    } else if (fstat === "STALE") {
+      setConn(false, `STALE FEED${fh.seconds_since_advance != null ? " · " + Math.round(fh.seconds_since_advance) + "s" : ""}`);
+    } else if (fstat === "DEGRADED") {
+      setConn(true, "DEGRADED · retrying feed");
+    } else {
+      setConn(true, "LIVE");
+    }
+    window.TRXContext?.onState(s);
   }
-  window.TRXContext?.onState(s);
   safeRender(renderSignal, s);
   safeRender(renderAnalytics, s);
   mergedCount = merged ? merged.length : 0;
@@ -664,7 +666,7 @@ async function pollLatest() {
         : false;
       if (!fast) {
         const merged = mergeRows(fullRows, lastState.history);
-        safeRender(() => render(lastState, merged), lastState);
+        safeRender(() => render(lastState, merged, false), lastState);
       }
       if (lastState) safeRender(renderAnalytics, lastState);
     }
@@ -760,4 +762,5 @@ if (tgBtn) {
     setTimeout(() => { tgBtn.textContent = "📡"; }, 3000);
   });
 }
+
 

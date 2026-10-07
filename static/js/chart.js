@@ -1557,6 +1557,16 @@ window.TRXChart = (() => {
   }
 
   /* ================= main update ================= */
+  function sameHistory(rows) {
+    if (rows.length !== contextRows.length) return false;
+    const fields = ['issue', 'short_issue', 'number', 'type', 'block_time', 'blockTime', 'time', 'hm'];
+    for (let i = 0; i < rows.length; i++) {
+      const a = rows[i], b = contextRows[i];
+      if (a === b) continue;
+      for (const field of fields) if (a[field] !== b[field]) return false;
+    }
+    return true;
+  }
   function update(s, force) {
     const wrap = $("tv-chart");
     if (!wrap) return;
@@ -1564,7 +1574,12 @@ window.TRXChart = (() => {
 
     if (!renderingReplay) {
       lastState = s;
-      contextRows = (s.history || []).slice(); contextRevision++;
+      // State polling must not invalidate expensive timeframe summaries unless
+      // history actually changes. Compare the whole buffer so old corrections
+      // also rebuild the chart, rather than checking only the newest three rows.
+      if (!sameHistory(s.history || [])) {
+        contextRows = (s.history || []).slice(); contextRevision++;
+      }
       if (replay) { if(force)renderReplay(); notifyStudy(); return; }
     }
     const hist = s.history || [];
@@ -1574,7 +1589,7 @@ window.TRXChart = (() => {
     const tailFingerprint = hist.slice(-3).map((r) =>
       `${r.issue || ""}/${r.number ?? ""}/${r.type || ""}/${r.block_time || r.blockTime || r.hm || ""}`
     ).join("|");
-    const key = `${hist.length}:${lastIssue}:${tailFingerprint}:${group}:${viewMode}:${JSON.stringify(opts)}:${(s.log || []).length}`;
+    const key = `${contextRevision}:${hist.length}:${lastIssue}:${tailFingerprint}:${group}:${viewMode}:${JSON.stringify(opts)}:${(s.log || []).length}`;
     if (!force && key === lastKey) return;
     lastKey = key;
 
@@ -1977,4 +1992,5 @@ window.TRXChart = (() => {
     _qa: { calcStoch, structuralLookbackBars, hssShape, detectHssCandidates, srLevels, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice()}) },
   };
 })();
+
 
