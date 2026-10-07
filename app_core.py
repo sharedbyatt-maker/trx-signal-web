@@ -24,7 +24,7 @@ if sys_stdout := __import__("sys").stdout:
 # Configuration is isolated from runtime behavior; imported names remain
 # available from app_core for backward compatibility with tests and callers.
 from strategy_settings import MONEY_DEFAULTS, MoneySchedule, ladder, risk_status
-from telegram_controls import TELEGRAM_DEFAULTS, classify, allowed
+from telegram_controls import TELEGRAM_DEFAULTS, classify, allowed, streak_should_alert
 from feed_connection import DEFAULT_FEED, request_feed
 from telegram_messages import MESSAGE_DEFAULTS, render_message
 from core_config import *  # noqa: F401,F403
@@ -1310,10 +1310,10 @@ def engine_loop():
                             analysis = analyze_all_in_one(parsed_history)
 
                             # ---- 🔥 BIG/SMALL LONG-STREAK TELEGRAM ALERT ----
-                            # Notification only: 8 first, then every fresh continuation 9,10,11,...
+                            # Notification only; default remains 8,9,10,... on fresh rounds.
                             streak_type, streak_count = consecutive_bs_streak(parsed_history)
-                            if (streak_type in ("BIG", "SMALL")
-                                    and streak_count >= TG_STREAK_ALERT_FROM
+                            streak_policy = store.control('telegram')['settings'] if store else TELEGRAM_DEFAULTS
+                            if (streak_should_alert(streak_policy, streak_type, streak_count)
                                     and latest["issue"] != last_streak_alert_issue):
                                 tg_notify(format_streak_telegram(latest, streak_type, streak_count))
                                 last_streak_alert_issue = latest["issue"]
