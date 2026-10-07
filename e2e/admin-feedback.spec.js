@@ -112,3 +112,48 @@ test('background polls do not flood notifications and completed maintenance repo
   await page.clock.fastForward(10000);
   await expect(page.locator('.toast')).toHaveCount(0);
 });
+
+
+test('accepted policy saves keep the latest revision even when the audit refresh fails',async({page})=>{
+  await openAdmin(page,'notifications');
+  let revision=40,saved=null,writes=0;
+  const initial=await (await page.request.get('/api/admin/telegram')).json();
+  await page.route('**/api/admin/telegram',route=>{
+    if(route.request().method()==='GET')return route.fulfill({status:503,json:{error:'Policy refresh unavailable.'}});
+    const body=route.request().postDataJSON();
+    const expected=writes===0?initial.revision:revision;
+    if(body.revision!==expected)return route.fulfill({status:409,json:{error:'Stale policy revision.'}});
+    writes++;revision++;saved=body.settings;
+    return route.fulfill({json:{...initial,revision,settings:saved}});
+  });
+  await page.route('**/api/admin/events?**',route=>route.fulfill({status:503,json:{error:'Audit refresh unavailable.'}}));
+  const control=page.locator('#quiet-enabled');
+  await control.setChecked(!(await control.isChecked()));
+  await page.locator('#save-policy').click();
+  await expect(page.locator('.toast-warning')).toContainText('Change accepted');
+  await expect(page.locator('#draft-summary')).toHaveText('');
+  await control.setChecked(!(await control.isChecked()));
+  await page.locator('#save-policy').click();
+  await expect.poll(()=>writes).toBe(2);
+  await expect(page.locator('#admin-work-state')).toBeHidden();
+  await expect(page.locator('.toast-error')).toHaveCount(0);
+  expect(saved.quiet.enabled).toBe(await control.isChecked());
+});
+
+test('Refresh data retries failed startup sections without replacing another section draft',async({page})=>{
+  await openAdmin(page,'chart');
+  let fail=true;
+  await page.route('**/api/admin/feed',route=>fail?route.fulfill({status:503,json:{error:'Startup API settings unavailable.'}}):route.continue());
+  await page.reload();
+  await expect(page.locator('#notice')).toContainText('Startup API settings unavailable.');
+  await expect(page.locator('#default-feed')).toBeDisabled();
+  const draft=await page.locator('#timeframe').inputValue()==='5'?'15':'5';
+  await page.locator('#timeframe').selectOption(draft);
+  await expect(page.locator('#draft-summary')).toContainText('Chart');
+  fail=false;
+  await page.locator('#refresh-all').click();
+  await expect(page.locator('#notice')).toContainText('Status and reports refreshed.');
+  await expect(page.locator('#default-feed')).toBeEnabled();
+  await expect(page.locator('#timeframe')).toHaveValue(draft);
+  await expect(page.locator('#draft-summary')).toContainText('Chart');
+});

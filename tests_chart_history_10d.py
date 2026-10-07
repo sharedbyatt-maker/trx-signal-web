@@ -41,10 +41,11 @@ def test_frontend_has_10day_range_and_authoritative_merge():
     chart = Path("static/js/chart.js").read_text(encoding="utf-8")
     html=render_terminal_defaults()
     assert '(b || []).forEach((r) => m.set(r.issue, r));' in js
-    assert 'fullRows = force ? mergeRows([], inc)' in js
+    assert 'fullRows = force ? mergeRows(inc, arrived)' in js
     assert 'setHistoryRange(days = 30)' in chart
     assert '1440 / Math.max(1, group)' in chart
     assert '<option value="30" selected>30D</option>' in html
     assert 'id="chart-meta"' in html
+
 
 

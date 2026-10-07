@@ -69,13 +69,24 @@ async function loadPolicy(){const data=await api('/api/admin/telegram');policyDa
 function fillCredentials(data){byId('credential-state').textContent=data.credentials.error||`${data.credentials.source} · ${data.credentials.configured?'Configured · Destination '+data.credentials.chat_mask:'Not configured'}`;updateDraftSummary();}
 async function loadCredentials(){fillCredentials(await api('/api/admin/telegram'));}
 function policyDraft(){const value=structuredClone(policyData.settings);for(const group of ['engines','types'])for(const key of Object.keys(value[group]))value[group][key]=byId(`policy-${group}-${key}`).checked;value.quiet={enabled:byId('quiet-enabled').checked,start:byId('quiet-start').value,end:byId('quiet-end').value};return value;}
-byId('save-policy').addEventListener('click',()=>run(async()=>{await api('/api/admin/telegram','PUT',{revision:policyData.revision,settings:policyDraft()});await loadPolicy();await loadEvents();},'Telegram delivery policy saved.'));
+byId('save-policy').addEventListener('click',()=>run(async()=>{const data=await api('/api/admin/telegram','PUT',{revision:policyData.revision,settings:policyDraft()});policyData=data;fillPolicy(data.settings);fillCredentials(data);await loadEvents();},'Telegram delivery policy saved.'));
 byId('reload-policy').addEventListener('click',()=>run(loadPolicy,'Saved Telegram policy loaded.'));
 byId('reset-policy').addEventListener('click',()=>{fillPolicy(policyData.defaults);byId('policy-state').textContent='Default policy draft · Save to apply';notice('Default delivery policy loaded into the draft. Save to apply.',false,{type:'info'});});
 byId('save-credentials').addEventListener('click',()=>run(async()=>{await api('/api/admin/telegram/credentials','PUT',{token:byId('bot-token').value.trim(),chat:byId('bot-chat').value.trim()});byId('bot-token').value='';byId('bot-chat').value='';await loadCredentials();await loadEvents();},'Telegram credentials saved.'));
 byId('clear-credentials').addEventListener('click',()=>run(async()=>{await api('/api/admin/telegram/credentials','DELETE',{});await loadCredentials();await loadEvents();},'Server Telegram configuration restored.'));
 byId('check-bot').addEventListener('click',()=>run(async()=>{const result=await api('/api/admin/telegram/check','POST',{});byId('credential-state').textContent=`Verified @${result.username} · ${result.note}`;},'Bot connection verified. No message sent.'));
-byId('refresh-all').addEventListener('click',()=>run(async()=>{await Promise.all([loadStatus(),loadReports(),loadEvents()]);},'Status and reports refreshed.'));
+async function refreshDashboard(){
+  const loads=[loadStatus(),loadReports(),loadEvents()];
+  if(!settings)loads.push(loadSettings());
+  for(const name of ['l1','twelve'])if(!strategyData[name])loads.push(loadStrategy(name));
+  if(!policyData)loads.push(loadPolicy());
+  if(!messageData)loads.push(loadMessages());
+  if(!feedData)loads.push(loadFeed());
+  const results=await Promise.allSettled(loads);
+  const failed=results.find(result=>result.status==='rejected');
+  if(failed)throw failed.reason;
+}
+byId('refresh-all').addEventListener('click',()=>run(async()=>{await refreshDashboard();},'Status and reports refreshed.'));
 byId('reset-chart').addEventListener('click',()=>{byId('timeframe').value='1';byId('range').value='30';for(const key of Object.keys(names))byId(`indicator-${key}`).checked=['ema','rsi'].includes(key);updateDraftSummary();notice('Chart default draft loaded. Save to apply.',false,{type:'info'});});
 let logSearchTimer;for(const id of ['audit-filter','delivery-filter'])byId(id).addEventListener('input',()=>{logExpanded=false;clearTimeout(logSearchTimer);logSearchTimer=setTimeout(()=>loadEvents().catch(e=>notice(e.message,true)),300);});
 
