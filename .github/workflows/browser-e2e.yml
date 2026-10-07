@@ -71,3 +71,13 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+      - name: Upload compact layout and error evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-layouts-python-${{ matrix.python-version }}
+          path: |
+            test-results/**/*.png
+            test-results/**/error-context.md
+          if-no-files-found: ignore
+          retention-days: 7

@@ -8,6 +8,7 @@ async function openAdmin(page,section='chart'){
   await page.goto('/admin#'+section);
   await expect(page.locator('#notice')).toContainText('Connected.');
   await page.locator('.toast-close').click();
+  await page.mouse.move(0,0);
 }
 
 test('draft, pending, failed and successful saves give visible feedback without exposing form values',async({page})=>{
@@ -90,14 +91,14 @@ test('notifications stay bounded and admin sections fit the viewport with an acc
     await expect(page.locator('#menu-toggle')).toBeFocused();
   }
   await page.goto('/admin#system');
-  await expect(page.locator('#notice')).toContainText('Connected.');
+  await expect(page.locator('#system')).toBeVisible();
   await page.screenshot({path:testInfo.outputPath('admin-refreshed-ui.png'),fullPage:true});
 });
 
 test('background polls do not flood notifications and completed maintenance reports once',async({page})=>{
+  await page.clock.install();
   await openAdmin(page,'system');
   const original=await (await page.request.get('/api/admin/status')).json();
-  await page.clock.install();
   await page.route('**/api/admin/status',route=>route.fulfill({status:503,contentType:'application/json',body:'{"error":"Status temporarily unavailable."}'}));
   await page.clock.fastForward(10000);
   await expect(page.locator('#notice')).toContainText('Status temporarily unavailable');
