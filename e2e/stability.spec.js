@@ -188,3 +188,28 @@ test('enabled bell alerts each current engine signal once without polling duplic
   expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('L1 CAPITAL BIG')))).toBe(true);
   expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('12-STEP BIG')))).toBe(true);
 });
+
+
+test('a delayed full history snapshot keeps the newest live round and its clock',async({page})=>{
+  let release,advance=false;
+  const gate=new Promise(resolve=>release=resolve);
+  await page.route('**/api/history**',async route=>{await gate;await route.continue();});
+  await page.route('**/api/latest',route=>route.fulfill({json:{round:{
+    issue:advance?next:'20260913000000360',number:8,
+    block_time:advance?'2026-09-13 14:00:00':'2026-09-13 13:59:00',
+    block_time_utc:advance?'2026-09-13T07:30:00Z':'2026-09-13T07:29:00Z'}}}));
+  try{
+    await page.goto('/');
+    await expect(page.locator('#conn-txt')).toHaveText('LIVE');
+    await expect.poll(()=>page.evaluate(()=>lastKnownIssue)).toBe('20260913000000360');
+    advance=true;
+    await expect.poll(()=>page.evaluate(()=>fullRows.at(-1)?.issue)).toBe(next);
+    release();
+    await expect.poll(()=>page.evaluate(()=>historyRequest===null&&fullRows.length>300)).toBe(true);
+    expect(await page.evaluate(()=>fullRows.at(-1).issue)).toBe(next);
+    expect(await page.evaluate(()=>lastResultUtc)).toBe('2026-09-13T07:30:00Z');
+    await page.locator('.tf-btn[data-g="5"]').click();
+    await expect(page.locator('#lg-tf')).toHaveText('5m');
+    await expect(page.locator('#conn-txt')).toHaveText('LIVE');
+  }finally{release();}
+});

@@ -37,6 +37,8 @@ async function fetchFullHistory(force) {
 async function loadFullHistory(force) {
   if (!force && Date.now() - lastHistFetch < HIST_REFETCH_MS) return;
   lastHistFetch = Date.now();
+  const issueAtStart = fullRows.length ? fullRows[fullRows.length - 1].issue : "";
+  let retainedLiveArrival = false;
   try {
     /* incremental sync: only rounds newer than what we already hold */
     const since = (!force && fullRows.length)
@@ -57,7 +59,12 @@ async function loadFullHistory(force) {
     if (inc.length) {
       // A forced fetch is a fresh authoritative 30-day snapshot, not an append.
       // Incremental fetches append/replace by issue.
-      fullRows = force ? mergeRows([], inc) : mergeRows(fullRows, inc);
+      // A response can lag /api/latest. Preserve rounds received during this
+      // request, while still replacing/correcting the older snapshot entirely.
+      const snapshotEnd = inc[inc.length - 1].issue;
+      const arrived = force ? fullRows.filter(r => r.issue > issueAtStart && r.issue > snapshotEnd) : [];
+      retainedLiveArrival = arrived.length > 0 || (!force && fullRows.length > 0 && fullRows[fullRows.length - 1].issue > snapshotEnd);
+      fullRows = force ? mergeRows(inc, arrived) : mergeRows(fullRows, inc);
       if (fullRows.length > 45200) fullRows = fullRows.slice(-45200);
       rebuildFullIssueSet();
     } else {
@@ -65,11 +72,13 @@ async function loadFullHistory(force) {
       // into the small /api/state fallback for 45 seconds; allow the next refresh
       // to retry the full history immediately.
       lastHistFetch = 0;
+      retainedLiveArrival = fullRows.length > 0 && fullRows[fullRows.length - 1].issue > issueAtStart;
     }
-    if (data.last_time_utc) lastResultUtc = data.last_time_utc;
-    else lastResultUtc = null;
-    if (data.last_time) lastResultTime = data.last_time;
-    else if (fullRows.length) lastResultTime = fullRows[fullRows.length - 1].block_time;
+    if (!retainedLiveArrival) {
+      lastResultUtc = data.last_time_utc || null;
+      if (data.last_time) lastResultTime = data.last_time;
+      else if (fullRows.length) lastResultTime = fullRows[fullRows.length - 1].block_time;
+    }
     const metaEl = $("chart-meta");
     if (metaEl) {
       const days = data.meta && data.meta.days ? data.meta.days : 30;
