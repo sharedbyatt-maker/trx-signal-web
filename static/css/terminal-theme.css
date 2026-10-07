@@ -1,0 +1,59 @@
+/* Terminal presentation only. Chart geometry, signals and state colors stay owned by their existing layers. */
+:root{--bg:#0c151d;--card:#14232d;--card2:#1a2f3b;--border:#2c414e;--text:#dfebef;--muted:#9cafbd;--polish-muted:#a9bdca;--polish-line:#304957;--terminal-accent:#91dec9}
+body{background:radial-gradient(ellipse at 85% 0,#173941 0,transparent 48%),var(--bg)}
+header{background:#101d27;border-bottom-color:#344f5a;box-shadow:0 5px 20px #0002}
+.logo{background:linear-gradient(135deg,#1b484b,#18333e);border-color:#527c7b;border-radius:12px;box-shadow:0 3px 14px #0002}
+.brand h1{color:#e9f3f4;font-weight:750;letter-spacing:.7px}
+.ver{color:#a9e6d8;background:#1c3b40;border-color:#416460;border-radius:6px}
+.sub{color:#a0b8c5}.clock{color:#b8cdd6}
+.bell-btn{background:#1b303e;border-color:#3b5262;border-radius:9px}
+.bell-btn:hover{background:#24424e;border-color:#76bfb2}
+.ticker-wrap{background:#101e28;border-color:#2d4351}
+.ticker .tk-item{background:#172b36;border-color:#314b58;border-radius:9px}
+.ticker .tk-label{color:#a5bdc8;letter-spacing:.8px}.ticker .tk-sep{background:#35505a}
+.focus-bar{background:#11232d;border-color:#3a5864;box-shadow:0 5px 16px #0002;backdrop-filter:none}
+.focus-brand{color:#a0dfd0}.focus-item{background:#18303b;border-color:#3a5261;border-radius:8px}
+.focus-item>span,.focus-state>span:not(.focus-state-icon){color:#b0c5ce}
+.focus-state.is-waiting{color:#c0d0d8;background:#1d2d3a;border-color:#485d70}
+.card{border-color:#304956;border-radius:15px;box-shadow:0 8px 24px #0002;background:linear-gradient(155deg,#172c36,#12212c)}
+.side-stack>.card{border-top-color:#547b7c}
+.side-stack .card-title{color:#c8e4e7;font-weight:750;letter-spacing:.09em}
+.side-stack .card-title-row{border-bottom:1px solid #2a414e;padding-bottom:9px;margin-bottom:12px}
+.chart-card{background:#131e2b;border-color:#385261}
+.chart-card>.card-title-row{background:linear-gradient(100deg,#1a313d,#152834);border-bottom:1px solid #344b59}
+.chart-toolbar .tb-group-label{color:#b1c5ce;font-weight:700;letter-spacing:.8px}
+.tf-btn,.range-select{background:#192d3c;border-color:#3b5266;color:#cbdde6;border-radius:7px}
+.tf-btn:hover,.range-select:hover{background:#24424e;border-color:#7abbaf;color:#effbf8}
+.tf-btn.active{background:#28524f;border-color:#7bbcac;color:#c7f1e6;box-shadow:inset 0 1px 0 #ffffff0d}
+.ind-bar{background:#11242f;border-color:#304956}.chart-toggle{color:#bed0dc}
+.chart-time-bar{background:#101f2c;border-color:#304957;color:#b3c9d7}
+.stake-signal-hero{background:linear-gradient(110deg,#1d3947,#172c3b);border-color:#406275;border-radius:11px;box-shadow:inset 0 1px 0 #ffffff05}
+.stake-meta-grid{border-color:#334b59;background:#334b59;border-radius:10px}
+.stake-meta-grid>div{background:#142735}.stake-meta-grid>div>span{color:#afc4d2}
+.l1-report-grid>div,.daily12-summary-grid>div,.daily12-extra-grid>div{background:#1a303d;border-color:#3a5261;border-radius:10px}
+.l1-report-grid small,.daily12-summary-grid small{color:#adc3ce}
+.l1-report-grid .l1-report-focus,.daily12-summary-grid .daily12-focus{background:linear-gradient(140deg,#20483f,#19323a);border-color:#467a66}
+.l1-report-progress,.stake-rule{background:#112530;border-color:#344f5d;color:#b0c7d5;border-radius:9px}
+.terminal-details,.daily12-details{border-color:#36505c}
+.terminal-details summary,.daily12-details>summary{color:#bfd5df}
+.market-tabs{background:#11242e;border-color:#304956;border-radius:10px}
+.market-tabs button{border-radius:8px;color:#bfd0db}.market-tabs button.active,.market-tabs button[aria-selected="true"]{background:#254641;color:#b9ecdc;border-color:#598d7f}
+.market-card .market-metrics>div{background:#162d3a;border-color:#355061;border-radius:10px}
+.market-metrics small{color:#b0c6d2}.market-icon{background:#23434b;border-radius:8px}
+.timeframe-card{background:#142a37;border-color:#344f60;border-radius:10px}
+.timeframe-card-heading strong{color:#d4e5ed}.insight-heading h3{color:#b8d4db}
+.setup-check{background:#142834;border-color:#365361;border-radius:10px}
+.setup-check summary:hover{background:#1b3441}.setup-check summary strong{color:#c8e1e7}
+.history-filters button,.history-more,.history-detail-button,.history-date-controls button,.history-date-controls input{background:#192d3c;border-color:#3a5261;border-radius:8px;color:#c4d8e3}
+.history-filters button.active{background:#28524f;border-color:#6eb4a5;color:#c7f1e6}
+.signal-table th{background:#1b3341;border-color:#304956;color:#bed3df}.signal-table td{border-color:#2c4353}
+.signal-table tbody .history-result:hover{background:#203947}
+.d12-activity-row,.daily12-history>div{border-color:#2b4553}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #9ce3d0;outline-offset:3px}
+footer{border-color:#304957;color:#a8becb}
+@media(max-width:600px){
+  .logo{border-radius:10px}.brand h1{letter-spacing:.45px}.card{border-radius:13px}
+  .side-stack>.card{box-shadow:0 5px 15px #0002}.chart-card>.card-title-row{border-radius:12px 12px 0 0}
+  .ticker .tk-item{border-radius:8px}.focus-bar{box-shadow:0 4px 12px #0003}
+  .side-stack .card-title-row{padding-bottom:8px;margin-bottom:10px}
+}
