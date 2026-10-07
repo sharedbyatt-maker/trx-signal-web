@@ -8,13 +8,15 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from cryptography.fernet import Fernet
+from core_config import TG_STREAK_ALERT_FROM
 
 TELEGRAM_DEFAULTS={'engines':{'l1':True,'twelve':True,'market':True},
  'types':{'signal':True,'result':True,'wait':True,'withdrawal':True,'daily':True,'radar':True,'rsi':True,'streak':True},
- 'quiet':{'enabled':False,'start':'22:00','end':'07:00'}}
+ 'quiet':{'enabled':False,'start':'22:00','end':'07:00'},
+ 'streak':{'start':TG_STREAK_ALERT_FROM,'repeat':'every','interval':2,'side':'both'}}
 
 def validate_telegram(value):
-    if not isinstance(value,dict) or set(value)!=set(TELEGRAM_DEFAULTS):raise ValueError('Invalid Telegram settings.')
+    if not isinstance(value,dict) or set(value) not in (set(TELEGRAM_DEFAULTS),set(TELEGRAM_DEFAULTS)-{'streak'}):raise ValueError('Invalid Telegram settings.')
     for group in ('engines','types'):
         if not isinstance(value[group],dict) or set(value[group])!=set(TELEGRAM_DEFAULTS[group]) or any(type(v) is not bool for v in value[group].values()):
             raise ValueError('Invalid engine / message controls.')
@@ -24,7 +26,23 @@ def validate_telegram(value):
     for key in ('start','end'):
         if not isinstance(q[key],str) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',q[key]):raise ValueError('Use HH:MM for quiet hours.')
     if q['enabled'] and q['start']==q['end']:raise ValueError('Quiet-hour start and end must differ.')
+    result=copy.deepcopy(value)
+    result['streak']=validate_streak(value.get('streak',TELEGRAM_DEFAULTS['streak']))
+    return result
+
+def validate_streak(value):
+    if not isinstance(value,dict) or set(value)!={'start','repeat','interval','side'}:raise ValueError('Invalid streak alert settings.')
+    if type(value['start']) is not int or not 1<=value['start']<=100:raise ValueError('Streak start must be a whole number from 1 to 100.')
+    if type(value['interval']) is not int or not 1<=value['interval']<=100:raise ValueError('Repeat interval must be a whole number from 1 to 100.')
+    if value['repeat'] not in ('once','every','interval') or value['side'] not in ('both','BIG','SMALL'):raise ValueError('Choose a streak repeat mode and side.')
     return copy.deepcopy(value)
+
+def streak_should_alert(policy,side,count):
+    cfg=policy.get('streak',TELEGRAM_DEFAULTS['streak'])
+    if not policy['types']['streak'] or not policy['engines']['market'] or side not in ('BIG','SMALL') or count<cfg['start']:return False
+    if cfg['side']!='both' and cfg['side']!=side:return False
+    if cfg['repeat']=='once':return count==cfg['start']
+    return cfg['repeat']=='every' or (count-cfg['start'])%cfg['interval']==0
 
 def classify(text):
     title=str(text).split('\n')[0].upper()
@@ -83,3 +101,4 @@ def validate_credentials(token,chat):
     if not isinstance(token,str) or not re.fullmatch(r'\d{5,20}:[A-Za-z0-9_-]{20,100}',token):raise ValueError('Enter a valid bot token from BotFather.')
     if not isinstance(chat,str) or not re.fullmatch(r'(?:-?\d{1,20}|@[A-Za-z0-9_]{5,64})',chat):raise ValueError('Enter a numeric chat ID or @channel username.')
     return token,chat
+

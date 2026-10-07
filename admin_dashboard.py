@@ -14,9 +14,10 @@ from functools import wraps
 from pathlib import Path
 
 from strategy_settings import MONEY_DEFAULTS, STRATEGY_INFO, validate_money, ladder
-from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, CredentialVault, validate_credentials
+from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, validate_streak, CredentialVault, validate_credentials
 from feed_connection import DEFAULT_FEED, validate_feed, public_feed, request_feed
 from feed_utils import source_age_seconds
+from core_notifications import format_streak_telegram
 from telegram_messages import MESSAGE_DEFAULTS, VARIABLES, ENGINES, KINDS, validate_messages, render_message
 
 from flask import jsonify, redirect, render_template, request, session
@@ -123,6 +124,7 @@ class AdminStore:
     def refresh_controls(self):
         with self.lock, self.connect() as db:
             self.controls = {name: {'revision':rev,'settings':json.loads(value)} for name,rev,value in db.execute('SELECT name,revision,value FROM controls')}
+            self.controls['telegram']['settings']=validate_telegram(self.controls['telegram']['settings'])
             self.timelines = {name: [{'revision':r,'after_issue':int(i),'settings':json.loads(v)} for r,i,v in db.execute('SELECT revision,after_issue,value FROM money_changes WHERE engine=? ORDER BY revision',(name,))] for name in MONEY_DEFAULTS}
             self.issued = dict(db.execute('SELECT issue,stake FROM issued_stakes'))
 
@@ -480,7 +482,10 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         if request.method=='PUT':
             data=request.get_json(silent=True)
             data=data if isinstance(data,dict) else {}
-            try:store.save_control('telegram',data.get('settings'),data.get('revision'))
+            value=data.get('settings')
+            if isinstance(value,dict) and 'streak' not in value:
+                value={**value,'streak':store.control('telegram')['settings']['streak']}
+            try:store.save_control('telegram',value,data.get('revision'))
             except ValueError as exc:return jsonify(error=str(exc)),400
             except RuntimeError as exc:return jsonify(error=str(exc)),409
         cfg=core.load_tg_config()
@@ -489,6 +494,19 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         return jsonify(**store.control('telegram'),defaults=TELEGRAM_DEFAULTS,
                        credentials={'configured':bool(cfg),'source':'Admin override' if override else 'Server configuration',
                                     'chat_mask':('…'+str(cfg[1])[-4:]) if cfg else '', 'token_set':bool(cfg),'error':getattr(core,'_tg_config_error',None)},timezone='Asia/Bangkok')
+
+    @app.post('/api/admin/telegram/streak/preview')
+    @protect
+    def streak_preview():
+        data=request.get_json(silent=True)
+        try:
+            cfg=validate_streak(data.get('streak') if isinstance(data,dict) else None)
+            side='SMALL' if cfg['side']=='SMALL' else 'BIG'
+            sample={'issue':'20261007103010001','block_time':'2026-10-07 12:00:00'}
+            original=format_streak_telegram(sample,side,cfg['start'])
+            template=store.control('messages')['settings']['templates']['market.streak']
+            return jsonify(**render_message(template,original,'market','streak'),sample=True,note='Sample preview only. Nothing is sent to Telegram.')
+        except ValueError as exc:return jsonify(error=str(exc)),400
 
     @app.route('/api/admin/telegram/credentials',methods=['PUT','DELETE'])
     @protect
@@ -615,7 +633,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                     raise ValueError('Reload control settings before restoring this backup.')
             for name,item in controls.items():
                 if not isinstance(item,dict) or type(item.get('revision')) is not int or not 0<=item['revision']<=1000000000:raise ValueError('Invalid control revision.')
-                (validate_telegram if name=='telegram' else validate_messages if name=='messages' else lambda v:validate_money(name,v))(item.get('settings'))
+                item['settings']=(validate_telegram if name=='telegram' else validate_messages if name=='messages' else lambda v:validate_money(name,v))(item.get('settings'))
             timelines=data.get('money_changes',{})
             issued=data.get('issued_stakes',{})
             if controls:

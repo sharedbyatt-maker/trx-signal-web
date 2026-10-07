@@ -133,3 +133,21 @@ the same 2,000-event retention as other audit writers. A failed maintenance audi
 write starts no action and leaves the job retryable instead of stuck queued.
 CI exercises the complete Python and desktop/mobile browser suites on Python
 3.12 and 3.14. No entry, skip, payout or progression rules change in this audit.
+
+## B/S streak alerts
+
+Telegram & Alerts includes a B/S Streak Alerts card within Delivery policy.
+Use Save delivery policy to persist its enable switch, start count (1–100),
+repeat mode (once, every additional round, or every N rounds), and BIG/SMALL side.
+The interval is measured from the start count: start 8 with interval 2 sends at
+8, 10, 12, and so on. Once mode sends only when the count equals the start count.
+Switching sides resets the consecutive count naturally. Changes apply to new
+completed rounds; saving never sends an alert or replays old rounds.
+
+Defaults remain both sides, start 8, every additional round. Existing database
+policies and old backups receive these defaults without losing existing switches.
+Older API clients that omit streak settings keep the currently saved cadence.
+The existing Telegram master, Market alerts, streak switch and quiet hours still
+control delivery. Preview is authenticated and CSRF-protected, uses a sample and
+the saved market.streak message template, and never contacts Telegram. Streak
+settings change notification scheduling only; L1 and 12-Step rules are unchanged.
