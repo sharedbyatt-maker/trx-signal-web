@@ -6,6 +6,7 @@ also preserves engine progress. It never contains credentials or monotonic ages.
 import hashlib
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 from feed_utils import next_issue_number
@@ -19,8 +20,14 @@ class EngineCheckpoint:
             db.execute('CREATE TABLE IF NOT EXISTS engine_checkpoint '
                        '(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT, digest TEXT)')
 
+    @contextmanager
     def connect(self):
-        return sqlite3.connect(self.path, timeout=5)
+        db = sqlite3.connect(self.path, timeout=5)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     @staticmethod
     def validate(value):
