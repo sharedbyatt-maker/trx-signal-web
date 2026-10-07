@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 from collections import OrderedDict
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -67,8 +68,17 @@ class AdminStore:
         self.vault = CredentialVault(self.path)
         self.refresh_controls()
 
+    @contextmanager
     def connect(self):
-        return sqlite3.connect(self.path, timeout=5)
+        # sqlite's own context manager commits/rolls back but does not close.
+        # Feed reads happen continuously, so waiting for cyclic GC can retain
+        # thousands of native page caches and descriptors on a 512 MB host.
+        db = sqlite3.connect(self.path, timeout=5)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def read(self):
         with self.lock, self.connect() as db:

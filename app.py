@@ -251,6 +251,21 @@ core.session.get = _resilient_session_get
 core.FEED_STALE_SEC = FEED_STALE_SEC
 
 
+def _process_resources():
+    """Small Linux diagnostics; unavailable fields stay null on other hosts."""
+    resources = {"rss_mb": None, "peak_rss_mb": None, "open_fds": None}
+    try:
+        with open('/proc/self/status', encoding='ascii') as status:
+            for line in status:
+                if line.startswith(('VmRSS:', 'VmHWM:')):
+                    key = 'rss_mb' if line.startswith('VmRSS:') else 'peak_rss_mb'
+                    resources[key] = round(int(line.split()[1]) / 1024, 1)
+        resources['open_fds'] = len(os.listdir('/proc/self/fd'))
+    except (OSError, ValueError, IndexError):
+        pass
+    return resources
+
+
 @core.app.route("/api/health")
 def api_health():
     """Lightweight production telemetry: feed freshness, engine age and queue pressure."""
@@ -281,6 +296,7 @@ def api_health():
         "ok": healthy,
         "status": status,
         "uptime_sec": round(max(0.0, now_mono - _PROCESS_STARTED_MONO), 1),
+        "resources": _process_resources(),
         "engine": {
             "connected": connected,
             "last_update": last_update,
@@ -566,4 +582,3 @@ if __name__ == "__main__":
     print("=" * 52, flush=True)
     port = int(os.environ.get("PORT", 10000))
     core.app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
-
