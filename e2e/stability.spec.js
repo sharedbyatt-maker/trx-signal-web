@@ -44,6 +44,24 @@ test('a hung L1 response body cannot stop signal polling permanently',async({pag
   await expect(page.locator('#l1-pending')).toHaveText('BIG',{timeout:12000});
 });
 
+test('latest chart fallback cannot make a failed state connection appear live',async({page})=>{
+  let failState=false,advance=false;
+  await page.route('**/api/state',route=>failState?route.abort():route.continue());
+  await page.route('**/api/latest',route=>route.fulfill({json:{round:{
+    issue:advance?next:'20260913000000360',number:8,
+    block_time:advance?'2026-09-13 14:00:00':'2026-09-13 13:59:00'}}}));
+  await page.goto('/');
+  await expect(page.locator('#conn-txt')).toHaveText('LIVE');
+  await expect(page.locator('#mc-rsi')).not.toHaveText('—');
+  await page.evaluate(()=>{window.TRXChart.appendLatest=()=>false;});
+  failState=true;
+  await expect(page.locator('#conn-txt')).toContainText('Connection error:');
+  advance=true;
+  await expect.poll(()=>page.evaluate(()=>window.TRXChart.getComparisons().latestIssue)).toBe(next);
+  await expect(page.locator('#conn-txt')).toContainText('Connection error:');
+  await expect(page.locator('#mc-rsi')).toHaveText('—');
+});
+
 test('a slow history request cannot block state, chart controls or polling',async({page})=>{
   let release;
   const gate=new Promise(resolve=>{release=resolve;});
@@ -170,4 +188,3 @@ test('enabled bell alerts each current engine signal once without polling duplic
   expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('L1 CAPITAL BIG')))).toBe(true);
   expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('12-STEP BIG')))).toBe(true);
 });
-
