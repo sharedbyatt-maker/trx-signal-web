@@ -2,6 +2,48 @@ const {test,expect}=require('@playwright/test');
 const next='20260913000000361';
 const armed={target:'BIG',issue:next,stake:500,tier:1,step:1};
 
+test('unchanged history reuses timeframe summaries and older corrections rebuild them',async({page})=>{
+  await page.goto('/');
+  await expect(page.locator('#mc-rsi')).not.toHaveText('—');
+  const result=await page.evaluate(()=>{
+    const history=Array.from({length:2000},(_,i)=>({issue:String(10000+i),
+      type:i%3?'BIG':'SMALL',number:i%3?8:2,
+      block_time:new Date(Date.UTC(2026,8,13,0,i)).toISOString().slice(0,19).replace('T',' ')}));
+    window.TRXChart.update({history,log:[]});
+    const original=window.TRXChart.getComparisons();
+    window.TRXChart.update({history:history.map(r=>({...r})),log:[]});
+    const reused=window.TRXChart.getComparisons()===original;
+    const corrected=history.map(r=>({...r}));
+    corrected[0].type='BIG'; corrected[0].number=8;
+    window.TRXChart.update({history:corrected,log:[]});
+    const after=window.TRXChart.getComparisons();
+    return {reused,changed:after!==original,delta:after.frames[0].ema5-original.frames[0].ema5,
+      chartEma:window.TRXChart.getContext().ema5,comparisonEma:after.frames[0].ema5};
+  });
+  expect(result.reused).toBe(true);
+  expect(result.changed).toBe(true);
+  expect(result.delta).toBeCloseTo(2,6);
+  expect(result.chartEma).toBeCloseTo(result.comparisonEma,6);
+});
+
+test('a hung L1 response body cannot stop signal polling permanently',async({page})=>{
+  await page.addInitScript(()=>{
+    const nativeFetch=window.fetch;
+    let first=true;
+    window.fetch=async(...args)=>{
+      if(first&&String(args[0])==='/api/l1-capital'){
+        first=false;
+        return {ok:true,json:()=>new Promise(()=>{})};
+      }
+      return nativeFetch(...args);
+    };
+  });
+  await page.route('**/api/l1-capital',route=>route.fulfill({json:{ready:true,pending:armed,trades:[]}}));
+  await page.goto('/');
+  await expect(page.locator('#conn-txt')).toHaveText('LIVE');
+  await expect(page.locator('#l1-pending')).toHaveText('BIG',{timeout:12000});
+});
+
 test('a slow history request cannot block state, chart controls or polling',async({page})=>{
   let release;
   const gate=new Promise(resolve=>{release=resolve;});
@@ -128,3 +170,4 @@ test('enabled bell alerts each current engine signal once without polling duplic
   expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('L1 CAPITAL BIG')))).toBe(true);
   expect(await page.evaluate(()=>window.__notices.some(x=>x.startsWith('12-STEP BIG')))).toBe(true);
 });
+

@@ -116,18 +116,17 @@
   async function refresh() {
     if (refreshing) return;
     refreshing = true;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
     try {
-      const r = await fetch("/api/l1-capital", {cache: "no-store", signal: controller.signal});
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const x = await r.json();
+      const x = await TRXNet.run(async signal => {
+        const r = await fetch("/api/l1-capital", {cache: "no-store", signal});
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }, 6000);
       if (!x || typeof x !== "object" || Array.isArray(x)) throw new Error("Invalid L1 response");
       render(x);
     } catch (_) {
       render({ready: false, stale: true, feed_status: "OFFLINE"});
     } finally {
-      clearTimeout(timeout);
       refreshing = false;
     }
   }
@@ -136,4 +135,5 @@
   setInterval(refresh, 1000);
   setInterval(() => { if (lastSnapshot) render(lastSnapshot, false); }, 1000);
 })();
+
 
