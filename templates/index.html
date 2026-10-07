@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#131722">
+<meta name="theme-color" content="#0d1b22">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -12,6 +12,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23131722'/><text y='.9em' x='.1em' font-size='72'>📈</text></svg>">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=67">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/polish.css') }}?v=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/terminal-theme.css') }}?v=1">
 </head>
 <body data-admin-timeframe="{{ defaults.timeframe }}" data-admin-alerts="{{ '1' if defaults.alerts else '0' }}" data-admin-signals="{{ '1' if defaults.indicators.sig|default(false) else '0' }}">
 <header>
