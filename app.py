@@ -246,6 +246,12 @@ def _resilient_session_get(url, *args, **kwargs):
         raise
 
 
+def _record_external_feed(response):
+    _accept_feed_response(response, 'trongrid-live-rounds')
+    _publish_feed_health('LIVE', 'TronGrid verified live rounds; history snapshot uses primary source.')
+
+
+core._record_external_feed = _record_external_feed
 core._feed_probe_get = _original_session_get
 core.session.get = _resilient_session_get
 core.FEED_STALE_SEC = FEED_STALE_SEC
