@@ -1151,48 +1151,83 @@ def feed_profile():
 
 
 def fetch_feed(limit,timeout):
-    store=globals().get('_admin_store')
-    revision,config=feed_profile()
-    tg_revision,tg=(store.trongrid_config() if store and hasattr(store,'trongrid_config') else (0,{'mode':'disabled','key':''}))
     tail=limit is not None and limit<=500
-    def tron_response():
-        from trongrid_feed import LIVE_TRONGRID
-        with LOCK:live=copy.deepcopy(STATE.get('history') or [])
-        response=LIVE_TRONGRID.fetch(tg['key'],live)
-        if store.trongrid_config()[0]!=tg_revision:
-            raise ValueError('TronGrid settings changed during fetch; retrying.')
-        if globals().get('_record_external_feed'):_record_external_feed(response)
-        with LOCK:STATE['data_source']='trongrid'
-        return response
-    if tail and tg['mode']=='live':
-        # Explicit live mode fails closed; do not silently mix differing results.
-        response=tron_response()
-    else:
-        try:
-            response=request_feed(session,config,limit,timeout)
-            if tail and tg['mode']=='backup':
-                from feed_utils import source_age_seconds
+    source='unknown'
+    try:
+        store=globals().get('_admin_store')
+        revision,config=feed_profile()
+        tg_revision,tg=(store.trongrid_config() if store and hasattr(store,'trongrid_config') else (0,{'mode':'disabled','key':''}))
+        source='primary'
+        fallback=False
+        def tron_response():
+            nonlocal source
+            source='trongrid'
+            from trongrid_feed import LIVE_TRONGRID
+            with LOCK:live=copy.deepcopy(STATE.get('history') or [])
+            response=LIVE_TRONGRID.fetch(tg['key'],live)
+            if store.trongrid_config()[0]!=tg_revision:
+                raise ValueError('TronGrid settings changed during fetch; retrying.')
+            if globals().get('_record_external_feed'):_record_external_feed(response)
+            return response
+        if tail and tg['mode']=='live':
+            # Explicit live mode fails closed; do not silently mix differing results.
+            response=tron_response()
+        else:
+            try:
+                response=request_feed(session,config,limit,timeout)
+                if tail and tg['mode']=='backup':
+                    from feed_utils import source_age_seconds
+                    payload=response.json() if response.status_code==200 else []
+                    rows=parse_history(payload if isinstance(payload,list) else payload.get('data',[]) if isinstance(payload,dict) else [])
+                    age=source_age_seconds(rows[-1].get('block_time')) if rows else None
+                    if response.status_code!=200 or age is None or age>80 or age< -90:
+                        raise ValueError('Primary feed is unavailable or stale.')
+                    with LOCK:
+                        returning=STATE.get('data_source')=='trongrid'
+                        recent={r['issue']:r['number'] for r in (STATE.get('history') or [])[-50:]}
+                    if returning:
+                        overlap=[r for r in rows if r['issue'] in recent]
+                        if len(overlap)<3 or any(recent[r['issue']]!=r['number'] for r in overlap):
+                            raise ValueError('Primary recovery does not match verified live rounds.')
+            except (requests.RequestException,ValueError):
+                # A bounded tail is never substituted for a 30-day full snapshot.
+                if not tail or tg['mode']!='backup':raise
+                fallback=True
+                response=tron_response()
+        if store and hasattr(store,'feed_config') and store.feed_config()[0]!=revision:
+            raise ValueError('API connection changed during fetch; retrying with current settings.')
+        if tail:
+            from feed_connection import masked_key
+            try:
                 payload=response.json() if response.status_code==200 else []
                 rows=parse_history(payload if isinstance(payload,list) else payload.get('data',[]) if isinstance(payload,dict) else [])
+                from feed_utils import source_age_seconds
                 age=source_age_seconds(rows[-1].get('block_time')) if rows else None
-                if response.status_code!=200 or age is None or age>80 or age< -90:
-                    raise ValueError('Primary feed is unavailable or stale.')
-                with LOCK:
-                    returning=STATE.get('data_source')=='trongrid'
-                    recent={r['issue']:r['number'] for r in (STATE.get('history') or [])[-50:]}
-                if returning:
-                    overlap=[r for r in rows if r['issue'] in recent]
-                    if len(overlap)<3 or any(recent[r['issue']]!=r['number'] for r in overlap):
-                        raise ValueError('Primary recovery does not match verified live rounds.')
-            with LOCK:STATE['data_source']='primary'
-        except (requests.RequestException,ValueError):
-            # A bounded tail is never substituted for a 30-day full snapshot.
-            if not tail or tg['mode']!='backup':raise
-            response=tron_response()
-    if store and hasattr(store,'feed_config') and store.feed_config()[0]!=revision:
-        raise ValueError('API connection changed during fetch; retrying with current settings.')
-    return response
-
+                valid=bool(rows and age is not None and -10<=age<=80)
+            except Exception:
+                rows=[];valid=False
+            now=datetime.now(timezone.utc).isoformat()
+            with LOCK:
+                STATE['data_source']=source
+                previous=STATE.get('feed_runtime') or {}
+                if valid:
+                    used=tg if source=='trongrid' else config
+                    STATE['feed_runtime']={'source':source,'revision':tg_revision if source=='trongrid' else revision,
+                        'key_hint':masked_key(used['key'] if source=='trongrid' or used['auth']!='none' else ''),
+                        'endpoint':used.get('url','https://api.trongrid.io/wallet/getblock'),
+                        'last_success_at':now,'latest_issue':rows[-1]['issue'],'outcome':'ok','fallback':fallback,
+                        'note':'Primary failed, was stale or did not match verified rounds.' if fallback else ''}
+                else:
+                    STATE['feed_runtime']={**previous,'outcome':'error','last_error_at':now,
+                        'attempt_source':source,'error':'Live fetch returned invalid or stale rounds.'}
+        return response
+    except Exception:
+        if tail:
+            with LOCK:
+                STATE['feed_runtime']={**(STATE.get('feed_runtime') or {}),'outcome':'error',
+                    'last_error_at':datetime.now(timezone.utc).isoformat(),'attempt_source':source,
+                    'error':'Live fetch failed. Check system status or test the saved connection.'}
+        raise
 
 def engine_loop():
     global last_issue, pending, units, lose_streak, cooldown, unresolved_signal

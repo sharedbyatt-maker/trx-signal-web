@@ -34,6 +34,10 @@ def validate_feed(value,resolve=True):
 def public_feed(config):
     return {k:v for k,v in config.items() if k!='key'} | {'key_set':bool(config['key'])}
 
+def masked_key(key):
+    """Admin-only identity hint; never disclose an entire short credential."""
+    return '••••' + key[-4:] if len(key)>4 else 'Stored (hidden)' if key else 'No API key'
+
 def feed_request_parts(config,limit,extra_query=None):
     headers={'Cache-Control':'no-cache','Pragma':'no-cache'}
     query={'limit':limit} if limit is not None else {}
@@ -49,3 +53,4 @@ def request_feed(http,config,limit,timeout):
         return http.get(url,timeout=timeout,headers=headers,allow_redirects=False)
     except requests.RequestException as exc:
         raise ValueError('Feed connection unavailable: '+type(exc).__name__) from None
+

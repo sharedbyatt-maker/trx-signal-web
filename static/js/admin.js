@@ -45,7 +45,7 @@ byId('report-date').addEventListener('change',()=>run(loadReports,'Selected repo
 byId('logout').addEventListener('click',()=>run(async()=>{await api('/api/admin/logout','POST',{});leavingAdmin=true;location.href='/admin/login';},'Signed out.'));
 for(const btn of document.querySelectorAll('[data-action]'))btn.addEventListener('click',()=>run(async()=>{await api('/api/admin/maintenance','POST',{action:btn.dataset.action});await loadStatus();await loadEvents();},'Maintenance job queued. Its result appears below.'));
 byId('restore-backup').addEventListener('click',()=>run(async()=>{const file=byId('backup-file').files[0];if(!file)throw Error('Choose a backup file first.');if(file.size>8*1024*1024)throw Error('Backup must be smaller than 8 MB.');let data;try{data=JSON.parse(await file.text());}catch(_){throw Error('The file is not valid JSON.');}await api('/api/admin/restore','POST',{...data,expected_revision:revision,expected_control_revisions:{l1:strategyData.l1.revision,twelve:strategyData.twelve.revision,telegram:policyData.revision,messages:messageData.revision}});await loadSettings();await Promise.all([loadStrategy('l1'),loadStrategy('twelve'),loadPolicy(),loadMessages(),loadEvents()]);},'Backup restored. Reload the terminal to apply defaults.'));
-async function poll(){if(busy||polling||document.hidden)return;polling=true;try{await Promise.all([loadStatus(),...(!logExpanded?[loadEvents()]:[])]);}catch(e){notice(e.message,true,{popup:false});}finally{polling=false;}}
+async function poll(){if(busy||polling||document.hidden)return;polling=true;try{await Promise.all([loadStatus(),loadApiRuntime(),...(!logExpanded?[loadEvents()]:[])]);}catch(e){notice(e.message,true,{popup:false});byId('api-runtime-badge').textContent='Refresh failed';byId('api-runtime-badge').className='badge bad';byId('api-runtime-note').textContent='Status could not be refreshed. Displayed data may be old.';}finally{polling=false;}}
 
 setInterval(poll,10000);
 
@@ -81,7 +81,7 @@ byId('save-credentials').addEventListener('click',()=>run(async()=>{await api('/
 byId('clear-credentials').addEventListener('click',()=>run(async()=>{await api('/api/admin/telegram/credentials','DELETE',{});await loadCredentials();await loadEvents();},'Server Telegram configuration restored.'));
 byId('check-bot').addEventListener('click',()=>run(async()=>{const result=await api('/api/admin/telegram/check','POST',{});byId('credential-state').textContent=`Verified @${result.username} · ${result.note}`;},'Bot connection verified. No message sent.'));
 async function refreshDashboard(){
-  const loads=[loadStatus(),loadReports(),loadEvents()];
+  const loads=[loadStatus(),loadReports(),loadEvents(),loadApiRuntime()];
   if(!settings)loads.push(loadSettings());
   for(const name of ['l1','twelve'])if(!strategyData[name])loads.push(loadStrategy(name));
   if(!policyData)loads.push(loadPolicy());
@@ -125,17 +125,27 @@ function fillFeed(data){feedData=data;for(const key of ['url','auth','key_name']
 async function loadFeed(){fillFeed(await api('/api/admin/feed'));}
 byId('feed-auth').addEventListener('change',showFeedAuth);
 byId('check-feed').addEventListener('click',()=>run(async()=>{const data=await api('/api/admin/feed/check','POST',feedDraft());byId('feed-state').textContent=`Connection verified · ${data.rows} rounds · ${data.matched_rounds} matching rounds · Latest ${data.latest_issue}`;},'API check passed. Connection settings have not changed.'));
-byId('feed-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{if(!feedData)throw Error('API settings are still loading. Try again shortly.');fillFeed(await api('/api/admin/feed','PUT',{revision:feedData.revision,...feedDraft()}));await loadEvents();},'API connection verified and saved. Data refresh is queued.');});
+byId('feed-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{if(!feedData)throw Error('API settings are still loading. Try again shortly.');fillFeed(await api('/api/admin/feed','PUT',{revision:feedData.revision,...feedDraft()}));await Promise.all([loadEvents(),loadApiRuntime()]);},'API connection verified and saved. Data refresh is queued.');});
 byId('reload-feed').addEventListener('click',()=>run(loadFeed,'Saved API connection loaded.'));
 byId('default-feed').addEventListener('click',()=>{for(const key of ['url','auth','key_name'])byId('feed-'+key.replace('_','-')).value=feedData.defaults[key];byId('feed-key').value='';showFeedAuth();updateDraftSummary();notice('TRXChart default loaded into the draft. Check & save to apply.',false,{type:'info'});});
 let trongridData=null;
+async function loadApiRuntime(){
+  const data=await api('/api/admin/feed/status'),r=data.runtime||{},s=data.saved||{},tg=s.trongrid||{},primary=s.primary||{};
+  const label=source=>source==='trongrid'?'TronGrid':source==='primary'?'Primary API':'Not confirmed';
+  const badge=byId('api-runtime-badge');badge.textContent=({active:'Active',pending:'Switch pending',waiting:'Waiting for live fetch',error:'Fetch failed',stale:'Stale'})[data.state]||'Unknown';badge.className='badge '+(data.state==='active'?'good':'bad');
+  stats('api-runtime-cards',[['Last successful live source',label(r.source)],['Key used for that fetch',r.key_hint||'Not confirmed'],['Saved TronGrid mode',tg.mode||'Unavailable'],['Saved TronGrid key',tg.key_hint||'No API key']]);
+  const target=byId('api-runtime-detail');target.replaceChildren();
+  for(const [name,value] of [['Last successful fetch',date(r.last_success_at)],['Latest verified issue',r.latest_issue||'—'],['Live endpoint',r.endpoint||'Not confirmed'],['Saved primary endpoint',primary.endpoint||'Unavailable'],['Saved primary key',primary.auth==='none'?'No API key · Public API':primary.key_hint||'Unavailable'],['TronGrid saved revision',tg.revision??'—'],['Revision used for last fetch',r.revision??'—'],['Last failed attempt',r.last_error_at?date(r.last_error_at)+' · '+label(r.attempt_source):'None']]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=value;target.append(dt,dd);}
+  const note=data.state==='error'?r.error||'Live fetch failed.':data.state==='pending'?'Settings saved. Waiting for a successful live fetch using the new selection.':data.state==='stale'?'Last successful live fetch is old. This source is not confirmed active now.':data.state==='waiting'?'No successful live fetch recorded yet.':r.source==='primary'&&tg.mode==='backup'?'Primary API is active. TronGrid key is saved and on standby; it is used only if primary fails.':r.source==='trongrid'&&r.fallback?'TronGrid backup is serving live rounds. '+(r.note||''):'Current settings are serving live rounds.';
+  byId('api-runtime-note').textContent=note+(tg.error?' '+tg.error:'')+(primary.error?' '+primary.error:'');
+}
 function trongridDraft(){return {mode:byId('trongrid-mode').value,key:byId('trongrid-key').value.trim()};}
 function fillTronGrid(data){trongridData=data;byId('trongrid-mode').value=data.settings.mode;byId('trongrid-key').value='';byId('trongrid-state').textContent=data.error||`Saved · ${data.settings.mode} · ${data.settings.key_set?'Key stored (hidden)':'No API key'} · Last data source: ${data.active_source||'primary'}`;updateDraftSummary();}
 async function loadTronGrid(){fillTronGrid(await api('/api/admin/trongrid'));}
 byId('check-trongrid').addEventListener('click',()=>run(async()=>{const result=await api('/api/admin/trongrid/check','POST',trongridDraft());byId('trongrid-state').textContent=`Verified · ${result.matched_rounds} matching rounds · Latest ${result.latest_issue}`;},'TronGrid verified. No settings changed.'));
-byId('trongrid-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{if(!trongridData)throw Error('TronGrid settings are still loading.');fillTronGrid(await api('/api/admin/trongrid','PUT',{revision:trongridData.revision,...trongridDraft()}));await loadEvents();},'TronGrid settings saved. Strategy rules unchanged.');});
+byId('trongrid-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{if(!trongridData)throw Error('TronGrid settings are still loading.');fillTronGrid(await api('/api/admin/trongrid','PUT',{revision:trongridData.revision,...trongridDraft()}));await Promise.all([loadEvents(),loadApiRuntime()]);},'TronGrid settings saved. Strategy rules unchanged.');});
 byId('reload-trongrid').addEventListener('click',()=>run(loadTronGrid,'Saved TronGrid settings loaded.'));
-byId('clear-trongrid').addEventListener('click',()=>run(async()=>{if(!trongridData)throw Error('TronGrid settings are still loading.');fillTronGrid(await api('/api/admin/trongrid','DELETE',{revision:trongridData.revision}));await loadEvents();},'TronGrid disabled and API key removed.'));
+byId('clear-trongrid').addEventListener('click',()=>run(async()=>{if(!trongridData)throw Error('TronGrid settings are still loading.');fillTronGrid(await api('/api/admin/trongrid','DELETE',{revision:trongridData.revision}));await Promise.all([loadEvents(),loadApiRuntime()]);},'TronGrid disabled and API key removed.'));
 
 byId('password-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{const current=byId('current-password').value,newPassword=byId('new-password').value,confirm=byId('confirm-password').value;if(newPassword!==confirm)throw Error('New password and confirmation do not match.');await api('/api/admin/password','POST',{current,new:newPassword,confirm});for(const id of ['current-password','new-password','confirm-password'])byId(id).value='';window.onbeforeunload=null;leavingAdmin=true;location.href='/admin/login';},'Password changed. Sign in with your new password.');});
 

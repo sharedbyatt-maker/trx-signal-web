@@ -167,3 +167,62 @@ def test_feed_backup_and_live_routing_preserve_full_history_and_defaults(monkeyp
     def reject(*a,**k):raise ValueError('Mismatch')
     monkeypatch.setattr('trongrid_feed.LIVE_TRONGRID.fetch',reject)
     with pytest.raises(ValueError,match='Mismatch'):core.fetch_feed(50,6)
+
+
+def test_runtime_status_is_admin_only_and_distinguishes_saved_from_used(admin):
+    from feed_connection import masked_key
+    client,store,core,_=admin
+    assert client.get('/api/admin/feed/status').status_code==401
+    login(client)
+    assert client.get('/api/admin/feed/status').json['state']=='waiting'
+    store.save_trongrid({'mode':'backup','key':'PRIVATE-NEW-1234'},0)
+    core.STATE['feed_runtime']={'source':'primary','revision':0,'key_hint':'No API key',
+        'outcome':'ok','last_success_at':datetime.now(timezone.utc).isoformat()}
+    result=client.get('/api/admin/feed/status')
+    assert result.json['state']=='active'
+    assert result.json['saved']['trongrid']['key_hint']=='••••1234'
+    assert result.json['runtime']['source']=='primary'
+    assert 'PRIVATE-NEW-1234' not in result.text
+    store.save_trongrid({'mode':'live','key':'PRIVATE-NEW-5678'},1)
+    assert client.get('/api/admin/feed/status').json['state']=='pending'
+    core.STATE['feed_runtime'].update(source='trongrid',revision=1,key_hint='••••1234')
+    assert client.get('/api/admin/feed/status').json['state']=='pending'
+    core.STATE['feed_runtime'].update(revision=2,key_hint='••••5678')
+    assert client.get('/api/admin/feed/status').json['state']=='active'
+    core.STATE['feed_runtime']['outcome']='error'
+    assert client.get('/api/admin/feed/status').json['state']=='error'
+    core.STATE['feed_runtime'].update(outcome='ok',last_success_at='2020-01-01T00:00:00+00:00')
+    assert client.get('/api/admin/feed/status').json['state']=='stale'
+    assert masked_key('abcd')=='Stored (hidden)'
+    assert masked_key('')=='No API key'
+    assert '5678' not in str(store.events())
+
+
+def test_runtime_tracks_used_key_preserves_failure_and_ignores_history_fetch(monkeypatch):
+    import app_core as core
+    from feed_connection import DEFAULT_FEED
+    live,_,_=fixture_blocks()
+    response=RoundResponse([{'issueNumber':r['issue'],'number':r['number'],'blockTime':r['block_time']} for r in live])
+    tg={'mode':'live','key':'PRIVATE-ACTIVE-9876'}
+    store=SimpleNamespace(feed_config=lambda:(0,DEFAULT_FEED),trongrid_config=lambda:(3,tg.copy()))
+    monkeypatch.setattr(core,'_admin_store',store,raising=False)
+    monkeypatch.setattr(core,'STATE',{'history':live})
+    monkeypatch.setattr(core,'request_feed',lambda *a,**k:response)
+    monkeypatch.setattr('trongrid_feed.LIVE_TRONGRID.fetch',lambda *a,**k:response)
+    monkeypatch.setattr(core,'_record_external_feed',lambda response:None,raising=False)
+    core.fetch_feed(50,6)
+    first=copy.deepcopy(core.STATE['feed_runtime'])
+    assert first['source']=='trongrid' and first['revision']==3 and first['key_hint']=='••••9876'
+    assert 'PRIVATE-ACTIVE' not in str(core.STATE)
+    core.fetch_feed(45200,30)
+    assert core.STATE['feed_runtime']==first and core.STATE['data_source']=='trongrid'
+    def fail(*a,**k):raise ValueError('PRIVATE-ACTIVE-9876')
+    monkeypatch.setattr('trongrid_feed.LIVE_TRONGRID.fetch',fail)
+    with pytest.raises(ValueError):core.fetch_feed(50,6)
+    runtime=core.STATE['feed_runtime']
+    assert runtime['outcome']=='error' and runtime['last_success_at']==first['last_success_at']
+    assert runtime['key_hint']=='••••9876' and 'PRIVATE-ACTIVE' not in str(runtime)
+    tg['mode']='backup'
+    core.fetch_feed(50,6)
+    assert core.STATE['feed_runtime']['source']=='primary'
+    assert core.STATE['feed_runtime']['key_hint']=='No API key'
