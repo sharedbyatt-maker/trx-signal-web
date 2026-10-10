@@ -93,6 +93,7 @@ byId('save-credentials').addEventListener('click',()=>run(async()=>{await api('/
 byId('clear-credentials').addEventListener('click',()=>run(async()=>{await api('/api/admin/telegram/credentials','DELETE',{});await loadCredentials();await loadEvents();},'Server Telegram configuration restored.'));
 byId('check-bot').addEventListener('click',()=>run(async()=>{const result=await api('/api/admin/telegram/check','POST',{});byId('credential-state').textContent=`Verified @${result.username} · ${result.note}`;},'Bot connection verified. No message sent.'));
 async function refreshDashboard(){
+  logExpanded=false;
   const loads=[refreshLive(),loadReports()];
   if(!settings)loads.push(loadSettings());
   for(const name of ['l1','twelve'])if(!strategyData[name])loads.push(loadStrategy(name));
