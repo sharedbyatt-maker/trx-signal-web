@@ -679,6 +679,60 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                        coverage={'l1_trades': 'Latest 100 retained trades; daily summary is today only.',
                                  'signals': 'Latest 200 retained signal entries.'})
 
+    def journal_read():
+        from trade_journal import DEFAULT_LIMITS
+        state=store.private_get('trade_journal')
+        try:
+            value=json.loads(store.vault.cipher.decrypt(state['value'].encode())) if state['value'] else {'limits':copy.deepcopy(DEFAULT_LIMITS),'rows':[]}
+        except Exception:
+            raise ValueError('Trade journal storage is unreadable. Preserve your exported history before replacing storage.') from None
+        return state['revision'],value
+
+    @app.route('/api/admin/trade-journal',methods=['GET','PUT'])
+    @protect
+    def trade_journal():
+        from trade_journal import limits,snapshot
+        try:
+            revision,value=journal_read()
+            if request.method=='PUT':
+                data=request.get_json(silent=True) or {}
+                if not isinstance(data,dict):raise ValueError('Invalid journal settings.')
+                value['limits']=limits(data.get('limits'))
+                snapshot(value,revision,request.args.get('mode','real'),request.args.get('date'))
+                revision=store.private_save('trade_journal',store.vault.cipher.encrypt(json.dumps(value).encode()).decode(),data.get('revision'),{'action':'limits_saved'})
+            return jsonify(snapshot(value,revision,request.args.get('mode','real'),request.args.get('date')))
+        except ValueError as exc:return jsonify(error=str(exc)),400
+        except RuntimeError as exc:return jsonify(error=str(exc)),409
+
+    @app.post('/api/admin/trade-journal/import')
+    @protect
+    def import_trade_journal():
+        from trade_journal import normalize,merge,snapshot
+        data=request.get_json(silent=True)
+        if not isinstance(data,dict):return jsonify(error='Invalid history import.'),400
+        try:
+            revision,value=journal_read()
+            if type(data.get('revision')) is not int or data['revision']!=revision:raise RuntimeError('Journal changed. Refresh journal before importing.')
+            mode=data.get('mode','real')
+            incoming=normalize(data.get('history'),mode,data.get('source_timezone','Asia/Yangon'))
+            value['rows'],counts=merge(value['rows'],incoming)
+            value['imported_at']=utcnow()
+            revision=store.private_save('trade_journal',store.vault.cipher.encrypt(json.dumps(value).encode()).decode(),revision,{'action':'history_imported',**counts})
+            return jsonify(**snapshot(value,revision,mode),import_result=counts)
+        except ValueError as exc:return jsonify(error=str(exc)),400
+        except RuntimeError as exc:return jsonify(error=str(exc)),409
+
+    @app.get('/api/admin/trade-journal/export')
+    @protect
+    def export_trade_journal():
+        from trade_journal import export_rows
+        try:
+            _,value=journal_read()
+            response=jsonify(export_rows(value,request.args.get('mode','real')))
+            response.headers['Content-Disposition']='attachment; filename="trx-private-trade-history.json"'
+            return response
+        except ValueError as exc:return jsonify(error=str(exc)),400
+
     @app.get('/api/admin/backup')
     @protect
     def backup():

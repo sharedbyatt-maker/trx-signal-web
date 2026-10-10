@@ -172,3 +172,43 @@ Backup mode normally shows Primary API active / TronGrid standby. Saving live mo
 The sync row shows the last complete status refresh, partial failures, and browser offline state. Status, live API identity and audit/delivery refreshes settle independently before the next poll is allowed; only a failed component gets a failed badge. Returning to a visible tab or reconnecting requests an immediate refresh, without replacing settings drafts. This indicator describes dashboard refreshes, while the feed health and live API badges describe the server's data source.
 
 Maintenance buttons stay locked while an operation is pending or the maintenance job is queued/running. Backup restore stays disabled until chart, both strategy money settings, delivery policy and message revisions have loaded. Failed startup sections can be retried using Refresh data. HTML/non-JSON error responses produce readable errors without displaying upstream page contents. Strategy rules and engine execution are unchanged.
+
+## Private imported Trade Results
+
+Admin → Trade Results is an authenticated, CSRF-protected manual JSON journal for
+past TRXChart results. It does not call TRXChart history/order APIs, store account
+credentials, place orders, or change L1 / 12-Step strategy controls.
+
+In your own signed-in TRXChart browser, open Developer Tools → Network, open
+History, and copy the history response JSON only (never request headers, cookies
+or tokens). Paste it or choose a JSON file, explicitly select Real/Demo, and choose
+the source timezone for timestamps without an offset. The accepted input is an
+array or `{"success":true,"list":[...]}`. Each record requires full `addTime`,
+17-digit `issueNumber`, `selectType` big/small, positive `amount`, and `state`
+(-1 pending, 0 loss, 1 win). Wins require gross return `profitAmount`; the net
+result is gross return minus stake. Losses subtract stake. Pending results do not
+contribute to P/L. Amounts support two decimal places and are stored as integer
+minor units. Offset-bearing timestamps retain their explicit timezone.
+
+Report dates use the saved calendar-day timezone (default Bangkok). They are not
+rolling 24-hour windows. Real and Demo are separate. Daily TP/SL are independent
+journal targets: status is shown when imported settled net P/L reaches a target;
+zero disables that target. Targets neither stop the external account nor change
+strategy rules. The coverage warning is always shown: imported results may be an
+incomplete day, particularly when the upstream history response is size-limited.
+
+Stable upstream order IDs enable deduplication and pending → settled updates.
+Without an ID, identity uses timestamp + full issue + side + stake; ambiguous
+same-time identical orders in one file are rejected rather than silently lost.
+Re-importing the same file is idempotent. Conflicting settled results or changed
+order details reject the whole import. Up to 5,000 records total are retained;
+summary covers all selected-day records, while the table displays the latest 500.
+
+The journal is encrypted using the existing admin vault key and optimistic
+SQLite revisions. Audit events contain counts/actions, not financial records.
+Private journal data is excluded from the general settings backup and public
+terminal. Export Real and Demo separately with the journal export button.
+Exports contain private financial history; keep them safe. Re-import restores
+records but does not apply exported targets: save those separately. On Render
+Free, local storage and its vault key can reset during restart/deploy; export
+beforehand. This is a manual import workflow, not automatic account sync.
