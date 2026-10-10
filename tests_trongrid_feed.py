@@ -226,3 +226,17 @@ def test_runtime_tracks_used_key_preserves_failure_and_ignores_history_fetch(mon
     core.fetch_feed(50,6)
     assert core.STATE['feed_runtime']['source']=='primary'
     assert core.STATE['feed_runtime']['key_hint']=='No API key'
+
+
+def test_public_state_excludes_admin_key_hints(monkeypatch):
+    import app_core as core
+    from strategy_settings import MONEY_DEFAULTS
+    state=copy.deepcopy(core.STATE)
+    state.update(feed_runtime={'key_hint':'••••SECRET-HINT','endpoint':'https://private.example.com'},history=[],log=[])
+    monkeypatch.setattr(core,'STATE',state)
+    monkeypatch.setattr(core,'_money_current',lambda engine:MONEY_DEFAULTS[engine])
+    monkeypatch.setattr(core,'_strat_daily_snapshot',lambda *a:({},[]))
+    with core.app.test_request_context('/api/state'):
+        response=core.api_state()
+        assert 'feed_runtime' not in response.json
+        assert 'SECRET-HINT' not in response.get_data(as_text=True)

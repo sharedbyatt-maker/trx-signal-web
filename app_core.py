@@ -1802,7 +1802,7 @@ def compress_response(response):
 @app.route("/api/state")
 def api_state():
     with LOCK:
-        snap = copy.deepcopy({k: v for k, v in STATE.items() if k != "full_history"})
+        snap = copy.deepcopy({k: v for k, v in STATE.items() if k not in ("full_history", "feed_runtime")})
         snap["history"] = list(STATE["history"])
         snap["strat_log"] = list(STATE.get("strat_log") or [])[:10]
         # TRADE LOG panel removed — ship a small tail for future use only
