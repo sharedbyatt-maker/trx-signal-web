@@ -1,0 +1,33 @@
+const {test,expect}=require('@playwright/test');
+
+test('Live API status separates saved keys from active keys and polling retains unsaved drafts',async({page},testInfo)=>{
+  let status={state:'active',settings_applied:true,saved:{primary:{revision:0,endpoint:'https://trxchart.com/api/trx-data',auth:'none',key_hint:'No API key'},trongrid:{revision:1,mode:'backup',key_hint:'••••1234'}},runtime:{source:'primary',revision:0,key_hint:'No API key',last_success_at:new Date().toISOString(),latest_issue:'20261010103010800',endpoint:'https://trxchart.com/api/trx-data',outcome:'ok'}};
+  await page.route('**/api/admin/feed/status',route=>route.fulfill({status:200,json:status}));
+  await page.goto('/admin/login');
+  await page.getByLabel('Admin password').fill('fixture-admin-password');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page.locator('#notice')).toContainText('Connected.');
+  await page.goto('/admin#connection');
+  await expect(page.locator('#notice')).toContainText('Connected.');
+  await expect(page.locator('#api-runtime-badge')).toHaveText('Active');
+  await expect(page.locator('#api-runtime-cards')).toContainText('••••1234');
+  await expect(page.locator('#api-runtime-note')).toContainText('standby');
+  await page.locator('#trongrid-key').fill('unsaved-private-draft');
+  await page.locator('#trongrid-mode').selectOption('live');
+  status={...status,state:'pending',saved:{...status.saved,trongrid:{revision:2,mode:'live',key_hint:'••••5678'}}};
+  await page.locator('#refresh-all').click();
+  await expect(page.locator('#api-runtime-badge')).toHaveText('Switch pending');
+  await expect(page.locator('#trongrid-key')).toHaveValue('unsaved-private-draft');
+  status={...status,state:'active',runtime:{...status.runtime,source:'trongrid',revision:2,key_hint:'••••5678',endpoint:'https://api.trongrid.io/wallet/getblock'}};
+  await expect(page.locator('#api-runtime-badge')).toHaveText('Active',{timeout:15000});
+  await expect(page.locator('#api-runtime-cards')).toContainText('••••5678');
+  await expect(page.locator('#trongrid-key')).toHaveValue('unsaved-private-draft');
+  await expect(page.locator('#draft-summary')).toContainText('TronGrid');
+  expect(await page.locator('#api-runtime-controls').textContent()).not.toContain('unsaved-private-draft');
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.locator('#api-runtime-controls').screenshot({path:testInfo.outputPath('live-api-status.png')});
+  status={...status,state:'error',runtime:{...status.runtime,outcome:'error',error:'Live fetch failed.'}};
+  await page.locator('#refresh-all').click();
+  await expect(page.locator('#api-runtime-badge')).toHaveText('Fetch failed');
+  await expect(page.locator('#api-runtime-note')).toContainText('Live fetch failed.');
+});

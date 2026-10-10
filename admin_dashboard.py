@@ -15,7 +15,7 @@ from pathlib import Path
 
 from strategy_settings import MONEY_DEFAULTS, STRATEGY_INFO, validate_money, ladder
 from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, validate_streak, CredentialVault, validate_credentials
-from feed_connection import DEFAULT_FEED, validate_feed, public_feed, request_feed
+from feed_connection import DEFAULT_FEED, validate_feed, public_feed, request_feed, masked_key
 from trongrid_feed import DEFAULT_TRONGRID, validate_trongrid, public_trongrid, TronGridFeed
 from feed_utils import source_age_seconds
 from core_notifications import format_streak_telegram
@@ -443,6 +443,28 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         recent={r['issue']:r['number'] for r in live[-50:]}
         return {'ok':True,'rows':len(rows),'matched_rounds':sum(r['issueNumber'] in recent for r in rows),
                 'latest_issue':rows[-1]['issueNumber'],'note':'No settings changed. No wallet transaction or Telegram message sent.'}
+
+    @app.get('/api/admin/feed/status')
+    @protect
+    def feed_runtime_status():
+        saved={}
+        for name,read in [('primary',store.feed_config),('trongrid',store.trongrid_config)]:
+            try:
+                revision,value=read()
+                saved[name]={'revision':revision,'key_hint':masked_key(value['key']),
+                             **({'endpoint':value['url'],'auth':value['auth']} if name=='primary' else {'mode':value['mode']})}
+            except ValueError:
+                saved[name]={'error':'Credentials unreadable. Reload or re-enter settings.'}
+        with core.LOCK:runtime=copy.deepcopy(core.STATE.get('feed_runtime') or {})
+        age=source_age_seconds(runtime.get('last_success_at'))
+        runtime['success_age_sec']=age
+        source=runtime.get('source','unknown')
+        mode=saved.get('trongrid',{}).get('mode')
+        current=saved.get(source,{})
+        matches=bool(current and 'revision' in current and current['revision']==runtime.get('revision'))
+        if (source=='trongrid' and mode=='disabled') or (source=='primary' and mode=='live'):matches=False
+        state='waiting' if not runtime.get('outcome') else 'error' if runtime.get('outcome')=='error' else 'pending' if not matches else 'stale' if age is None or age>80 else 'active'
+        return jsonify(saved=saved,runtime=runtime,state=state,settings_applied=matches)
 
     @app.route('/api/admin/trongrid',methods=['GET','PUT','DELETE'])
     @protect
