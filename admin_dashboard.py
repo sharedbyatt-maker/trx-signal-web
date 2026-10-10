@@ -16,6 +16,7 @@ from pathlib import Path
 from strategy_settings import MONEY_DEFAULTS, STRATEGY_INFO, validate_money, ladder
 from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, validate_streak, CredentialVault, validate_credentials
 from feed_connection import DEFAULT_FEED, validate_feed, public_feed, request_feed
+from trongrid_feed import DEFAULT_TRONGRID, validate_trongrid, public_trongrid, TronGridFeed
 from feed_utils import source_age_seconds
 from core_notifications import format_streak_telegram
 from telegram_messages import MESSAGE_DEFAULTS, VARIABLES, ENGINES, KINDS, validate_messages, render_message
@@ -235,6 +236,19 @@ class AdminStore:
         encrypted=self.vault.cipher.encrypt(json.dumps(value).encode()).decode()
         return self.private_save('feed',encrypted,revision,public_feed(value))
 
+    def trongrid_config(self):
+        state=self.private_get('trongrid')
+        if state['value']:
+            try:value=validate_trongrid(json.loads(self.vault.cipher.decrypt(state['value'].encode())))
+            except Exception:raise ValueError('TronGrid credentials are unreadable. Re-enter the key or clear the connection.') from None
+        else:value=copy.deepcopy(DEFAULT_TRONGRID)
+        return state['revision'],value
+
+    def save_trongrid(self,value,revision):
+        value=validate_trongrid(value)
+        encrypted=self.vault.cipher.encrypt(json.dumps(value).encode()).decode()
+        return self.private_save('trongrid',encrypted,revision,public_trongrid(value))
+
     def credential_override(self):
         with self.lock:
             return self.vault.read()
@@ -412,6 +426,60 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             return jsonify(probe_feed(value))
         except ValueError as exc:return jsonify(error=str(exc)),400
         except Exception:return jsonify(error='API check unavailable. No settings were changed.'),502
+
+    def candidate_trongrid(data):
+        try:revision,current=store.trongrid_config()
+        except ValueError:
+            revision,current=store.private_get('trongrid')['revision'],DEFAULT_TRONGRID
+        key=data.get('key') or current['key']
+        return revision,validate_trongrid({'mode':data.get('mode',current['mode']),'key':key})
+
+    def probe_trongrid(value):
+        if not value['key']:raise ValueError('Enter a TronGrid API key before checking.')
+        with core.LOCK:live=copy.deepcopy(core.STATE.get('history') or [])
+        if not live:raise ValueError('Wait for live TRX rounds before checking TronGrid.')
+        response=TronGridFeed().fetch(value['key'],live,probe=True)
+        rows=response.json()
+        recent={r['issue']:r['number'] for r in live[-50:]}
+        return {'ok':True,'rows':len(rows),'matched_rounds':sum(r['issueNumber'] in recent for r in rows),
+                'latest_issue':rows[-1]['issueNumber'],'note':'No settings changed. No wallet transaction or Telegram message sent.'}
+
+    @app.route('/api/admin/trongrid',methods=['GET','PUT','DELETE'])
+    @protect
+    def trongrid_settings():
+        if request.method!='GET':
+            data=request.get_json(silent=True)
+            data=data if isinstance(data,dict) else {}
+            try:
+                revision,value=candidate_trongrid(data)
+                if type(data.get('revision')) is not int or data['revision']!=revision:
+                    raise RuntimeError('TronGrid settings changed. Reload before saving.')
+                if request.method=='DELETE':value=copy.deepcopy(DEFAULT_TRONGRID)
+                elif value['mode']!='disabled':probe_trongrid(value)
+                if not authorized():return jsonify(error='Admin session expired during TronGrid verification.'),401
+                store.save_trongrid(value,revision)
+                from trongrid_feed import LIVE_TRONGRID
+                LIVE_TRONGRID.clear()
+            except ValueError as exc:return jsonify(error=str(exc)),400
+            except RuntimeError as exc:return jsonify(error=str(exc)),409
+            except Exception:return jsonify(error='TronGrid verification failed. Settings were not changed.'),502
+        try:
+            revision,value=store.trongrid_config()
+            with core.LOCK:source=core.STATE.get('data_source','primary')
+            return jsonify(revision=revision,settings=public_trongrid(value),active_source=source)
+        except ValueError as exc:
+            return jsonify(revision=store.private_get('trongrid')['revision'],settings=public_trongrid(DEFAULT_TRONGRID),error=str(exc))
+
+    @app.post('/api/admin/trongrid/check')
+    @protect
+    def check_trongrid():
+        data=request.get_json(silent=True)
+        data=data if isinstance(data,dict) else {}
+        try:
+            _,value=candidate_trongrid(data)
+            return jsonify(probe_trongrid(value))
+        except ValueError as exc:return jsonify(error=str(exc)),400
+        except Exception:return jsonify(error='TronGrid check unavailable. No settings were changed.'),502
 
     @app.post('/api/admin/logout')
     @protect

@@ -151,3 +151,12 @@ The existing Telegram master, Market alerts, streak switch and quiet hours still
 control delivery. Preview is authenticated and CSRF-protected, uses a sample and
 the saved market.streak message template, and never contacts Telegram. Streak
 settings change notification scheduling only; L1 and 12-Step rules are unchanged.
+
+
+### TronGrid API key and verified live rounds
+
+Data API → TronGrid connection accepts a write-only API key. `Test TronGrid` checks read-only mainnet blocks without saving or sending messages. `Verify & save TronGrid` verifies at least three recent live results before enabling backup or live mode. Blank key retains the encrypted key; `Disable & remove key` clears it. Revision conflicts require reload. Settings and keys are excluded from exported backups; audit records contain only mode, endpoint and key-present status.
+
+Disabled remains the default. Backup mode uses TronGrid for bounded live tails only if the primary fails or its latest round is older than 80 seconds. Live mode explicitly selects TronGrid for live tails and fails closed on errors. Startup and 30-day snapshots continue using the primary feed: this feature does not independently backfill 30 days from blockchain APIs. An outage of more than eight minutes requires primary history recovery. Exact :54 block timestamps, strict hashes and overlapping rounds are checked; incomplete blocks never become invented results. L1 and 12-Step decision and settlement rules are untouched.
+
+The adapter derives UTC daily round IDs (`YYYYMMDD10301` + minute index 0001–1440); display timestamps use `TRX_SOURCE_TIMEZONE` (Asia/Yangon by default). It reads only `/wallet/getblock`, never wallet writes. Use your own TronGrid key, quota and backoff. Reads are serialized and head polling is throttled to three seconds; a 403/429 cools down for 60 seconds. Free Render ephemeral storage can lose the key and encryption key on restart/deploy/sleep; re-entry may be required.
