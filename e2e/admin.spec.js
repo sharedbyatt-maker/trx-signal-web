@@ -257,7 +257,10 @@ test('easy message editor, password change and API connection controls',async({p
     let token=await page.locator('meta[name="csrf-token"]').getAttribute('content');
     const messages=(await (await page.request.get('/api/admin/telegram/messages')).json());
     if(messages.settings)await page.request.put('/api/admin/telegram/messages',{headers:{'X-CSRF-Token':token},data:{revision:messages.revision,settings:original}});
+    // Leave the dashboard before invalidating its session. A polling 401
+    // can otherwise race page.goto, fail teardown and exhaust fixture rate limits on retry.
+    await page.goto('/admin/login');
     const response=await page.request.post('/api/admin/password',{headers:{'X-CSRF-Token':token},data:{current:newPassword,new:'fixture-admin-password',confirm:'fixture-admin-password'}});
-    if(response.ok())await page.goto('/admin/login');
+    expect(response.ok()).toBe(true);
   }
 });

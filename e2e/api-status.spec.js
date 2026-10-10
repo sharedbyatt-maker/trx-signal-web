@@ -6,6 +6,7 @@ test('Live API status separates saved keys from active keys and polling retains 
   await page.goto('/admin/login');
   await page.getByLabel('Admin password').fill('fixture-admin-password');
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page.locator('#notice')).toContainText('Connected.');
   await page.goto('/admin#connection');
   await expect(page.locator('#notice')).toContainText('Connected.');
   await expect(page.locator('#api-runtime-badge')).toHaveText('Active');
