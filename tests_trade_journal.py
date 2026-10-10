@@ -43,7 +43,7 @@ def test_idempotence_settlement_conflicts_and_export_round_trip():
     assert len(normalize([row(orderId='a'),row(orderId='b')],'real','UTC'))==2
 
 
-@pytest.mark.parametrize('change',[{'addTime':'00:15:00'},{'issueNumber':'100001'},{'amount':True},{'amount':'NaN'},{'amount':'1.001'},{'profitAmount':None},{'state':True},{'state':2},{'selectType':'other'},{'number':False}])
+@pytest.mark.parametrize('change',[{'addTime':'00:15:00'},{'issueNumber':'100001'},{'issueNumber':20261010103010001},{'id':20261010103010001},{'amount':True},{'amount':'NaN'},{'amount':'1.001'},{'profitAmount':None},{'state':True},{'state':2},{'selectType':'other'},{'number':False}])
 def test_invalid_records_rejected(change):
     with pytest.raises(ValueError):normalize([row(**change)],'real','UTC')
 
@@ -90,3 +90,8 @@ def test_private_routes_revision_encryption_atomic_import_and_backup(admin):
     assert client.post('/api/admin/trade-journal/import',json=batch,headers=headers(client)).json['import_result']['unchanged']==1
     assert client.get('/api/admin/trade-journal?mode=demo').json['stored_records']==1
     assert client.get('/api/admin/trade-journal?mode=demo').json['summary']['trades']==0
+
+
+def test_export_mode_mismatch_rejected():
+    with pytest.raises(ValueError,match='mode differs'):
+        normalize({'success':True,'mode':'demo','list':[row()]},'real','UTC')

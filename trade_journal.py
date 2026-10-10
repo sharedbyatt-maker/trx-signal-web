@@ -55,9 +55,9 @@ def normalize(payload, mode, source_zone):
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=ZoneInfo(source_zone))
             stamp = dt.astimezone(timezone.utc).isoformat()
-            issue = str(item.get('issueNumber', ''))
-            if not re.fullmatch(r'\d{17}', issue):
-                raise ValueError('A full 17-digit issueNumber is required.')
+            issue = item.get('issueNumber')
+            if not isinstance(issue, str) or not re.fullmatch(r'\d{17}', issue):
+                raise ValueError('A full 17-digit issueNumber string is required (numeric JSON may lose precision).')
             side = str(item.get('selectType', '')).upper()
             if side not in ('BIG', 'SMALL'):
                 raise ValueError('Only BIG / SMALL history records are supported.')
@@ -74,7 +74,7 @@ def normalize(payload, mode, source_zone):
                     raise ValueError('Result number must be 0–9 or absent.')
             external = next((item[k] for k in ('orderId', 'orderNumber', 'id') if item.get(k) is not None), None)
             if external is not None:
-                if isinstance(external, bool) or not isinstance(external, (str, int)) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', str(external)):
+                if (type(external) is int and abs(external) > 9007199254740991) or isinstance(external, bool) or not isinstance(external, (str, int)) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', str(external)):
                     raise ValueError('Invalid order identifier.')
                 external = str(external)
             identity = external or json.dumps([stamp, issue, side, stake], separators=(',', ':'))

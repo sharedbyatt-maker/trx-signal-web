@@ -184,7 +184,7 @@ History, and copy the history response JSON only (never request headers, cookies
 or tokens). Paste it or choose a JSON file, explicitly select Real/Demo, and choose
 the source timezone for timestamps without an offset. The accepted input is an
 array or `{"success":true,"list":[...]}`. Each record requires full `addTime`,
-17-digit `issueNumber`, `selectType` big/small, positive `amount`, and `state`
+17-digit string `issueNumber`, `selectType` big/small, positive `amount`, and `state`
 (-1 pending, 0 loss, 1 win). Wins require gross return `profitAmount`; the net
 result is gross return minus stake. Losses subtract stake. Pending results do not
 contribute to P/L. Amounts support two decimal places and are stored as integer
