@@ -24,8 +24,8 @@ def fixture_blocks():
     calls=[]
     def post(url,**kwargs):
         calls.append((url,kwargs))
-        target=kwargs['json']['id_or_num']
-        ts=head_time if target=='latest' else head_time+(int(target)-head_height)*3000
+        target=kwargs['json'].get('id_or_num')
+        ts=head_time if target is None else head_time+(int(target)-head_height)*3000
         return SimpleNamespace(status_code=200,json=lambda:block(ts))
     return live,post,calls
 
@@ -47,6 +47,7 @@ def test_adapter_validates_overlap_caches_and_never_sends_wallet_write():
     result=adapter.fetch('PRIVATE-TEST-KEY',live,post=post)
     assert len(result.json())==4
     assert len(calls)==5
+    assert calls[0][1]['json']=={'detail':False}
     assert adapter.fetch('PRIVATE-TEST-KEY',live,post=post).json()==result.json()
     assert len(calls)==5
     assert all(u==ENDPOINT and k['json']['detail'] is False and not k['allow_redirects'] for u,k in calls)
@@ -64,7 +65,7 @@ def test_adapter_cold_fallback_keeps_overlap_and_all_missing_rounds():
     old=[]
     for row in live:
         stamp=int(source_time_utc(row['block_time']).timestamp()*1000)-3*60000
-        head=post(ENDPOINT,json={'id_or_num':'latest'}) .json()['block_header']['raw_data']
+        head=post(ENDPOINT,json={'detail':False}) .json()['block_header']['raw_data']
         height=head['number']+round((stamp-head['timestamp'])/3000)
         raw=block_record(post(ENDPOINT,json={'id_or_num':str(height)}).json(),stamp)
         old.append({'issue':raw['issueNumber'],'number':raw['number'],'block_time':raw['blockTime']})

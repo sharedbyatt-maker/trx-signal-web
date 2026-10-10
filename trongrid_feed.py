@@ -103,7 +103,7 @@ class TronGridFeed:
 
             # Head refresh is throttled independently of the 0.5s engine poll.
             if probe or not self.head or time.monotonic() - self.checked_at >= 3:
-                head = call({'id_or_num': 'latest', 'detail': False})
+                head = call({'detail': False})
                 raw = head.get('block_header', {}).get('raw_data', {})
                 if type(raw.get('number')) is not int or type(raw.get('timestamp')) is not int:
                     raise ValueError('TronGrid returned an invalid block header.')
