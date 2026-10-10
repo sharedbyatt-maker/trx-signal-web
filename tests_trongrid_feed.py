@@ -154,8 +154,15 @@ def test_feed_backup_and_live_routing_preserve_full_history_and_defaults(monkeyp
     assert core.fetch_feed(50,6) is primary and tg_calls==[True]
     with pytest.raises(ValueError):core.fetch_feed(45200,30)
     assert len(tg_calls)==1
-    tg['mode']='live'
+    mismatched=RoundResponse([{**r,'number':(r['number']+1)%10} for r in primary.json()])
+    monkeypatch.setattr(core,'request_feed',lambda *a,**k:mismatched)
     assert core.fetch_feed(50,6) is primary and len(tg_calls)==2
+    assert core.STATE['data_source']=='trongrid'
+    monkeypatch.setattr(core,'request_feed',get)
+    assert core.fetch_feed(50,6) is primary and len(tg_calls)==2
+    assert core.STATE['data_source']=='primary'
+    tg['mode']='live'
+    assert core.fetch_feed(50,6) is primary and len(tg_calls)==3
     def reject(*a,**k):raise ValueError('Mismatch')
     monkeypatch.setattr('trongrid_feed.LIVE_TRONGRID.fetch',reject)
     with pytest.raises(ValueError,match='Mismatch'):core.fetch_feed(50,6)

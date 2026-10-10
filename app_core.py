@@ -1177,6 +1177,13 @@ def fetch_feed(limit,timeout):
                 age=source_age_seconds(rows[-1].get('block_time')) if rows else None
                 if response.status_code!=200 or age is None or age>80 or age< -90:
                     raise ValueError('Primary feed is unavailable or stale.')
+                with LOCK:
+                    returning=STATE.get('data_source')=='trongrid'
+                    recent={r['issue']:r['number'] for r in (STATE.get('history') or [])[-50:]}
+                if returning:
+                    overlap=[r for r in rows if r['issue'] in recent]
+                    if len(overlap)<3 or any(recent[r['issue']]!=r['number'] for r in overlap):
+                        raise ValueError('Primary recovery does not match verified live rounds.')
             with LOCK:STATE['data_source']='primary'
         except (requests.RequestException,ValueError):
             # A bounded tail is never substituted for a 30-day full snapshot.
