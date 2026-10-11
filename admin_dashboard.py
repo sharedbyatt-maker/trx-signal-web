@@ -1,4 +1,4 @@
-"""Private operations console. No betting or strategy mutation controls."""
+"""Private operations console with opt-in manual real orders; no automated orders."""
 import copy
 import hmac
 import json
@@ -747,6 +747,26 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             return jsonify(store.history_sync.refresh())
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
+
+    from trxchart_bet import OrderService, OrderError
+    store.orders = OrderService(store.history_sync, store)
+
+    @app.route('/api/admin/trxchart-order', methods=['GET', 'POST'])
+    @protect
+    def trxchart_order():
+        try:
+            if request.method == 'GET':
+                return jsonify(store.orders.status())
+            data = request.get_json(silent=True)
+            data = data if isinstance(data, dict) else {}
+            return jsonify(store.orders.place(data.get('direction'), data.get('amount'),
+                                              data.get('confirm'), data.get('mode'), data.get('request_id')))
+        except OrderError as exc:
+            return jsonify(error=str(exc)), exc.status
+        except ProviderError as exc:
+            return jsonify(error=str(exc)), 502
+        except sqlite3.Error:
+            return jsonify(error='Order storage is unavailable. Check REAL history before another order; a submitted request will not be retried.'), 503
 
     @app.route('/api/admin/trade-journal',methods=['GET','PUT'])
     @protect

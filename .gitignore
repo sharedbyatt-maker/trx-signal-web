@@ -26,3 +26,6 @@ instance/
 
 # Local Telegram bot credentials
 telegram.json
+
+# Local Windows environment
+.venv/

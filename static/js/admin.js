@@ -23,7 +23,7 @@ function toast(message,type='success'){
 }
 function notice(message,error=false,options={}){byId('notice').textContent=message;byId('notice').classList.toggle('error',error);if(options.popup!==false)toast(message,options.type||(error?'error':'success'));}
 let actionCommitted=false, lastMaintenance=null, draftNotified=false;
-async function api(url,method='GET',body){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),url.startsWith('/api/admin/trxchart-account')?75000:url.startsWith('/api/admin/trongrid')?60000:20000);try{const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});if(response.status===401){leavingAdmin=true;location.href='/admin/login';throw Error('Session expired.');}const data=await response.json().catch(()=>null);if(!response.ok)throw Error(data?.error||`Request failed (${response.status}). Please retry when the server is available.`);if(!data||typeof data!=='object')throw Error('Server returned an invalid response. Please refresh and try again.');if(busy&&(method==='PUT'||method==='DELETE'||url==='/api/admin/restore'||url==='/api/admin/maintenance'||url==='/api/admin/trade-journal/import'))actionCommitted=true;return data;}catch(e){if(e.name==='AbortError')throw Error('Request timed out. Check system status and try again.');throw e;}finally{clearTimeout(timer);}}
+async function api(url,method='GET',body){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),(url.startsWith('/api/admin/trxchart-account')||url==='/api/admin/trxchart-order')?75000:url.startsWith('/api/admin/trongrid')?60000:20000);try{const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});if(response.status===401){leavingAdmin=true;location.href='/admin/login';throw Error('Session expired.');}const data=await response.json().catch(()=>null);if(!response.ok)throw Error(data?.error||(url==='/api/admin/trxchart-order'?'Order response unavailable. Check REAL history before another order.':`Request failed (${response.status}). Please retry when the server is available.`));if(!data||typeof data!=='object')throw Error('Server returned an invalid response. Please refresh and try again.');if(busy&&(method==='PUT'||method==='DELETE'||url==='/api/admin/restore'||url==='/api/admin/maintenance'||url==='/api/admin/trade-journal/import'))actionCommitted=true;return data;}catch(e){if(url==='/api/admin/trxchart-order'&&(e.name==='AbortError'||e.name==='TypeError'))throw Error('Order response unavailable. Check REAL history before another order. Do not resend this request.');if(e.name==='AbortError')throw Error('Request timed out. Check system status and try again.');throw e;}finally{clearTimeout(timer);}}
 function sameValue(a,b){if(Object.is(a,b))return true;if(!a||!b||typeof a!=='object'||typeof b!=='object')return false;const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&sameValue(a[k],b[k]));}
 function number(v){return v==null?'—':Number(v).toLocaleString('en-US',{maximumFractionDigits:1});}
 function date(v){if(!v)return '—';const iso=/^\d{4}-\d{2}-\d{2} /.test(v)?v.replace(' ','T')+'Z':v;const d=new Date(iso);return Number.isNaN(d.valueOf())?String(v):d.toLocaleString();}
@@ -181,7 +181,7 @@ function renderJournal(data,fill=false){journalData=data;renderJournalSync(data)
 async function loadJournal(){renderJournal(await api(journalURL()),true);await loadJournalAccount();}
 byId('journal-refresh').addEventListener('click',()=>run(loadJournal,'Journal refreshed. Saved targets loaded.'));
 byId('journal-today').addEventListener('click',()=>run(async()=>{byId('journal-date').value='';await loadJournal();},'Today journal loaded.'));
-for(const id of ['journal-mode','journal-date'])byId(id).addEventListener('change',()=>run(loadJournal,'Selected history loaded. Saved targets loaded.'));
+for(const id of ['journal-mode','journal-date'])byId(id).addEventListener('change',()=>{updateOrderControls();run(loadJournal,'Selected history loaded. Saved targets loaded.');});
 byId('journal-limits-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{if(!journalData)throw Error('Refresh journal first.');renderJournal(await api(journalURL(),'PUT',{revision:journalData.revision,limits:journalLimits()}),true);},'Daily targets saved. Strategy rules unchanged.');});
 byId('journal-import').addEventListener('click',()=>run(async()=>{if(!journalData)throw Error('Refresh journal first.');const file=byId('journal-file').files[0],text=byId('journal-json').value.trim();if(file&&text)throw Error('Choose a file or paste JSON, not both.');if(file&&file.size>8*1024*1024)throw Error('JSON file must be smaller than 8 MB.');const raw=file?await file.text():text;if(!raw)throw Error('Choose a JSON file or paste history first.');if(new Blob([raw]).size>8*1024*1024)throw Error('History must be smaller than 8 MB.');let history;try{history=JSON.parse(raw);}catch(_){throw Error('History is not valid JSON.');}const data=await api('/api/admin/trade-journal/import','POST',{revision:journalData.revision,mode:byId('journal-mode').value,source_timezone:byId('journal-source-zone').value,date:byId('journal-date').value,history});const c=data.import_result;renderJournal(data,false);byId('journal-json').value='';byId('journal-file').value='';updateDraftSummary();toast('Import: '+c.added+' added, '+c.updated+' settled/updated, '+c.unchanged+' unchanged.');},'History imported. Selected report date preserved.'));
 byId('journal-export').addEventListener('click',()=>run(async()=>{const data=await api('/api/admin/trade-journal/export?mode='+byId('journal-mode').value);const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='trx-history-'+byId('journal-mode').value+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);},'Private history exported. Keep the file somewhere safe.'));
@@ -190,7 +190,7 @@ run(async()=>{await loadSettings();const results=await Promise.allSettled([refre
 
 function restoreReady(){return settings&&strategyData.l1&&strategyData.twelve&&policyData&&messageData;}
 function updateMaintenanceControls(){for(const btn of document.querySelectorAll('[data-action]'))btn.disabled=busy||maintenanceBusy;}
-function updateReadyControls(){updateMaintenanceControls();for(const id of ['journal-server-refresh','journal-disconnect'])byId(id).disabled=!journalAccount?.active;for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
+function updateReadyControls(){updateMaintenanceControls();updateOrderControls();for(const id of ['journal-server-refresh','journal-disconnect'])byId(id).disabled=!journalAccount?.active;for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
 
 byId('journal-copy-sync').addEventListener('click',()=>run(async()=>{
   const response=await fetch('/static/js/trxchart-history-bridge.js',{credentials:'same-origin'});
@@ -218,8 +218,9 @@ function renderJournalAccount(data){
   byId('journal-connect-form').hidden=Boolean(data.active);
   byId('journal-server-refresh').disabled=!data.active;
   byId('journal-disconnect').disabled=!data.active;
+  updateOrderControls();
 }
-async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}}
+async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){journalAccount=null;byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}await loadOrders();}
 byId('journal-connect-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{
   if(!journalAccount)throw Error('Connection status is still loading.');
   if(!byId('journal-account-consent').checked)throw Error('Approve encrypted session storage and history access first.');
@@ -228,3 +229,42 @@ byId('journal-connect-form').addEventListener('submit',e=>{e.preventDefault();ru
 },'TRXChart connected. Server history sync runs every minute while the server is awake.');});
 byId('journal-server-refresh').addEventListener('click',()=>run(async()=>{renderJournalAccount(await api('/api/admin/trxchart-account/refresh','POST',{}));},'History refresh queued. Results update automatically.'));
 byId('journal-disconnect').addEventListener('click',()=>run(async()=>{renderJournalAccount(await api('/api/admin/trxchart-account','DELETE',{}));},'Server session removed. Imported results are preserved.'));
+
+
+// Manual REAL orders. Demo history selection never enables this endpoint.
+let orderData=null, orderReadyAt=0;
+(function installOrderControls(){
+  const box=document.createElement('div');
+  box.innerHTML='<h3>Manual REAL order · TRXChart</h3><p class="muted">These buttons use your REAL account balance. Demo orders are unavailable. Each order needs confirmation and is never retried automatically.</p><div class="form-grid"><label>Real order amount · MMK<input id="order-amount" type="number" min="1" step="1" value="100"></label></div><label class="toggle"><input id="order-real-consent" type="checkbox">I understand this uses REAL funds. After an uncertain result, I will check REAL history before another order.</label><div class="actions"><button id="order-big" type="button" disabled>BIG · REAL</button><button id="order-small" type="button" disabled>SMALL · REAL</button></div><p id="order-status" role="status">Order status loading…</p><p id="order-result" role="status"></p>';
+  byId('journal-disconnect').parentElement.after(box);
+})();
+function updateOrderControls(){
+  if(!byId('order-big'))return;
+  const amount=Number(byId('order-amount').value),wait=Math.max(0,Math.ceil((orderReadyAt-Date.now())/1000));
+  const real=byId('journal-mode').value==='real';
+  const ready=!busy&&orderData?.enabled&&journalAccount?.active&&real&&byId('order-real-consent').checked&&Number.isInteger(amount)&&amount>=1&&amount<=orderData.max_amount&&orderData.today_count<orderData.daily_max_count&&orderData.today_total+amount<=orderData.daily_max_total&&!wait;
+  for(const id of ['order-big','order-small'])byId(id).disabled=!ready;
+  if(orderData)byId('order-status').textContent=(orderData.enabled?'Real orders enabled':'Real orders disabled on this server')+' · max '+orderData.max_amount+' MMK per order · today '+orderData.today_count+'/'+orderData.daily_max_count+' attempts, '+orderData.today_total+'/'+orderData.daily_max_total+' MMK'+(wait?' · wait '+wait+'s':'')+(!real?' · Demo selected: order buttons disabled.':!journalAccount?.active?' · Connect TRXChart first.':'');
+}
+async function loadOrders(){
+  try{orderData=await api('/api/admin/trxchart-order');orderReadyAt=Date.now()+orderData.retry_after_sec*1000;byId('order-amount').max=String(orderData.max_amount);}
+  catch(error){orderData=null;byId('order-status').textContent='Order status unavailable: '+error.message;}
+  updateOrderControls();
+}
+for(const id of ['order-amount','order-real-consent'])byId(id).addEventListener('input',updateOrderControls);
+setInterval(updateOrderControls,1000);
+for(const [id,side] of [['order-big','BIG'],['order-small','SMALL']])byId(id).addEventListener('click',()=>run(async()=>{
+  const amount=Number(byId('order-amount').value);
+  if(byId('journal-mode').value!=='real'||!byId('order-real-consent').checked)throw Error('Select Real history and approve use of REAL funds first.');
+  if(!Number.isInteger(amount)||amount<1||!orderData||amount>orderData.max_amount)throw Error('Enter a whole-number amount within the order limit.');
+  if(!confirm('Place REAL '+side+' order for '+amount+' MMK? This uses your real balance.'))throw Error('Order cancelled.');
+  byId('order-real-consent').checked=false;
+  byId('order-result').textContent='Sending one REAL order…';
+  try{
+    const data=await api('/api/admin/trxchart-order','POST',{direction:side,amount,mode:'real',confirm:true,request_id:crypto.randomUUID()});
+    byId('order-result').textContent=data.message;
+    if(!data.ok)throw Error(data.message);
+    notice(side+' · '+amount+' MMK · '+data.message);
+  }catch(error){byId('order-result').textContent=error.message;throw error;}
+  finally{await loadOrders();}
+},'Real order request completed. Check REAL history for settlement.'));
