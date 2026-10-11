@@ -714,6 +714,20 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     from trxchart_account_sync import HistorySync, ProviderError
     store.history_sync = HistorySync(store)
 
+    @app.get('/api/admin/trade-feed')
+    @protect
+    def trade_feed():
+        from trade_updates import feed
+        after = request.args.get('after')
+        if after is not None and (not after.isascii() or not after.isdecimal() or len(after) > 15):
+            return jsonify(error='Invalid settlement cursor.'), 400
+        try:
+            _, journal = journal_read()
+            return jsonify(feed(journal, int(after) if after is not None else None,
+                                request.args.get('stream')))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+
     @app.get('/api/admin/trxchart-account/check')
     @protect
     def check_trxchart_login_page():

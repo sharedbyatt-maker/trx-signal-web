@@ -354,3 +354,20 @@ def test_permission_settings_auth_csrf_revision_and_validation(admin, monkeypatc
     assert result.status_code == 200 and result.json['enabled']
     assert result.json['max_amount'] == 0 and result.json['unrestricted']
     assert client.put(path, json=body, headers=headers(client)).status_code == 409
+
+
+@pytest.mark.parametrize('response,followed', [
+    (Response(), True), (requests.Timeout(), True),
+    (Response(body={'success': False}), False),
+])
+def test_sent_order_follows_results_without_resubmitting(service, response, followed):
+    svc, sync, _, _ = service
+    sync.client.response = response
+    calls = []
+    sync.follow_orders = lambda: calls.append('follow')
+    request_id = str(uuid4())
+    place(svc, request_id=request_id)
+    assert calls == (['follow'] if followed else [])
+    place(svc, request_id=request_id)
+    assert len(sync.client.calls) == 1
+    assert calls == (['follow'] if followed else [])

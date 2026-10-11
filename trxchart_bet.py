@@ -187,6 +187,9 @@ class OrderService:
                                (request_id, day, at, direction, amount, 'pending', None))
                     self._audit(db, request_id, direction, amount, 'pending', None, at)
                 outcome, status = self._send(client, token, direction, amount)
+                follow = getattr(self.sync, 'follow_orders', None)
+                if follow is not None and outcome != 'rejected':
+                    follow()
             # If persistence fails after POST, the durable pending reservation stays unknown.
             with self.store.lock, self.store.connect() as db:
                 db.execute('UPDATE trxchart_orders SET outcome=?,http_status=? WHERE request_id=?',
