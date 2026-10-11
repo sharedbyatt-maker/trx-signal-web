@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 BALANCE_KEYS = ('real_balance', 'realBalance', 'userBalance', 'accountBalance',
                 'walletBalance', 'availableBalance', 'balance')
 BALANCE_IDS = {'realbalance', 'balance', 'userbalance', 'accountbalance',
-               'walletbalance', 'availablebalance', 'balanceamount', 'walletamount', 'bal'}
+               'walletbalance', 'availablebalance', 'balanceamount', 'walletamount', 'bal', 'betbalanceval'}
 
 
 def amount(value):
