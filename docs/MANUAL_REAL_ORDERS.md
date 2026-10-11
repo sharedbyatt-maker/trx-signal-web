@@ -118,3 +118,27 @@ use provider sync timestamps; successful local feed reads do not reset freshness
 Pending draw placeholders are treated as unpublished numbers. Conflicting old
 settled records are held unchanged with a warning while unrelated valid records
 continue updating; strict manual import validation remains unchanged.
+
+## Manual refresh and focused reports
+
+Trade and Trade Results have labelled refresh icon buttons with a loading state.
+They queue authenticated, CSRF-protected history reads and reload saved results
+without retrying or creating orders. REAL refresh activates the fast path and
+requests a wallet update; Demo refresh requests one full-mode read even while
+Trade fast polling is active. A queued source read is not called complete until
+the selected mode timestamp advances. Offline accounts can reload saved history.
+Refresh preserves report date/mode, search filters and unsaved target drafts.
+
+REAL Trade Results also maintains fast source watching; committed journal revision
+changes refresh the visible report without waiting ten seconds. Results now shows
+settled-only win rate, separate order/stake totals and issue/side search with a
+record count and clear-filter action. Provider account orders label unpublished
+results WAIT. The submission ledger remains distinct: old unlinked requests are
+CHECK HISTORY, excluded from active WAIT counts, and provide Find in Results.
+Empty submission panels and repeated healthy-account help are hidden; optional
+account tools are collapsed. Background freshness ages quietly while refresh
+actions and settlement alerts retain accessible status messages.
+
+On mobile, Results rows become cards showing side/result and stake/net P/L
+without horizontal scrolling. Full issue and timestamp remain visible below.
+Desktop retains the full six-column table.

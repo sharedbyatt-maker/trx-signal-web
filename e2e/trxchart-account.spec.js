@@ -31,6 +31,7 @@ test('server connection requires consent, clears credentials and allows stopping
   await expect(page.locator('#journal-account-phone')).toHaveValue('');
   await expect(page.locator('#journal-account-password')).toHaveValue('');
   await expect(page.locator('#journal-account-twofa')).toHaveValue('');
+  await page.getByText('Account tools',{exact:true}).click();
   await expect(page.getByRole('button',{name:'Sync now',exact:true})).toBeEnabled();
   await expect(page.getByRole('button',{name:'Disconnect',exact:true})).toBeEnabled();
   await expect(page.locator('#toast-region')).not.toContainText('fixture-password');

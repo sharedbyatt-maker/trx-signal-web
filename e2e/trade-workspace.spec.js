@@ -22,7 +22,7 @@ test('Trade is a separate REAL workspace; Results tools are collapsed and amount
   await page.locator('[data-amount="1000"]').click();
   await expect(page.locator('#order-amount')).toHaveValue('1000');
   await expect(page.locator('#order-big')).toBeEnabled();
-  await expect(page.locator('#trade-activity')).toContainText('PENDING');
+  await expect(page.locator('#trade-activity')).toContainText('WAIT');
   await expect(page.locator('#trade-latest')).toContainText('WIN');
   expect(posts).toBe(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
@@ -55,14 +55,14 @@ test('confirmed WIN and LOSS alerts follow account feed on other pages, never fl
     return route.fulfill({json:{stream:'fixture-alerts',cursor:sequence,events:q.has('after')?events:[],recent:[trade('pending',stage?1:-1),trade('older',1)],gap:false}});
   });
   await signIn(page);
-  await expect(page.locator('#trade-activity')).toContainText('PENDING');
+  await expect(page.locator('#trade-activity')).toContainText('WAIT');
   expect(await page.locator('.toast-win').count()).toBe(0);
   expect(await page.evaluate(()=>window.notificationPrompts||0)).toBe(0);
   sequence=11;stage=1;
   await expect(page.locator('.toast-win')).toHaveCount(1);
   await expect(page.locator('.toast-win')).toContainText('96.00 MMK');
   await expect(page.locator('.toast-win')).toContainText('20261011103010115');
-  await expect(page.locator('#trade-activity')).not.toContainText('PENDING');
+  await expect(page.locator('#trade-activity')).not.toContainText('WAIT');
   await page.locator('#trade').getByRole('link',{name:'View results ↗'}).click();
   await page.locator('#journal-mode').selectOption('demo');
   sequence=12;stage=2;

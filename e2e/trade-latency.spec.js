@@ -84,6 +84,7 @@ test('freshness uses upstream sync time, and only Trade view requests fast watch
   await expect(page.locator('#trade-live-state')).toHaveText('LIVE');
   await expect(page.locator('#trade-feed-status')).toContainText('fetch 180 ms');
   await page.locator('#trade').getByRole('link',{name:'View results ↗'}).click();
+  await page.locator('#journal-mode').selectOption('demo');
   await expect.poll(()=>lastWatch).toBe(null);
 });
 
