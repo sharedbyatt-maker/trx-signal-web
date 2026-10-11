@@ -246,3 +246,5 @@ Real uses `/api/bet/history`, Demo uses `/api/demo/history`, both return a succe
 `list` containing full `addTime`, issue, stake, payout and state. Production sync
 still requires the user to activate the connection bookmark in their browser;
 local fixtures validate transport, settlement, credentials isolation and exact IDs.
+
+Connection setup now offers a draggable bookmark on desktop, with a copy-URL fallback for mobile. Clicking the generated link inside the admin page only shows setup guidance; it does not execute provider code. Real/Demo status cards show each mode’s last successful saved sync, and mark updates older than 150 seconds as paused/delayed. Recent data is not a claim that the browser connection remains active.

@@ -168,7 +168,15 @@ byId('password-form').addEventListener('submit',e=>{e.preventDefault();run(async
 
 function journalLimits(){return {tp:Number(byId('journal-tp').value),sl:Number(byId('journal-sl').value),timezone:byId('journal-zone').value};}
 function journalURL(){const q=new URLSearchParams({mode:byId('journal-mode').value});if(byId('journal-date').value)q.set('date',byId('journal-date').value);return '/api/admin/trade-journal?'+q;}
-function renderJournal(data,fill=false){journalData=data;byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Wins / losses',s.wins+' / '+s.losses],['Pending',String(s.pending)],['Orders / staked MMK',s.trades+' / '+cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');table('journal-rows',data.rows,r=>[new Date(r.at).toLocaleString('en-GB',{timeZone:data.limits.timezone}),r.issue,r.side,cash(r.stake),r.state===1?'WIN':r.state===0?'LOSS':'PENDING',r.pnl===null?'Pending':cash(r.pnl)]);updateDraftSummary();}
+function renderJournalSync(data){
+  const sync=data.synced_at||{};
+  stats('journal-sync-cards',['real','demo'].map(mode=>{
+    const at=sync[mode],ms=at?Date.parse(/^\d{4}-\d{2}-\d{2} /.test(at)?at.replace(' ','T')+'Z':at):NaN,age=Date.now()-ms;
+    const state=!Number.isFinite(ms)?'Not synced yet · မချိတ်ရသေး':age>150000?'Updates paused / delayed · ပြန်ချိတ်ရန်':'Results received recently · ရလဒ်ဝင်နေသည်';
+    return [mode.toUpperCase()+' sync',state+(Number.isFinite(ms)?' · '+date(at):'')];
+  }));
+}
+function renderJournal(data,fill=false){journalData=data;renderJournalSync(data);byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Wins / losses',s.wins+' / '+s.losses],['Pending',String(s.pending)],['Orders / staked MMK',s.trades+' / '+cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');table('journal-rows',data.rows,r=>[new Date(r.at).toLocaleString('en-GB',{timeZone:data.limits.timezone}),r.issue,r.side,cash(r.stake),r.state===1?'WIN':r.state===0?'LOSS':'PENDING',r.pnl===null?'Pending':cash(r.pnl)]);updateDraftSummary();}
 async function loadJournal(){renderJournal(await api(journalURL()),true);}
 byId('journal-refresh').addEventListener('click',()=>run(loadJournal,'Journal refreshed. Saved targets loaded.'));
 byId('journal-today').addEventListener('click',()=>run(async()=>{byId('journal-date').value='';await loadJournal();},'Today journal loaded.'));
@@ -188,10 +196,11 @@ byId('journal-copy-sync').addEventListener('click',()=>run(async()=>{
   if(!response.ok)throw Error('Connection bookmark could not be loaded.');
   const source=await response.text();
   const code='javascript:'+encodeURIComponent('(()=>{'+source+';trxHistoryBridge('+JSON.stringify(location.origin)+');})();');
-  byId('journal-bookmark').value=code;byId('journal-bookmark').hidden=false;
-  try{await navigator.clipboard.writeText(code);byId('journal-sync-setup').textContent='Copied. Save as a bookmark URL, then open the bookmark on TRXChart. Accept sync and open Terminal → History once.';}
-  catch(_){byId('journal-sync-setup').textContent='Copy the connection bookmark URL below. Save it as a bookmark and open it on TRXChart.';}
+  byId('journal-bookmark').value=code;byId('journal-bookmark').hidden=false;const link=byId('journal-drag-sync');link.href=code;link.hidden=false;
+  try{await navigator.clipboard.writeText(code);byId('journal-sync-setup').textContent='Ready · TRX Results Sync ကို bookmarks bar ထဲ ဆွဲထည့်ပါ။ TRXChart မှာ bookmark ဖွင့် → Accept browser sync → Terminal → History. Mobile အတွက် URL လည်း copy ပြီးပါပြီ။';}
+  catch(_){byId('journal-sync-setup').textContent='Ready · TRX Results Sync ကို bookmarks bar ထဲ ဆွဲထည့်ပါ။ Mobile တွင် Mobile / copy URL ကိုဖွင့်ပြီး URL ကို ကူးသိမ်းပါ။';}
 },'Connection bookmark ready. Keep both tabs open for automatic history sync.'));
+byId('journal-drag-sync').addEventListener('click',e=>{e.preventDefault();toast('Drag this link to your bookmarks bar, then run the saved bookmark on TRXChart.','info');});
 let journalPolling=false;
 setInterval(async()=>{
   if(busy||journalPolling||document.hidden||leavingAdmin||byId('journal').hidden||!journalData)return;
