@@ -1,9 +1,11 @@
 """Exercise the real WSGI worker lifecycle without upstream or Telegram calls."""
 import os
+import json
 from pathlib import Path
 import re
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -28,6 +30,10 @@ def engine():
 app.core.engine_loop = engine
 app.core._tg_worker = wait.wait
 application = app.app
+@application.get('/__fixture_settings')
+def fixture_settings():
+    return {'timeframe': app.admin_store.cached['settings']['timeframe'],
+            'market': app.admin_store.control('telegram')['settings']['engines']['market']}
 ''')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -63,10 +69,25 @@ application = app.app
             boots = ready(1)
             assert requests.head(f'http://127.0.0.1:{port}/', timeout=2).status_code == 200
             assert requests.get(f'http://127.0.0.1:{port}/', timeout=2).status_code == 200
+            # Persist a settings/control change after the master was imported.
+            # A restarted preloaded worker must not restore stale master caches.
+            db = sqlite3.connect(tmp_path / 'admin.sqlite3')
+            try:
+                with db:
+                    value = json.loads(db.execute('SELECT value FROM settings WHERE id=1').fetchone()[0])
+                    value['timeframe'] = 5
+                    db.execute('UPDATE settings SET value=? WHERE id=1', (json.dumps(value),))
+                    value = json.loads(db.execute("SELECT value FROM controls WHERE name='telegram'").fetchone()[0])
+                    value['engines']['market'] = False
+                    db.execute("UPDATE controls SET value=? WHERE name='telegram'", (json.dumps(value),))
+            finally:
+                db.close()
             os.kill(int(boots[0]), signal.SIGKILL)
             replacement = ready(2)
             assert replacement[0] != replacement[1]
             assert requests.get(f'http://127.0.0.1:{port}/', timeout=2).status_code == 200
+            assert requests.get(f'http://127.0.0.1:{port}/__fixture_settings', timeout=2).json() == {
+                'timeframe': 5, 'market': False}
         finally:
             server.terminate()
             try:

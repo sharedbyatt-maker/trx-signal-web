@@ -14,6 +14,10 @@ raw_env = ["TRX_NO_ENGINE=1"]
 def post_worker_init(worker):
     import app as application
 
+    # A replacement worker must read changes saved since the master imported
+    # the application, rather than inherit the master's old control caches.
+    application.admin_store.cached = application.admin_store.read()
+    application.admin_store.refresh_controls()
     os.environ.pop("TRX_NO_ENGINE", None)
     application.core.start_engine()
     application.l1_capital_service.start()

@@ -41,8 +41,10 @@ The production command is `gunicorn --config gunicorn.conf.py app:app`.
 Gunicorn must not start engines in a preloaded master: background threads do
 not survive fork. The config sets `TRX_NO_ENGINE=1` before imports and starts
 the existing engines in `post_worker_init`, removing that flag only in the
-worker. It retains one worker/four request threads. An integration test checks
-both preload modes and kills a fixture worker to verify that the replacement
+worker. It retains one worker/four request threads. Replacement workers reload
+settings/control caches from SQLite before engine startup, so preload cannot
+reintroduce the master's older saved controls. An integration test checks both
+preload modes and kills a fixture worker to verify that the replacement
 worker serves requests with engine/Telegram threads running. The fixture sends
 no external API or Telegram requests.
 
