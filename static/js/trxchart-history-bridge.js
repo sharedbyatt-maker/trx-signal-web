@@ -70,14 +70,19 @@ function trxHistoryBridge(destination) {
     if (event.data.type==='trx-history-stop') stop();
   }
   function wrapped(input, options) {
-    const request = new Request(input, options);
-    const url = new URL(request.url);
-    const mode = Object.keys(paths).find(key => url.origin===location.origin && url.pathname===paths[key]);
     const promise = original.call(this,input,options);
-    if (mode && request.method==='GET' && !stopped) {
-      headers = new Headers(request.headers);
-      if (accepted) promise.then(response=>read(response.clone(),mode)).catch(()=>send({error:'History capture failed. Refresh history to retry.'}));
-    }
+    try {
+      // Inspect metadata only. Constructing Request(input) can consume a caller's
+      // POST body; non-history fetches must retain their original semantics.
+      const request = input instanceof Request ? input : null;
+      const url = new URL(request ? request.url : String(input), location.origin);
+      const mode = Object.keys(paths).find(key => url.origin===location.origin && url.pathname===paths[key]);
+      const method = String(options?.method || request?.method || 'GET').toUpperCase();
+      if (mode && method==='GET' && !stopped) {
+        headers = new Headers(options?.headers ?? request?.headers);
+        if (accepted) promise.then(response=>read(response.clone(),mode)).catch(()=>{if(!stopped)send({error:'History capture failed. Refresh history to retry.'});});
+      }
+    } catch (_) { /* Observation must never break the provider's own requests. */ }
     return promise;
   }
   window.addEventListener('message',receive);
