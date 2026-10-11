@@ -82,6 +82,8 @@ def service(tmp_path, monkeypatch):
     monkeypatch.setenv('TRX_ORDER_ENABLED', '1')
     for key in ('MAX_AMOUNT', 'DAILY_MAX_COUNT', 'DAILY_MAX_TOTAL', 'MIN_INTERVAL_SEC'):
         monkeypatch.delenv('TRX_ORDER_' + key, raising=False)
+    monkeypatch.setenv('TRX_ORDER_MAX_AMOUNT', '100')
+    monkeypatch.setenv('TRX_ORDER_MIN_INTERVAL_SEC', '30')
     sync, store, clock = Sync(Response()), AdminStore(tmp_path / 'orders.sqlite3'), Clock()
     return OrderService(sync, store, now=clock), sync, store, clock
 
@@ -92,9 +94,9 @@ def place(svc, **changes):
     return svc.place(**args)
 
 
-def test_disabled_by_default(service, monkeypatch):
+def test_explicitly_disabled(service, monkeypatch):
     svc, sync, _, _ = service
-    monkeypatch.delenv('TRX_ORDER_ENABLED')
+    monkeypatch.setenv('TRX_ORDER_ENABLED', '0')
     with pytest.raises(OrderError) as exc:
         place(svc)
     assert exc.value.status == 403 and not sync.client.calls
@@ -286,7 +288,7 @@ def test_order_endpoint_auth_csrf_mode_and_disabled(admin, monkeypatch):
     assert client.get('/api/admin/trxchart-order').status_code == 401
     assert client.post('/api/admin/trxchart-order', json={}).status_code == 401
     login(client)
-    monkeypatch.delenv('TRX_ORDER_ENABLED', raising=False)
+    monkeypatch.setenv('TRX_ORDER_ENABLED', '0')
     assert client.get('/api/admin/trxchart-order').json['enabled'] is False
     assert client.post('/api/admin/trxchart-order', json={}).status_code == 403
     body = {'direction': 'BIG', 'amount': 10, 'confirm': True, 'mode': 'real', 'request_id': str(uuid4())}
@@ -305,3 +307,50 @@ def test_order_endpoint_auth_csrf_mode_and_disabled(admin, monkeypatch):
 
 # Imported so pytest also discovers the existing admin fixture in this module.
 from tests_admin_dashboard import admin  # noqa: E402,F401
+
+
+def test_default_permissions_are_enabled_without_local_limits(service, monkeypatch):
+    svc, sync, _, _ = service
+    for suffix in ('ENABLED', 'MAX_AMOUNT', 'DAILY_MAX_COUNT', 'DAILY_MAX_TOTAL', 'MIN_INTERVAL_SEC'):
+        monkeypatch.delenv('TRX_ORDER_' + suffix, raising=False)
+    assert svc.status()['enabled'] and svc.status()['unrestricted']
+    for _ in range(35):
+        assert place(svc, amount=1600)['ok']
+    assert svc.status()['today_count'] == 35
+    assert svc.status()['today_total'] == 56000
+    assert svc.status()['retry_after_sec'] == 0
+    assert len(sync.client.calls) == 35
+
+
+def test_dashboard_permissions_override_environment_and_survive_restart(service, monkeypatch):
+    svc, sync, store, clock = service
+    monkeypatch.setenv('TRX_ORDER_ENABLED', '0')
+    result = svc.save_permissions({'revision': 0, 'enabled': True, 'unrestricted': True})
+    assert result['settings_revision'] == 1 and result['enabled'] and result['unrestricted']
+    restarted = OrderService(sync, AdminStore(store.path), now=clock)
+    assert place(restarted, amount=1600)['ok']
+    assert place(restarted, amount=2000)['ok']
+    with pytest.raises(RuntimeError):
+        svc.save_permissions({'revision': 0, 'enabled': False, 'unrestricted': True})
+    svc.save_permissions({'revision': 1, 'enabled': False, 'unrestricted': True})
+    with pytest.raises(OrderError) as exc:
+        place(restarted)
+    assert exc.value.status == 403
+    assert len(sync.client.calls) == 2
+
+
+def test_permission_settings_auth_csrf_revision_and_validation(admin, monkeypatch):
+    from tests_admin_dashboard import login, headers
+    client, _, _, _ = admin
+    path = '/api/admin/trxchart-order/settings'
+    body = {'revision': 0, 'enabled': True, 'unrestricted': True}
+    assert client.put(path, json=body).status_code == 401
+    login(client)
+    monkeypatch.setenv('TRX_ORDER_ENABLED', '0')
+    monkeypatch.setenv('TRX_ORDER_MAX_AMOUNT', '100')
+    assert client.put(path, json=body).status_code == 403
+    assert client.put(path, json={**body, 'enabled': 'yes'}, headers=headers(client)).status_code == 400
+    result = client.put(path, json=body, headers=headers(client))
+    assert result.status_code == 200 and result.json['enabled']
+    assert result.json['max_amount'] == 0 and result.json['unrestricted']
+    assert client.put(path, json=body, headers=headers(client)).status_code == 409

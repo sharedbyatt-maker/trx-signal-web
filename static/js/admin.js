@@ -213,6 +213,7 @@ setInterval(async()=>{
 
 function renderJournalAccount(data){
   journalAccount=data;
+  renderAccountBalance(data);
   const label={connected:'Connected · server sync ချိတ်ဆက်ပြီး',disconnected:'Not connected · မချိတ်ရသေး',expired:'Login expired · ပြန်ချိတ်ရန်',unavailable:'Sync delayed · ပြန်စမ်းနေသည်',invalid_data:'History format error · ပြန်စမ်းနေသည်',storage:'Session storage error · ပြန်ချိတ်ရန်'}[data.status]||'Connection status unknown';
   byId('journal-account-state').textContent=label+' · Last sync: '+date(data.last_sync)+(data.error?' · '+data.error:'')+(data.active&&!data.worker_alive?' · Sync worker is not running.':'');
   byId('journal-connect-form').hidden=Boolean(data.active);
@@ -220,7 +221,7 @@ function renderJournalAccount(data){
   byId('journal-disconnect').disabled=!data.active;
   updateOrderControls();
 }
-async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){journalAccount=null;byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}await loadOrders();}
+async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){journalAccount=null;renderAccountBalance(null);byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}await loadOrders();}
 byId('journal-connect-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{
   if(!journalAccount)throw Error('Connection status is still loading.');
   if(!byId('journal-account-consent').checked)throw Error('Approve encrypted session storage and history access first.');
@@ -231,34 +232,55 @@ byId('journal-server-refresh').addEventListener('click',()=>run(async()=>{render
 byId('journal-disconnect').addEventListener('click',()=>run(async()=>{renderJournalAccount(await api('/api/admin/trxchart-account','DELETE',{}));},'Server session removed. Imported results are preserved.'));
 
 
+// Account balance comes from the authenticated provider, never from journal P/L.
+function renderAccountBalance(data){
+  const value=data?.balance;
+  const available=typeof value==='string'&&/^\d+\.\d{2}$/.test(value);
+  stats('journal-balance-cards',[['Total Amount · REAL account balance · MMK',available?Number(value).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—']]);
+  byId('journal-balance-note').textContent=available?(data.balance_current?'Provider balance':'Last known balance · refresh pending')+' · Updated: '+date(data.balance_at):data?.active?'Waiting for TRXChart to report the account balance.':'Connect TRXChart to show your account balance.';
+}
+
 // Manual REAL orders. Demo history selection never enables this endpoint.
 let orderData=null, orderReadyAt=0;
 (function installOrderControls(){
   const box=document.createElement('div');
-  box.innerHTML='<h3>Manual REAL order · TRXChart</h3><p class="muted">These buttons use your REAL account balance. Demo orders are unavailable. Each order needs confirmation and is never retried automatically.</p><div class="form-grid"><label>Real order amount · MMK<input id="order-amount" type="number" min="1" step="1" value="100"></label></div><label class="toggle"><input id="order-real-consent" type="checkbox">I understand this uses REAL funds. After an uncertain result, I will check REAL history before another order.</label><div class="actions"><button id="order-big" type="button" disabled>BIG · REAL</button><button id="order-small" type="button" disabled>SMALL · REAL</button></div><p id="order-status" role="status">Order status loading…</p><p id="order-result" role="status"></p>';
+  box.innerHTML='<h3>Manual REAL order · TRXChart</h3><p class="muted">B / S uses your REAL account balance. Confirm each order. A submitted request is never retried automatically.</p><div class="form-grid"><label>Real order amount · MMK<input id="order-amount" type="number" min="1" step="1" value="100"></label></div><div class="actions"><button id="order-big" type="button" disabled>BIG · REAL</button><button id="order-small" type="button" disabled>SMALL · REAL</button></div><p id="order-status" role="status">Order status loading…</p><div class="actions"><button id="order-enable-all" type="button" class="secondary">Enable all manual orders</button><button id="order-disable" type="button" class="secondary">Disable manual orders</button></div><p id="order-result" role="status"></p>';
   byId('journal-disconnect').parentElement.after(box);
 })();
 function updateOrderControls(){
   if(!byId('order-big'))return;
   const amount=Number(byId('order-amount').value),wait=Math.max(0,Math.ceil((orderReadyAt-Date.now())/1000));
   const real=byId('journal-mode').value==='real';
-  const ready=!busy&&orderData?.enabled&&journalAccount?.active&&real&&byId('order-real-consent').checked&&Number.isInteger(amount)&&amount>=1&&amount<=orderData.max_amount&&orderData.today_count<orderData.daily_max_count&&orderData.today_total+amount<=orderData.daily_max_total&&!wait;
+  const valid=Number.isSafeInteger(amount)&&amount>=1;
+  const capped=orderData&&((orderData.max_amount>0&&amount>orderData.max_amount)||(orderData.daily_max_count>0&&orderData.today_count>=orderData.daily_max_count)||(orderData.daily_max_total>0&&orderData.today_total+amount>orderData.daily_max_total));
+  const ready=!busy&&orderData?.enabled&&journalAccount?.active&&real&&valid&&!capped&&!wait;
   for(const id of ['order-big','order-small'])byId(id).disabled=!ready;
-  if(orderData)byId('order-status').textContent=(orderData.enabled?'Real orders enabled':'Real orders disabled on this server')+' · max '+orderData.max_amount+' MMK per order · today '+orderData.today_count+'/'+orderData.daily_max_count+' attempts, '+orderData.today_total+'/'+orderData.daily_max_total+' MMK'+(wait?' · wait '+wait+'s':'')+(!real?' · Demo selected: order buttons disabled.':!journalAccount?.active?' · Connect TRXChart first.':'');
+  for(const id of ['order-enable-all','order-disable'])byId(id).disabled=busy||!orderData;
+  if(orderData){
+    let reason=!real?'Select Real history to place a real order.':!journalAccount?.active?'Connect TRXChart above to activate B / S.':!orderData.enabled?'Use Enable all manual orders to activate B / S.':!valid?'Enter a positive whole-number amount.':wait?'Wait '+wait+'s before the next order.':capped?'A configured order limit was reached. Use Enable all manual orders to remove local limits.':'B / S ready · confirmation required.';
+    const limits=orderData.unrestricted?'No local amount, count, daily total or spacing limits.':(orderData.max_amount>0?'Max '+orderData.max_amount+' MMK. ':'')+(orderData.daily_max_count>0?'Daily count '+orderData.daily_max_count+'. ':'')+(orderData.daily_max_total>0?'Daily total '+orderData.daily_max_total+' MMK. ':'');
+    byId('order-status').textContent=(orderData.enabled?'Real orders enabled':'Real orders disabled')+' · '+reason+' '+limits+' Today: '+orderData.today_count+' attempts · '+Number(orderData.today_total).toLocaleString('en-US')+' MMK submitted.';
+  }
 }
 async function loadOrders(){
-  try{orderData=await api('/api/admin/trxchart-order');orderReadyAt=Date.now()+orderData.retry_after_sec*1000;byId('order-amount').max=String(orderData.max_amount);}
+  try{orderData=await api('/api/admin/trxchart-order');orderReadyAt=Date.now()+(orderData.retry_after_sec||0)*1000;if(orderData.max_amount>0)byId('order-amount').max=String(orderData.max_amount);else byId('order-amount').removeAttribute('max');}
   catch(error){orderData=null;byId('order-status').textContent='Order status unavailable: '+error.message;}
   updateOrderControls();
 }
-for(const id of ['order-amount','order-real-consent'])byId(id).addEventListener('input',updateOrderControls);
+byId('order-amount').addEventListener('input',updateOrderControls);
 setInterval(updateOrderControls,1000);
+for(const [id,enabled] of [['order-enable-all',true],['order-disable',false]])byId(id).addEventListener('click',()=>run(async()=>{
+  if(!orderData)throw Error('Refresh order status first.');
+  orderData=await api('/api/admin/trxchart-order/settings','PUT',{revision:orderData.settings_revision,enabled,unrestricted:true});
+  orderReadyAt=Date.now()+(orderData.retry_after_sec||0)*1000;
+  await loadOrders();
+},enabled?'All manual order permissions enabled. Local limits removed.':'Manual orders disabled.'));
 for(const [id,side] of [['order-big','BIG'],['order-small','SMALL']])byId(id).addEventListener('click',()=>run(async()=>{
   const amount=Number(byId('order-amount').value);
-  if(byId('journal-mode').value!=='real'||!byId('order-real-consent').checked)throw Error('Select Real history and approve use of REAL funds first.');
-  if(!Number.isInteger(amount)||amount<1||!orderData||amount>orderData.max_amount)throw Error('Enter a whole-number amount within the order limit.');
+  if(byId('journal-mode').value!=='real')throw Error('Select Real history first.');
+  if(!journalAccount?.active)throw Error('Connect TRXChart above before placing an order.');
+  if(!Number.isSafeInteger(amount)||amount<1||!orderData||(orderData.max_amount>0&&amount>orderData.max_amount))throw Error('Enter a positive whole-number amount within any configured limit.');
   if(!confirm('Place REAL '+side+' order for '+amount+' MMK? This uses your real balance.'))throw Error('Order cancelled.');
-  byId('order-real-consent').checked=false;
   byId('order-result').textContent='Sending one REAL order…';
   try{
     const data=await api('/api/admin/trxchart-order','POST',{direction:side,amount,mode:'real',confirm:true,request_id:crypto.randomUUID()});
@@ -266,5 +288,5 @@ for(const [id,side] of [['order-big','BIG'],['order-small','SMALL']])byId(id).ad
     if(!data.ok)throw Error(data.message);
     notice(side+' · '+amount+' MMK · '+data.message);
   }catch(error){byId('order-result').textContent=error.message;throw error;}
-  finally{await loadOrders();}
+  finally{await loadOrders();await loadJournalAccount();}
 },'Real order request completed. Check REAL history for settlement.'));

@@ -28,6 +28,7 @@ class Provider:
         self.bad_demo = False
         self.demo_status = None
         self.pending = True
+        self.balance = None
         self.hook = None
     def factory(self):
         owner = self
@@ -54,7 +55,7 @@ class Provider:
                 if path == '/':
                     return Response("const _AT = '" + TOKEN + "';")
                 if path == '/api/session-alive':
-                    return Response({'logged_out': False})
+                    return Response({'logged_out': False, 'balance': owner.balance})
                 assert kwargs['headers'] == {'X-API-Token': TOKEN}
                 if path == '/api/demo/history?size=500':
                     if owner.demo_status:
@@ -242,3 +243,24 @@ def test_demo_unavailability_preserves_verified_real_and_recovers(admin):
     assert set(journal['synced_at']) == {'real', 'demo'}
     assert store.history_sync.public()['error'] is None
     assert sum(method == 'POST' for method, _, _ in provider.calls) == 1
+
+
+def test_provider_balance_is_encrypted_and_never_derived_from_profit(admin):
+    client, store, provider = setup(admin)
+    login(client)
+    provider.balance = '12,500.50 MMK'
+    result = client.post('/api/admin/trxchart-account', json=connect_body(), headers=headers(client))
+    assert result.status_code == 200
+    assert result.json['balance'] == '12500.50' and result.json['balance_current']
+    assert decoded(store, 'trxchart_account')['balance'] == '12500.50'
+    assert '12500.50' not in store.private_get('trxchart_account')['value']
+    provider.balance = None
+    store.history_sync.sync_once()
+    public = store.history_sync.public()
+    assert public['balance'] == '12500.50' and not public['balance_current']
+    provider.balance = 0
+    store.history_sync.sync_once()
+    assert store.history_sync.public()['balance'] == '0.00'
+    assert store.history_sync.public()['balance_current']
+    store.history_sync.disconnect()
+    assert store.history_sync.public()['balance'] is None
