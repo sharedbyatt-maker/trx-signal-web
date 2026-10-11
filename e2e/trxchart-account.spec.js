@@ -17,7 +17,7 @@ test('server connection requires consent, clears credentials and allows stopping
   await page.getByLabel('Admin password').fill('fixture-admin-password');
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
   if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();
-  await page.getByRole('link',{name:'◉ Trade Results',exact:true}).click();
+  await page.getByRole('link',{name:'↗ Trade',exact:true}).click();
   await expect(page.locator('#journal-account-state')).toContainText('Not connected');
   await page.getByLabel('TRXChart Phone / Email',{exact:true}).fill('fixture@example.invalid');
   await page.getByLabel('TRXChart Password',{exact:true}).fill('fixture-password');

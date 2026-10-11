@@ -4,11 +4,13 @@ import hashlib
 import json
 import re
 import threading
+import time
 from datetime import datetime, timezone
 
 import requests
 from trade_journal import DEFAULT_LIMITS, normalize, merge
 from trxchart_balance import from_page as page_balance, from_json as json_balance
+from trade_updates import observe
 
 ORIGIN = 'https://trxchart.com'
 FIELDS = ('addTime', 'issueNumber', 'selectType', 'amount', 'profitAmount', 'state',
@@ -53,6 +55,18 @@ class HistorySync:
         self.wake = threading.Event()
         self.thread = None
         self.failures = 0
+        self.follow_until = 0
+        self.last_full_sync = 0
+
+    def follow_orders(self):
+        # Faster read-only checks for three minutes; never resubmit a bet.
+        self.follow_until = time.monotonic() + 180
+        self.wake.set()
+
+    def poll_delay(self):
+        if not self.failures and time.monotonic() < self.follow_until:
+            return 5
+        return min(900, 60 * 2 ** min(self.failures, 4))
 
     def read(self):
         state = self.store.private_get('trxchart_account')
@@ -157,7 +171,7 @@ class HistorySync:
             self.request(client, 'GET', '/login')
         return {'ok': True, 'stage': 'login page', 'http_status': 200}
 
-    def histories(self, client, token):
+    def histories(self, client, token, modes=('real', 'demo')):
         alive = self.request(client, 'GET', '/api/session-alive')
         if alive.get('logged_out'):
             raise ProviderError('expired', '/api/session-alive')
@@ -166,7 +180,7 @@ class HistorySync:
             client.trxchart_balance = balance
         incoming, completed, warnings = [], [], {}
         last_failure = None
-        for mode in ('real', 'demo'):
+        for mode in modes:
             path = '/api/bet/history?size=500' if mode == 'real' else '/api/demo/history?size=500'
             try:
                 # Page tokens may change after a provider request. Obtain the current
@@ -229,8 +243,10 @@ class HistorySync:
                 journal = json.loads(self.store.vault.cipher.decrypt(state['value'].encode())) if state['value'] else {'rows': [], 'limits': copy.deepcopy(DEFAULT_LIMITS)}
             except Exception:
                 raise ProviderError('storage') from None
-            journal['rows'], counts = merge(journal['rows'], incoming)
+            previous = journal['rows']
+            journal['rows'], counts = merge(previous, incoming)
             now = stamp()
+            observe(journal, previous, now, 'real' in completed)
             journal['imported_at'] = now
             synced_at = journal.setdefault('synced_at', {})
             for mode in completed:
@@ -307,8 +323,12 @@ class HistorySync:
             with self.session(config) as client:
                 # Refresh the CSRF/API token in this same session, never log in automatically.
                 config['token'] = self.token(client)
-                incoming, completed, warnings = self.histories(client, config['token'])
+                fast = time.monotonic() < self.follow_until
+                modes = ('real',) if fast and time.monotonic() - self.last_full_sync < 60 else ('real', 'demo')
+                incoming, completed, warnings = self.histories(client, config['token'], modes)
                 self.commit(client, config, expected, incoming, 'synced', completed, warnings)
+                if len(modes) == 2:
+                    self.last_full_sync = time.monotonic()
         except (ProviderError, ValueError) as exc:
             self.failures += 1
             with self.store.lock:
@@ -336,7 +356,7 @@ class HistorySync:
                         self.sync_once()
                     except Exception:
                         self.failures += 1  # Isolated from the web request and signal engines.
-                    delay = min(900, 60 * 2 ** min(self.failures, 4))
+                    delay = self.poll_delay()
                     self.wake.wait(delay)
                     self.wake.clear()
             self.thread = threading.Thread(target=loop, name='trxchart-history-sync', daemon=True)

@@ -20,11 +20,13 @@ test('private journal imports past results and separates targets from strategy c
   await page.goto('/admin#journal');
   await expect(page.locator('#notice')).toContainText('Connected.');
   await expect(page.locator('#journal')).toBeVisible();
+  await page.getByText('Report settings',{exact:true}).click();
   await page.locator('#journal-tp').fill('50');
   await page.locator('#journal-sl').fill('100');
   await expect(page.locator('#draft-summary')).toContainText('Trade targets');
   await page.locator('#journal-save').click();
   await expect(page.locator('#notice')).toContainText('Daily targets saved');
+  await page.getByText('Import / export tools',{exact:true}).click();
   await page.locator('#journal-json').fill('invalid JSON');
   await page.locator('#journal-import').click();
   await expect(page.locator('#notice')).toContainText('History is not valid JSON');

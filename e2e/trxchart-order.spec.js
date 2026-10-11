@@ -17,9 +17,9 @@ test('connected real orders are available without a checkbox; confirmation, demo
   await page.getByLabel('Admin password').fill('fixture-admin-password');
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
   if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();
-  await page.getByRole('link',{name:'◉ Trade Results',exact:true}).click();
+  await page.getByRole('link',{name:'↗ Trade',exact:true}).click();
   await expect(page.locator('#order-status')).toContainText('Real orders enabled');
-  await expect(page.locator('#journal-balance-cards')).toContainText('12,500.50');
+  await expect(page.locator('#trade-balance')).toContainText('12,500.50');
   await expect(page.locator('#order-big')).toBeEnabled();
   await page.locator('#order-amount').fill('1600');
   await expect(page.locator('#order-big')).toBeEnabled();
@@ -32,10 +32,12 @@ test('connected real orders are available without a checkbox; confirmation, demo
   await expect(page.locator('#order-result')).toContainText('outcome is unknown');
   await expect(page.locator('#order-big')).toBeEnabled();
   expect(posts).toBe(1);
+  await page.locator('#trade').getByRole('link',{name:'View results ↗'}).click();
+  await expect(page.locator('#order-big')).toBeHidden();
   await page.locator('#journal-mode').selectOption('demo');
-  await expect(page.locator('#order-status')).toContainText('Select Real history');
-  await expect(page.locator('#order-big')).toBeDisabled();
-  await expect(page.locator('#order-small')).toBeDisabled();
+  await page.locator('#journal').getByRole('link',{name:'Go to Trade ↗'}).click();
+  await expect(page.locator('#order-big')).toBeEnabled();
+  await expect(page.locator('#order-small')).toBeEnabled();
   expect(posts).toBe(1);
 });
 
@@ -44,7 +46,7 @@ test('disconnected account keeps orders unavailable despite enabled default',asy
   await page.getByLabel('Admin password').fill('fixture-admin-password');
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
   if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();
-  await page.getByRole('link',{name:'◉ Trade Results',exact:true}).click();
+  await page.getByRole('link',{name:'↗ Trade',exact:true}).click();
   await expect(page.locator('#order-status')).toContainText('Connect TRXChart');
   await expect(page.locator('#order-big')).toBeDisabled();
 });
@@ -66,9 +68,10 @@ test('owner can enable orders and remove old server caps without sending a bet',
   await page.getByLabel('Admin password').fill('fixture-admin-password');
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
   if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();
-  await page.getByRole('link',{name:'◉ Trade Results',exact:true}).click();
+  await page.getByRole('link',{name:'↗ Trade',exact:true}).click();
   await expect(page.locator('#order-big')).toBeDisabled();
-  await expect(page.locator('#journal-balance-cards')).toContainText('—');
+  await expect(page.locator('#trade-balance')).toContainText('—');
+  await page.getByText('Order permissions & status',{exact:true}).click();
   await page.locator('#order-enable-all').click();
   await expect(page.locator('#order-status')).toContainText('No local amount, count, daily total or spacing limits');
   await page.locator('#order-amount').fill('1600');

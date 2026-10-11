@@ -9,10 +9,10 @@ let revision = null, settings = null, polling = false, busy = false, maintenance
 function toast(message,type='success'){
   const host=byId('toast-region');
   const item=document.createElement('div');item.className=`toast toast-${type}`;
-  item.setAttribute('role',type==='error'?'alert':'status');
+  item.setAttribute('role',['error','win','loss'].includes(type)?'alert':'status');
   const icon=document.createElement('span');icon.className='toast-icon';icon.setAttribute('aria-hidden','true');icon.textContent=type==='error'?'!':type==='success'?'✓':'i';
   const content=document.createElement('div'),title=document.createElement('strong'),text=document.createElement('p');
-  title.textContent=({success:'Done',error:'Action failed',info:'Draft updated',warning:'Refresh needed'})[type];text.textContent=message;content.append(title,text);
+  title.textContent=({success:'Done',error:'Action failed',info:'Draft updated',warning:'Refresh needed',win:'WIN · အနိုင်',loss:'LOSS · အရှုံး'})[type];text.textContent=message;content.append(title,text);
   const close=document.createElement('button');close.type='button';close.className='toast-close';close.setAttribute('aria-label','Dismiss notification');close.textContent='×';
   let timer;const dismiss=()=>{clearTimeout(timer);item.remove();};
   const resume=()=>{clearTimeout(timer);if(!item.matches(':hover')&&!item.contains(document.activeElement))timer=setTimeout(dismiss,type==='error'||type==='warning'?12000:7000);};
@@ -63,7 +63,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
 window.addEventListener('online',poll);
 window.addEventListener('offline',()=>showSync('Offline','Your browser is offline. Displayed data may be old.'));
 
-const pageNames={journal:'Trade Results · Imported history and daily targets',system:'System Status · Live health and engine activity',chart:'Chart Settings · Defaults for the public terminal',l1:'L1 Strategy · Frozen rules and money controls',twelve:'12-Step Strategy · Frozen rules and money controls',notifications:'Telegram & Alerts · Delivery and connection controls',reports:'Reports · Model results and signal history',maintenance:'Maintenance · Data, cache and backups',audit:'Audit Log · Settings and operation history',security:'Password & Security · Protect admin access',connection:'Data API Connection · Endpoint and write-only credentials'};
+const pageNames={trade:'Trade · REAL orders and live results',journal:'Trade Results · Daily performance and history',system:'System Status · Live health and engine activity',chart:'Chart Settings · Defaults for the public terminal',l1:'L1 Strategy · Frozen rules and money controls',twelve:'12-Step Strategy · Frozen rules and money controls',notifications:'Telegram & Alerts · Delivery and connection controls',reports:'Reports · Model results and signal history',maintenance:'Maintenance · Data, cache and backups',audit:'Audit Log · Settings and operation history',security:'Password & Security · Protect admin access',connection:'Data API Connection · Endpoint and write-only credentials'};
 function showPage(name){if(!pageNames[name])name='system';for(const section of document.querySelectorAll('.page'))section.hidden=section.id!==name;for(const link of document.querySelectorAll('nav [data-page]')){const active=link.dataset.page===name;link.classList.toggle('active',active);if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}byId('page-subtitle').textContent=pageNames[name];closeMenu();}
 function closeMenu(){document.querySelector('.sidebar').classList.remove('open');byId('menu-toggle').setAttribute('aria-expanded','false');byId('menu-backdrop').hidden=true;}
 byId('menu-backdrop').addEventListener('click',closeMenu);document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.querySelector('.sidebar').classList.contains('open')){closeMenu();byId('menu-toggle').focus();}});window.matchMedia('(min-width: 721px)').addEventListener('change',e=>{if(e.matches)closeMenu();});
@@ -177,7 +177,23 @@ function renderJournalSync(data){
     return [mode.toUpperCase()+' sync',state+(Number.isFinite(ms)?' · '+date(at):'')];
   }));
 }
-function renderJournal(data,fill=false){journalData=data;renderJournalSync(data);byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Wins / losses',s.wins+' / '+s.losses],['Pending',String(s.pending)],['Orders / staked MMK',s.trades+' / '+cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');table('journal-rows',data.rows,r=>[new Date(r.at).toLocaleString('en-GB',{timeZone:data.limits.timezone}),r.issue,r.side,cash(r.stake),r.state===1?'WIN':r.state===0?'LOSS':'PENDING',r.pnl===null?'Pending':cash(r.pnl)]);updateDraftSummary();}
+function renderJournal(data,fill=false){journalData=data;renderJournalSync(data);byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Wins / losses',s.wins+' / '+s.losses],['Pending',String(s.pending)],['Orders / staked MMK',s.trades+' / '+cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');renderJournalRows();updateDraftSummary();}
+const tradeCash=value=>Number(value).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const resultLabel=state=>state===1?'WIN':state===0?'LOSS':'PENDING';
+const resultClass=state=>state===1?'win':state===0?'loss':'pending';
+function renderJournalRows(){
+  if(!journalData)return;
+  const filter=byId('journal-result-filter').value;
+  const rows=journalData.rows.filter(row=>filter==='all'||String(row.state)===filter);
+  table('journal-rows',rows,row=>[new Date(row.at).toLocaleString('en-GB',{timeZone:journalData.limits.timezone}),row.issue,row.side,tradeCash(row.stake),resultLabel(row.state),row.pnl===null?'—':tradeCash(row.pnl)]);
+  if(!rows.length)return;
+  for(const [index,tr] of Array.from(byId('journal-rows').children).entries()){
+    const row=rows[index],pill=document.createElement('span');pill.className='result-pill '+resultClass(row.state);pill.textContent=resultLabel(row.state);tr.children[4].replaceChildren(pill);
+    if(row.pnl!==null)tr.children[5].className=row.pnl<0?'negative':row.pnl>0?'positive':'';
+    tr.children[2].className='side-'+row.side.toLowerCase();
+  }
+}
+byId('journal-result-filter').addEventListener('change',renderJournalRows);
 async function loadJournal(){renderJournal(await api(journalURL()),true);await loadJournalAccount();}
 byId('journal-refresh').addEventListener('click',()=>run(loadJournal,'Journal refreshed. Saved targets loaded.'));
 byId('journal-today').addEventListener('click',()=>run(async()=>{byId('journal-date').value='';await loadJournal();},'Today journal loaded.'));
@@ -186,7 +202,7 @@ byId('journal-limits-form').addEventListener('submit',e=>{e.preventDefault();run
 byId('journal-import').addEventListener('click',()=>run(async()=>{if(!journalData)throw Error('Refresh journal first.');const file=byId('journal-file').files[0],text=byId('journal-json').value.trim();if(file&&text)throw Error('Choose a file or paste JSON, not both.');if(file&&file.size>8*1024*1024)throw Error('JSON file must be smaller than 8 MB.');const raw=file?await file.text():text;if(!raw)throw Error('Choose a JSON file or paste history first.');if(new Blob([raw]).size>8*1024*1024)throw Error('History must be smaller than 8 MB.');let history;try{history=JSON.parse(raw);}catch(_){throw Error('History is not valid JSON.');}const data=await api('/api/admin/trade-journal/import','POST',{revision:journalData.revision,mode:byId('journal-mode').value,source_timezone:byId('journal-source-zone').value,date:byId('journal-date').value,history});const c=data.import_result;renderJournal(data,false);byId('journal-json').value='';byId('journal-file').value='';updateDraftSummary();toast('Import: '+c.added+' added, '+c.updated+' settled/updated, '+c.unchanged+' unchanged.');},'History imported. Selected report date preserved.'));
 byId('journal-export').addEventListener('click',()=>run(async()=>{const data=await api('/api/admin/trade-journal/export?mode='+byId('journal-mode').value);const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='trx-history-'+byId('journal-mode').value+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);},'Private history exported. Keep the file somewhere safe.'));
 
-run(async()=>{await loadSettings();const results=await Promise.allSettled([refreshLive(),loadReports(),loadStrategy('l1'),loadStrategy('twelve'),loadPolicy(),loadMessages(),loadFeed(),loadTronGrid(),loadJournal()]);const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;},'Connected. System status updates automatically.');
+run(async()=>{await loadSettings();const results=await Promise.allSettled([refreshLive(),loadReports(),loadStrategy('l1'),loadStrategy('twelve'),loadPolicy(),loadMessages(),loadFeed(),loadTronGrid(),loadJournal(),loadTradeFeed()]);const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;},'Connected. System status updates automatically.');
 
 function restoreReady(){return settings&&strategyData.l1&&strategyData.twelve&&policyData&&messageData;}
 function updateMaintenanceControls(){for(const btn of document.querySelectorAll('[data-action]'))btn.disabled=busy||maintenanceBusy;}
@@ -204,7 +220,7 @@ byId('journal-copy-sync').addEventListener('click',()=>run(async()=>{
 byId('journal-drag-sync').addEventListener('click',e=>{e.preventDefault();toast('Drag this link to your bookmarks bar, then run the saved bookmark on TRXChart.','info');});
 let journalPolling=false;
 setInterval(async()=>{
-  if(busy||journalPolling||document.hidden||leavingAdmin||byId('journal').hidden||!journalData)return;
+  if(busy||journalPolling||document.hidden||leavingAdmin||(byId('journal').hidden&&byId('trade').hidden)||!journalData)return;
   const url=journalURL();journalPolling=true;
   try{const data=await api(url);if(!busy&&url===journalURL()){renderJournal(data,false);await loadJournalAccount();}}
   catch(error){byId('journal-status').textContent='History refresh failed: '+error.message;}
@@ -219,6 +235,8 @@ function renderJournalAccount(data){
   byId('journal-connect-form').hidden=Boolean(data.active);
   byId('journal-server-refresh').disabled=!data.active;
   byId('journal-disconnect').disabled=!data.active;
+  byId('trade-connection-badge').textContent=data.active?'CONNECTED · REAL':'CONNECT ACCOUNT';
+  byId('trade-connection-badge').className='result-pill '+(data.active?'win':'pending');
   updateOrderControls();
 }
 async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){journalAccount=null;renderAccountBalance(null);byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}await loadOrders();}
@@ -237,27 +255,29 @@ function renderAccountBalance(data){
   const value=data?.balance;
   const available=typeof value==='string'&&/^\d+\.\d{2}$/.test(value);
   stats('journal-balance-cards',[['Total Amount · REAL account balance · MMK',available?Number(value).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—']]);
+  byId('trade-balance').textContent=available?Number(value).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   byId('journal-balance-note').textContent=available?(data.balance_current?'Provider balance':'Last known balance · refresh pending')+' · Updated: '+date(data.balance_at):data?.active?'Waiting for TRXChart to report the account balance.':'Connect TRXChart to show your account balance.';
+  byId('trade-balance-note').textContent=byId('journal-balance-note').textContent;
 }
 
 // Manual REAL orders. Demo history selection never enables this endpoint.
 let orderData=null, orderReadyAt=0;
 (function installOrderControls(){
   const box=document.createElement('div');
-  box.innerHTML='<h3>Manual REAL order · TRXChart</h3><p class="muted">B / S uses your REAL account balance. Confirm each order. A submitted request is never retried automatically.</p><div class="form-grid"><label>Real order amount · MMK<input id="order-amount" type="number" min="1" step="1" value="100"></label></div><div class="actions"><button id="order-big" type="button" disabled>BIG · REAL</button><button id="order-small" type="button" disabled>SMALL · REAL</button></div><p id="order-status" role="status">Order status loading…</p><div class="actions"><button id="order-enable-all" type="button" class="secondary">Enable all manual orders</button><button id="order-disable" type="button" class="secondary">Disable manual orders</button></div><p id="order-result" role="status"></p>';
-  byId('journal-disconnect').parentElement.after(box);
+  box.innerHTML='<label class="order-amount-label">Real order amount · MMK<input id="order-amount" type="number" min="1" step="1" value="100" inputmode="numeric"></label><div class="amount-presets" aria-label="Amount presets"><button type="button" class="secondary" data-amount="100">100</button><button type="button" class="secondary" data-amount="200">200</button><button type="button" class="secondary" data-amount="500">500</button><button type="button" class="secondary" data-amount="1000">1,000</button></div><div class="order-directions"><button id="order-big" type="button" disabled>BIG · REAL</button><button id="order-small" type="button" disabled>SMALL · REAL</button></div><p id="order-result" class="order-receipt" role="status">Choose an amount, then BIG or SMALL.</p><p class="muted">REAL balance အသုံးပြုမည်။ Order တစ်ခုချင်းစီ အတည်ပြုရန် လိုသည်။</p><details class="order-settings"><summary>Order permissions &amp; status</summary><p id="order-status" role="status">Order status loading…</p><div class="actions"><button id="order-enable-all" type="button" class="secondary">Enable all manual orders</button><button id="order-disable" type="button" class="secondary">Disable manual orders</button></div></details>';
+  byId('trade-order-slot').append(box);
+  for(const preset of box.querySelectorAll('[data-amount]'))preset.addEventListener('click',()=>{byId('order-amount').value=preset.dataset.amount;updateOrderControls();});
 })();
 function updateOrderControls(){
   if(!byId('order-big'))return;
   const amount=Number(byId('order-amount').value),wait=Math.max(0,Math.ceil((orderReadyAt-Date.now())/1000));
-  const real=byId('journal-mode').value==='real';
   const valid=Number.isSafeInteger(amount)&&amount>=1;
   const capped=orderData&&((orderData.max_amount>0&&amount>orderData.max_amount)||(orderData.daily_max_count>0&&orderData.today_count>=orderData.daily_max_count)||(orderData.daily_max_total>0&&orderData.today_total+amount>orderData.daily_max_total));
-  const ready=!busy&&orderData?.enabled&&journalAccount?.active&&real&&valid&&!capped&&!wait;
+  const ready=!busy&&orderData?.enabled&&journalAccount?.active&&valid&&!capped&&!wait;
   for(const id of ['order-big','order-small'])byId(id).disabled=!ready;
   for(const id of ['order-enable-all','order-disable'])byId(id).disabled=busy||!orderData;
   if(orderData){
-    let reason=!real?'Select Real history to place a real order.':!journalAccount?.active?'Connect TRXChart above to activate B / S.':!orderData.enabled?'Use Enable all manual orders to activate B / S.':!valid?'Enter a positive whole-number amount.':wait?'Wait '+wait+'s before the next order.':capped?'A configured order limit was reached. Use Enable all manual orders to remove local limits.':'B / S ready · confirmation required.';
+    let reason=!journalAccount?.active?'Connect TRXChart above to activate B / S.':!orderData.enabled?'Use Enable all manual orders to activate B / S.':!valid?'Enter a positive whole-number amount.':wait?'Wait '+wait+'s before the next order.':capped?'A configured order limit was reached. Use Enable all manual orders to remove local limits.':'B / S ready · confirmation required.';
     const limits=orderData.unrestricted?'No local amount, count, daily total or spacing limits.':(orderData.max_amount>0?'Max '+orderData.max_amount+' MMK. ':'')+(orderData.daily_max_count>0?'Daily count '+orderData.daily_max_count+'. ':'')+(orderData.daily_max_total>0?'Daily total '+orderData.daily_max_total+' MMK. ':'');
     byId('order-status').textContent=(orderData.enabled?'Real orders enabled':'Real orders disabled')+' · '+reason+' '+limits+' Today: '+orderData.today_count+' attempts · '+Number(orderData.today_total).toLocaleString('en-US')+' MMK submitted.';
   }
@@ -277,16 +297,74 @@ for(const [id,enabled] of [['order-enable-all',true],['order-disable',false]])by
 },enabled?'All manual order permissions enabled. Local limits removed.':'Manual orders disabled.'));
 for(const [id,side] of [['order-big','BIG'],['order-small','SMALL']])byId(id).addEventListener('click',()=>run(async()=>{
   const amount=Number(byId('order-amount').value);
-  if(byId('journal-mode').value!=='real')throw Error('Select Real history first.');
   if(!journalAccount?.active)throw Error('Connect TRXChart above before placing an order.');
   if(!Number.isSafeInteger(amount)||amount<1||!orderData||(orderData.max_amount>0&&amount>orderData.max_amount))throw Error('Enter a positive whole-number amount within any configured limit.');
   if(!confirm('Place REAL '+side+' order for '+amount+' MMK? This uses your real balance.'))throw Error('Order cancelled.');
   byId('order-result').textContent='Sending one REAL order…';
   try{
     const data=await api('/api/admin/trxchart-order','POST',{direction:side,amount,mode:'real',confirm:true,request_id:crypto.randomUUID()});
-    byId('order-result').textContent=data.message;
+    byId('order-result').textContent=data.message+(data.ok?' Following REAL results for WIN / LOSS…':'');
     if(!data.ok)throw Error(data.message);
     notice(side+' · '+amount+' MMK · '+data.message);
   }catch(error){byId('order-result').textContent=error.message;throw error;}
-  finally{await loadOrders();await loadJournalAccount();}
+  finally{await loadOrders();await loadJournalAccount();await loadTradeFeed();}
 },'Real order request completed. Check REAL history for settlement.'));
+
+// This feed reads committed account history, independent of report mode/date.
+// It never places or retries an order and stores only an opaque stream/cursor locally.
+let tradeFeedBusy=false,tradeFeedStream=null,tradeFeedCursor=null;
+function savedTradeCursor(stream){try{const raw=localStorage.getItem('trx-settlement:'+stream);const n=Number(raw);return raw!==null&&Number.isSafeInteger(n)&&n>=0?n:null;}catch(_){return null;}}
+function saveTradeCursor(stream,cursor){try{localStorage.setItem('trx-settlement:'+stream,String(cursor));}catch(_){} }
+function settlementMessage(row){return row.side+' · '+tradeCash(row.stake)+' MMK · P/L '+(row.pnl===null?'—':tradeCash(row.pnl))+' MMK · Issue '+row.issue;}
+function renderTradeActivity(rows){
+  const list=byId('trade-activity');list.replaceChildren();
+  if(!rows.length){const li=document.createElement('li');li.className='activity-empty';li.textContent='No REAL trades yet. Your next results will appear here.';list.append(li);byId('trade-latest').textContent='No settled REAL results yet.';byId('trade-latest').className='latest-outcome';return;}
+  const latest=rows.find(row=>row.state===0||row.state===1);
+  byId('trade-latest').textContent=latest?resultLabel(latest.state)+' · '+latest.side+' · '+(latest.pnl===null?'—':tradeCash(latest.pnl))+' MMK':'Waiting for pending orders to settle…';
+  byId('trade-latest').className='latest-outcome '+(latest?resultClass(latest.state):'pending');
+  for(const row of rows.slice(0,6)){
+    const li=document.createElement('li'),info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small'),result=document.createElement('div'),pill=document.createElement('span'),pnl=document.createElement('small');
+    title.textContent=row.side+' · '+tradeCash(row.stake)+' MMK';detail.textContent=row.issue+' · '+date(row.at);info.append(title,detail);
+    pill.className='result-pill '+resultClass(row.state);pill.textContent=resultLabel(row.state);pnl.textContent=row.pnl===null?'Awaiting settlement':(row.pnl>0?'+':'')+tradeCash(row.pnl)+' MMK';pnl.className=row.pnl<0?'negative':row.pnl>0?'positive':'';result.className='activity-result';result.append(pill,pnl);li.append(info,result);list.append(li);
+  }
+}
+async function loadTradeFeed(){
+  if(tradeFeedBusy||leavingAdmin)return;
+  tradeFeedBusy=true;
+  try{
+    const query=tradeFeedStream&&tradeFeedCursor!==null?'?'+new URLSearchParams({stream:tradeFeedStream,after:String(tradeFeedCursor)}):'';
+    const data=await api('/api/admin/trade-feed'+query);
+    if(!Array.isArray(data.recent)||!Array.isArray(data.events)||!Number.isSafeInteger(data.cursor))throw Error('Invalid settlement feed.');
+    renderTradeActivity(data.recent);
+    if(data.stream!==tradeFeedStream){
+      tradeFeedStream=data.stream;tradeFeedCursor=data.stream?savedTradeCursor(data.stream):null;
+      if(tradeFeedCursor===null||tradeFeedCursor>data.cursor)tradeFeedCursor=data.cursor;
+    }else{
+      const saved=data.stream?savedTradeCursor(data.stream):null;
+      if(saved!==null&&saved<=data.cursor)tradeFeedCursor=Math.max(tradeFeedCursor??0,saved);
+      for(const event of data.events){
+        if(event.sequence<=(tradeFeedCursor??0))continue;
+        const row=event.trade;if(row.state!==0&&row.state!==1)continue;
+        const message=settlementMessage(row);toast(message,resultClass(row.state));
+        if(document.hidden&&'Notification' in window&&Notification.permission==='granted'){
+          try{const notification=new Notification(resultLabel(row.state)+' · TRXChart',{body:message,tag:data.stream+':'+event.sequence});notification.onclick=()=>{window.focus();location.hash='trade';notification.close();};}catch(_){}
+        }
+        tradeFeedCursor=event.sequence;
+      }
+      tradeFeedCursor=data.cursor;
+    }
+    if(data.stream)saveTradeCursor(data.stream,tradeFeedCursor);
+    byId('trade-feed-status').textContent=data.gap?'Some older alerts expired. Check Trade Results for the full history.':'Provider-confirmed results · checked '+new Date().toLocaleTimeString();
+  }catch(error){byId('trade-feed-status').textContent='Result updates delayed: '+error.message;}
+  finally{tradeFeedBusy=false;}
+}
+setInterval(()=>{if(!busy&&!leavingAdmin)loadTradeFeed();},2500);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!busy)loadTradeFeed();});
+function renderTradeNotificationPermission(){
+  const supported='Notification' in window;
+  byId('trade-notifications').disabled=!supported||Notification.permission==='denied';
+  byId('trade-notifications').textContent=supported&&Notification.permission==='granted'?'Desktop notifications enabled':'Enable desktop notifications';
+  byId('trade-notification-state').textContent=!supported?'Dashboard WIN / LOSS alerts are active. Desktop notifications are unavailable in this browser.':Notification.permission==='denied'?'Dashboard alerts are active. Allow notifications in browser settings for desktop alerts.':Notification.permission==='granted'?'Dashboard alerts are active. Desktop alerts appear when this tab is in the background.':'WIN / LOSS alerts appear in this dashboard automatically.';
+}
+byId('trade-notifications').addEventListener('click',async()=>{if(!('Notification' in window))return;try{if(Notification.permission==='default')await Notification.requestPermission();}catch(_){}renderTradeNotificationPermission();});
+renderTradeNotificationPermission();
