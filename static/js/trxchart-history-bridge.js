@@ -9,6 +9,7 @@ function trxHistoryBridge(destination) {
   if (!receiver) return alert('Allow the sync window to open, then run this bookmark again.');
   const original = window.fetch;
   let headers = null, accepted = false, running = false, stopped = false, timer;
+  const active = new Set();
   const paths = {real:'/api/bet/history', demo:'/api/demo/history'};
   const send = data => receiver.postMessage({type:'trx-history', nonce, ...data}, origin);
   // Preserve large JSON integers before JSON.parse can round issue/order IDs.
@@ -19,6 +20,7 @@ function trxHistoryBridge(destination) {
     }));
   }
   async function read(response, mode) {
+    if (stopped) return;
     if (!response.ok) throw Error(response.status===401 || response.status===403 ? 'TRXChart login expired. Sign in again and reconnect.' : 'History request failed ('+response.status+').');
     const text = await response.text();
     if (text.length > 8*1024*1024) throw Error('History response is too large.');
@@ -34,10 +36,12 @@ function trxHistoryBridge(destination) {
       }
       return clean;
     });
-    send({mode, history:{success:true,list}, captured_at:new Date().toISOString()});
+    if (!stopped) send({mode, history:{success:true,list}, captured_at:new Date().toISOString()});
   }
   function stop() {
     stopped = true; clearInterval(timer);
+    for (const controller of active) controller.abort();
+    active.clear();
     window.removeEventListener('message', receive);
     if (window.fetch === wrapped) window.fetch = original;
     delete window.__trxHistoryBridge; headers = null;
@@ -48,14 +52,16 @@ function trxHistoryBridge(destination) {
     running = true;
     try {
       for (const mode of ['real','demo']) {
+        if (stopped) break;
         const controller = new AbortController();
+        active.add(controller);
         const timeout = setTimeout(()=>controller.abort(),15000);
         try {
           const response = await original.call(window, paths[mode]+'?size=500', {method:'GET',headers,credentials:'same-origin',redirect:'error',signal:controller.signal});
           await read(response,mode);
-        } finally { clearTimeout(timeout); }
+        } finally { clearTimeout(timeout); active.delete(controller); }
       }
-    } catch (error) { send({error:error.name==='AbortError'?'History timed out. Next refresh will retry.':error.message}); }
+    } catch (error) { if (!stopped) send({error:error.name==='AbortError'?'History timed out. Next refresh will retry.':error.message}); }
     finally { running = false; }
   }
   function receive(event) {
