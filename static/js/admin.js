@@ -178,6 +178,28 @@ function renderJournalSync(data){
     return [mode.toUpperCase()+' sync',state+(Number.isFinite(ms)?' · '+date(at):'')];
   }));
 }
+// Trade-only display metrics use verified REAL journal summaries. Never infer provider cutoff.
+function tradeTerminalSummary(data){
+  if(!data||data.mode!=='real'||data.date!==data.today)return;
+  const v=data.summary||{},money=n=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  byId('trade-today-pnl').textContent=(Number(v.pnl)>0?'+':'')+money(v.pnl)+' MMK';
+  byId('trade-today-staked').textContent=money(v.staked)+' MMK';
+  byId('trade-today-count').textContent=String(v.trades||0)+' recorded orders';
+  const finished=Number(v.wins||0)+Number(v.losses||0);
+  byId('trade-today-winrate').textContent=finished?(100*Number(v.wins||0)/finished).toFixed(1)+'%':'—';
+  byId('trade-today-wins').textContent=String(v.wins||0)+' wins / '+String(v.losses||0)+' losses';
+}
+let tradeSummaryBusy=false,tradeSummaryAt=0;
+async function loadTradeTerminalSummary(){
+  if(tradeSummaryBusy||Date.now()-tradeSummaryAt<5000)return;
+  tradeSummaryBusy=true;tradeSummaryAt=Date.now();
+  try{tradeTerminalSummary(await api('/api/admin/trade-journal?mode=real'));}catch(_){/* Unavailable stays unavailable. */}
+  finally{tradeSummaryBusy=false;}
+}
+byId('trade-open-account').addEventListener('click',()=>{
+  const details=byId('trade-account-disclosure');
+  details.open=true;details.scrollIntoView({block:'nearest',behavior:'smooth'});
+});
 function renderJournal(data,fill=false){journalData=data;renderJournalSync(data);byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Win rate',s.wins+s.losses?(100*s.wins/(s.wins+s.losses)).toFixed(1)+'%':'—'],['Wins / losses',s.wins+' / '+s.losses],['WAIT',String(s.pending)],['Orders',String(s.trades)],['Total staked · MMK',cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');renderJournalRows();updateDraftSummary();}
 const tradeCash=value=>Number(value).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const resultLabel=state=>state===1?'WIN':state===0?'LOSS':'PENDING';
@@ -243,6 +265,7 @@ function renderJournalAccount(data){
   }
   journalAccount=data;
   renderAccountBalance(data);
+  if(!data.active||data.status==='expired')byId('trade-account-disclosure').open=true;
   const label={connected:'Connected · server sync ချိတ်ဆက်ပြီး',disconnected:'Not connected · မချိတ်ရသေး',expired:'Login expired · ပြန်ချိတ်ရန်',unavailable:'Sync delayed · ပြန်စမ်းနေသည်',invalid_data:'History format error · ပြန်စမ်းနေသည်',storage:'Session storage error · ပြန်ချိတ်ရန်'}[data.status]||'Connection status unknown';
   byId('journal-account-state').textContent=label+' · Last sync: '+date(data.last_sync)+(data.error?' · '+data.error:'')+(data.active&&!data.worker_alive?' · Sync worker is not running.':'');
   const healthy=data.active&&data.status==='connected'&&data.worker_alive;
@@ -398,7 +421,17 @@ function renderTradeSync(){
 function savedTradeCursor(stream){try{const raw=localStorage.getItem('trx-settlement:'+stream);const n=Number(raw);return raw!==null&&Number.isSafeInteger(n)&&n>=0?n:null;}catch(_){return null;}}
 function saveTradeCursor(stream,cursor){try{localStorage.setItem('trx-settlement:'+stream,String(cursor));}catch(_){} }
 function settlementMessage(row){return row.side+' · '+tradeCash(row.stake)+' MMK · P/L '+(row.pnl===null?'—':tradeCash(row.pnl))+' MMK · Issue '+row.issue;}
+function updateTradeTerminalActivity(rows){
+  const pending=rows.filter(row=>row.state===-1);
+  const amount=pending.reduce((sum,row)=>sum+Number(row.stake||0),0);
+  byId('trade-open-exposure').textContent=tradeCash(amount)+' MMK';
+  byId('trade-open-count').textContent=pending.length+' unsettled account orders';
+  const latest=rows.find(row=>row.issue);
+  byId('trade-round-issue').textContent=latest?.issue||'—';
+  byId('trade-round-state').textContent='CUTOFF NOT VERIFIED';
+}
 function renderTradeActivity(rows){
+  updateTradeTerminalActivity(rows);
   const list=byId('trade-activity');list.replaceChildren();
   if(!rows.length){const li=document.createElement('li');li.className='activity-empty';li.textContent='No REAL trades yet. Your next results will appear here.';list.append(li);quietStatus('trade-latest','No settled REAL results yet.');byId('trade-latest').className='latest-outcome';return;}
   const latest=rows.find(row=>row.state===0||row.state===1);
@@ -418,6 +451,7 @@ async function loadTradeFeed(){
     const data=await api('/api/admin/trade-feed'+query);
     if(!Array.isArray(data.recent)||!Array.isArray(data.events)||!Number.isSafeInteger(data.cursor))throw Error('Invalid settlement feed.');
     renderTradeActivity(data.recent);
+    if(!byId('trade').hidden)loadTradeTerminalSummary();
     renderManualOrders(Array.isArray(data.orders)?data.orders:[]);
     tradeFeedError=null;tradeSync=data.sync||null;renderTradeSync();
     if(!busy&&!byId('journal').hidden&&journalData&&Number.isSafeInteger(data.journal_revision)&&data.journal_revision!==journalData.revision)refreshJournalFromFeed();
