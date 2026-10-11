@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import requests
 from trade_journal import DEFAULT_LIMITS, normalize, merge
+from trxchart_balance import from_page as page_balance, from_json as json_balance
 
 ORIGIN = 'https://trxchart.com'
 FIELDS = ('addTime', 'issueNumber', 'selectType', 'amount', 'profitAmount', 'state',
@@ -80,7 +81,10 @@ class HistorySync:
                 'status': value.get('status', 'disconnected'),
                 'last_sync': value.get('last_sync'), 'connected_at': value.get('connected_at'),
                 'error': value.get('error'), 'interval_seconds': 60,
-                'worker_alive': bool(self.thread and self.thread.is_alive())}
+                'worker_alive': bool(self.thread and self.thread.is_alive()),
+                'balance': value.get('balance'), 'balance_at': value.get('balance_at'),
+                'balance_current': bool(value.get('active') and value.get('balance_current')),
+                'balance_currency': 'MMK'}
 
     def session(self, value=None):
         client = self.session_factory()
@@ -144,6 +148,7 @@ class HistorySync:
         found = re.search(r"(?:const|let|var)\s+_AT\s*=\s*(['\"])([a-zA-Z0-9_.=-]{16,4096})\1", page)
         if not found:
             raise ProviderError('expired', 'token')
+        client.trxchart_balance = page_balance(page)
         return found[2]
 
     def check_login_page(self):
@@ -156,6 +161,9 @@ class HistorySync:
         alive = self.request(client, 'GET', '/api/session-alive')
         if alive.get('logged_out'):
             raise ProviderError('expired', '/api/session-alive')
+        balance = json_balance(alive)
+        if balance is not None:
+            client.trxchart_balance = balance
         incoming, completed, warnings = [], [], {}
         last_failure = None
         for mode in ('real', 'demo'):
@@ -163,7 +171,11 @@ class HistorySync:
             try:
                 # Page tokens may change after a provider request. Obtain the current
                 # token in this same session before reading the second history mode.
+                # Keep the current account balance if the second page omits it.
+                known_balance = getattr(client, 'trxchart_balance', None)
                 mode_token = token if mode == 'real' else self.token(client)
+                if getattr(client, 'trxchart_balance', None) is None:
+                    client.trxchart_balance = known_balance
                 data = self.request(client, 'GET', path, headers={'X-API-Token': mode_token})
             except ProviderError as exc:
                 if exc.code != 'unavailable':
@@ -212,6 +224,10 @@ class HistorySync:
                                     state['revision'], {'action': 'server_history_synced', **counts})
             config.update(cookies=self.cookies(client), active=True, status='connected',
                           last_sync=now, error=' '.join(warnings.values()) or None)
+            balance = getattr(client, 'trxchart_balance', None)
+            config['balance_current'] = balance is not None
+            if balance is not None:
+                config.update(balance=balance, balance_at=now)
             self.save(config, expected, action)
             self.failures = 0
 
@@ -283,6 +299,7 @@ class HistorySync:
             with self.store.lock:
                 current, config = self.read()
                 if current == expected and config.get('active'):
+                    config['balance_current'] = False
                     code = exc.code if isinstance(exc, ProviderError) else 'invalid_data'
                     if code == 'expired':
                         config = {k: config[k] for k in ('account_tag', 'last_sync', 'connected_at') if k in config}

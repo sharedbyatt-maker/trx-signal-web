@@ -751,6 +751,18 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     from trxchart_bet import OrderService, OrderError
     store.orders = OrderService(store.history_sync, store)
 
+    @app.put('/api/admin/trxchart-order/settings')
+    @protect
+    def trxchart_order_settings():
+        try:
+            return jsonify(store.orders.save_permissions(request.get_json(silent=True)))
+        except OrderError as exc:
+            return jsonify(error=str(exc)), exc.status
+        except RuntimeError as exc:
+            return jsonify(error=str(exc)), 409
+        except sqlite3.Error:
+            return jsonify(error='Order settings could not be saved.'), 503
+
     @app.route('/api/admin/trxchart-order', methods=['GET', 'POST'])
     @protect
     def trxchart_order():

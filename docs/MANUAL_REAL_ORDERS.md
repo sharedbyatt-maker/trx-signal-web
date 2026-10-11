@@ -6,18 +6,35 @@ It is explicitly labelled **REAL** and never invoked by the signal engines.
 Demo order placement is unavailable; selecting Demo history disables the buttons.
 No alternate demo endpoint is inferred from the history endpoints.
 
-Orders remain disabled unless the server has `TRX_ORDER_ENABLED=1`. With orders
-enabled, connect TRXChart, select Real history, enter a whole-number MMK amount,
-approve use of real funds, then confirm BIG or SMALL. Consent clears after every
-submitted attempt. Login and CSRF protections apply to the endpoint.
+Manual orders are enabled by default with no local amount, daily count, daily
+total or spacing cap. Connect TRXChart, select Real history, enter a positive
+whole-number MMK amount, then confirm BIG or SMALL. The extra consent checkbox
+has been removed; each order still requires its own real-money confirmation.
+Login, CSRF, connected-session and request-ID checks remain in place.
+
+The dashboard's **Enable all manual orders** button persistently enables orders
+and removes all four local caps, including older environment settings. **Disable
+manual orders** disables them. These settings use the same SQLite database and
+revision checks as other private admin settings; they survive worker restarts.
+Provider wallet balance and provider rules still determine whether an order is
+accepted. No order is sent when either permission button is used.
 
 | Environment variable | Default |
 | --- | --- |
-| `TRX_ORDER_ENABLED` | disabled |
-| `TRX_ORDER_MAX_AMOUNT` | 100 MMK |
-| `TRX_ORDER_DAILY_MAX_COUNT` | 30 attempts |
-| `TRX_ORDER_DAILY_MAX_TOTAL` | 3,000 MMK |
-| `TRX_ORDER_MIN_INTERVAL_SEC` | 30 seconds |
+| `TRX_ORDER_ENABLED` | `1` (enabled) |
+| `TRX_ORDER_MAX_AMOUNT` | `0` (unlimited) |
+| `TRX_ORDER_DAILY_MAX_COUNT` | `0` (unlimited) |
+| `TRX_ORDER_DAILY_MAX_TOTAL` | `0` (unlimited) |
+| `TRX_ORDER_MIN_INTERVAL_SEC` | `0` (no spacing requirement) |
+
+Explicit environment caps remain available unless overridden by the dashboard.
+**Total Amount** shows the authenticated provider's REAL account balance in MMK,
+with its update time. It never uses cumulative stakes or journal profit/loss.
+If the provider does not report a recognized balance, the card shows unavailable;
+a previous balance is labelled as last known when it cannot be refreshed.
+Balance/session metadata stays encrypted in private account storage and is
+available only to authenticated admins. Order outcomes wake the history worker
+to refresh history and balance; this never retries an order.
 
 Limits count all reserved attempts, including rejected and uncertain results.
 The calendar day is Asia/Bangkok (UTC+7); cooldown also spans midnight. Limits,

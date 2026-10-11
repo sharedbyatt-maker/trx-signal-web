@@ -1,4 +1,4 @@
-"""Explicit, disabled-by-default REAL orders; never called by signal engines.
+"""Explicit manual REAL orders; never called by signal engines.
 
 The known /api/bet endpoint is not a demo endpoint. Each attempt is durably
 reserved before POST, is never retried, and has a client-generated request ID.
@@ -48,13 +48,36 @@ class OrderService:
                        'outcome TEXT NOT NULL, http_status INTEGER)')
             db.execute('CREATE INDEX IF NOT EXISTS trxchart_orders_day ON trxchart_orders(day)')
 
-    @staticmethod
-    def limits():
-        return {'enabled': os.environ.get('TRX_ORDER_ENABLED') == '1', 'mode': 'real',
-                'max_amount': _env_int('TRX_ORDER_MAX_AMOUNT', 100, 1, 1000000),
-                'daily_max_count': _env_int('TRX_ORDER_DAILY_MAX_COUNT', 30, 1, 1000),
-                'daily_max_total': _env_int('TRX_ORDER_DAILY_MAX_TOTAL', 3000, 1, 100000000),
-                'min_interval_sec': _env_int('TRX_ORDER_MIN_INTERVAL_SEC', 30, 10, 3600)}
+    def limits(self):
+        # Zero means no local cap. The owner can re-enable all permissions from
+        # the dashboard even when an older environment configuration disabled it.
+        cfg = {'enabled': os.environ.get('TRX_ORDER_ENABLED', '1') == '1', 'mode': 'real',
+               'max_amount': _env_int('TRX_ORDER_MAX_AMOUNT', 0, 0, 1000000),
+               'daily_max_count': _env_int('TRX_ORDER_DAILY_MAX_COUNT', 0, 0, 1000),
+               'daily_max_total': _env_int('TRX_ORDER_DAILY_MAX_TOTAL', 0, 0, 100000000),
+               'min_interval_sec': _env_int('TRX_ORDER_MIN_INTERVAL_SEC', 0, 0, 3600)}
+        state = self.store.private_get('trxchart_order_permissions')
+        cfg['settings_revision'] = state['revision']
+        if state['value']:
+            try:
+                value = json.loads(state['value'])
+                if not isinstance(value, dict) or type(value.get('enabled')) is not bool or type(value.get('unrestricted')) is not bool:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise OrderError('Order settings are unreadable. Use Enable all manual orders to restore them.', 503) from None
+            cfg['enabled'] = value['enabled']
+            if value['unrestricted']:
+                for key in ('max_amount', 'daily_max_count', 'daily_max_total', 'min_interval_sec'):
+                    cfg[key] = 0
+        cfg['unrestricted'] = not any(cfg[k] for k in ('max_amount', 'daily_max_count', 'daily_max_total', 'min_interval_sec'))
+        return cfg
+
+    def save_permissions(self, data):
+        if not isinstance(data, dict) or type(data.get('enabled')) is not bool or type(data.get('unrestricted')) is not bool:
+            raise OrderError('Provide the manual-order enabled and unrestricted settings.')
+        self.store.private_save('trxchart_order_permissions', json.dumps({'enabled': data['enabled'], 'unrestricted': data['unrestricted']}),
+                                data.get('revision'), {'enabled': data['enabled'], 'unrestricted': data['unrestricted']})
+        return self.status()
 
     def _time(self):
         value = self.now()
@@ -113,8 +136,10 @@ class OrderService:
             raise OrderError('Confirm that this order uses your REAL balance.')
         if direction not in ('BIG', 'SMALL'):
             raise OrderError('Direction must be BIG or SMALL.')
-        if type(amount) is not int or not 1 <= amount <= cfg['max_amount']:
-            raise OrderError(f'Amount must be a whole number from 1 to {cfg["max_amount"]}.')
+        if type(amount) is not int or not 1 <= amount <= 9007199254740991:
+            raise OrderError('Amount must be a positive whole number that can be represented exactly.')
+        if cfg['max_amount'] and amount > cfg['max_amount']:
+            raise OrderError(f'Amount exceeds the configured per-order limit of {cfg["max_amount"]}.')
         try:
             if not isinstance(request_id, str) or len(request_id) != 36:
                 raise ValueError()
@@ -151,9 +176,9 @@ class OrderService:
                     usage = self._usage(db, day, at, cfg)
                     if usage['retry_after_sec']:
                         raise OrderError('Too soon after the previous attempt. Wait before ordering again.', 429)
-                    if usage['today_count'] >= cfg['daily_max_count'] or usage['today_total'] + amount > cfg['daily_max_total']:
+                    if (cfg['daily_max_count'] and usage['today_count'] >= cfg['daily_max_count']) or (cfg['daily_max_total'] and usage['today_total'] + amount > cfg['daily_max_total']):
                         raise OrderError('Daily order limit reached.', 429)
-                    if amount > cfg['max_amount']:
+                    if cfg['max_amount'] and amount > cfg['max_amount']:
                         raise OrderError('The per-order limit changed. Refresh before ordering.')
                     # Keep a bounded ledger; today's limits and the latest cooldown survive.
                     cutoff = (datetime.fromtimestamp(at, BANGKOK) - timedelta(days=90)).date().isoformat()
@@ -167,6 +192,9 @@ class OrderService:
                 db.execute('UPDATE trxchart_orders SET outcome=?,http_status=? WHERE request_id=?',
                            (outcome, status, request_id))
                 self._audit(db, request_id, direction, amount, outcome, status, self._time()[1])
+            wake = getattr(self.sync, 'wake', None)
+            if wake is not None:
+                wake.set()  # Refresh provider balance/history without ever retrying the order.
             return {**self._result(request_id, outcome, status), **self.status()}
         finally:
             self.sync.operation.release()
