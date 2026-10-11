@@ -575,11 +575,13 @@ else:
     os.environ.pop("TRX_NO_ENGINE", None)
     core.start_engine()
     l1_capital_service.start()
+    admin_store.history_sync.start()
 
 
 if __name__ == "__main__":
     core.start_engine()
     l1_capital_service.start()
+    admin_store.history_sync.start()
     print("=" * 52, flush=True)
     print("📈 FOREX-STYLE CONFLUENCE ENGINE — SHARED DECISION POLICY", flush=True)
     print("   Live + Backtest → decision.decide_signal()", flush=True)

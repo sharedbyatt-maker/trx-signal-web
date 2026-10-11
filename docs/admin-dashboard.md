@@ -248,3 +248,11 @@ still requires the user to activate the connection bookmark in their browser;
 local fixtures validate transport, settlement, credentials isolation and exact IDs.
 
 Connection setup now offers a draggable bookmark on desktop, with a copy-URL fallback for mobile. Clicking the generated link inside the admin page only shows setup guidance; it does not execute provider code. Real/Demo status cards show each mode’s last successful saved sync, and mark updates older than 150 seconds as paused/delayed. Recent data is not a claim that the browser connection remains active.
+
+## Server account history sync
+
+Trade Results now provides a private Connect TRXChart form as the primary path. It uses the provider’s observed POST `/api/auth/login` payload (`phone`, `password`, optional `twofa`), cookie session, and page-injected `X-API-Token`. Passwords and 2FA are used once and never persisted. Session cookies and the API token are encrypted in private storage, excluded from public responses, logs and general backups. This is a full account session, not a provider-issued read-only scope; explicit consent is required before connection. Provider login can invalidate other 6Lottery/Telegram/TRXChart sessions.
+
+The isolated worker fetches the page token, checks `/api/session-alive`, and reads Real and Demo history at 60-second intervals with capped exponential retry backoff. Both histories validate before one journal merge, preserving daily targets and exact large identifiers. The transport allowlist permits only login and read-only GETs; order endpoints and redirects are forbidden. Expired sessions stop syncing without automatic re-login. Disconnect removes server credentials and invalidates in-flight imports through a revision lease, preserving journal records. A different account cannot reuse an already linked journal.
+
+The worker starts after Gunicorn fork and is separate from L1/12-Step and the public feed. It works with browser tabs closed while the server remains running. Render Free can sleep and lose local storage; this is not a guarantee of permanent or 24-hour account connectivity. After expiry or storage reset users reconnect. Browser bookmark sync remains an advanced fallback. Live provider connection still requires the user’s explicit form consent and credential entry; fixture tests do not prove a live account has connected.
