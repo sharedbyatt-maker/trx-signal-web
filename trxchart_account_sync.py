@@ -63,6 +63,7 @@ class HistorySync:
         self.last_wallet_sync = 0
         self.last_fetch_ms = None
         self.trade_view_until = 0
+        self.full_refresh_requested = False
 
     def follow_orders(self):
         # Faster read-only checks for three minutes; never resubmit a bet.
@@ -422,8 +423,11 @@ class HistorySync:
             expected, config = self.read()
             if not config.get('active'):
                 return
+            with self.thread_lock:
+                full_refresh = self.full_refresh_requested
+                self.full_refresh_requested = False
             with self.session(config) as client:
-                if self.fast():
+                if self.fast() and not full_refresh:
                     incoming = self.fast_history(client, config)
                     self.commit(client, config, expected, incoming, 'synced', ['real'], {}, wallet=False)
                     self.fast_wallet(client)
@@ -468,8 +472,16 @@ class HistorySync:
             self.thread = threading.Thread(target=loop, name='trxchart-history-sync', daemon=True)
             self.thread.start()
 
-    def refresh(self):
+    def refresh(self, mode='real'):
+        if mode not in ('real', 'demo'):
+            raise ValueError('Choose real or demo history.')
         if not self.public()['active']:
             raise ValueError('Connect TRXChart first.')
+        if mode == 'demo':
+            with self.thread_lock:
+                self.full_refresh_requested = True
+        else:
+            self.watch_trade()
+        self.last_wallet_sync = 0
         self.wake.set()
         return self.public()

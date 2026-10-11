@@ -177,16 +177,18 @@ function renderJournalSync(data){
     return [mode.toUpperCase()+' sync',state+(Number.isFinite(ms)?' · '+date(at):'')];
   }));
 }
-function renderJournal(data,fill=false){journalData=data;renderJournalSync(data);byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Wins / losses',s.wins+' / '+s.losses],['Pending',String(s.pending)],['Orders / staked MMK',s.trades+' / '+cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');renderJournalRows();updateDraftSummary();}
+function renderJournal(data,fill=false){journalData=data;renderJournalSync(data);byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Win rate',s.wins+s.losses?(100*s.wins/(s.wins+s.losses)).toFixed(1)+'%':'—'],['Wins / losses',s.wins+' / '+s.losses],['WAIT',String(s.pending)],['Orders',String(s.trades)],['Total staked · MMK',cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');renderJournalRows();updateDraftSummary();}
 const tradeCash=value=>Number(value).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const resultLabel=state=>state===1?'WIN':state===0?'LOSS':'PENDING';
 const resultClass=state=>state===1?'win':state===0?'loss':'pending';
 function renderJournalRows(){
   if(!journalData)return;
   const filter=byId('journal-result-filter').value;
-  const rows=journalData.rows.filter(row=>filter==='all'||String(row.state)===filter);
+  const search=byId('journal-search').value.trim().toUpperCase();
+  const rows=journalData.rows.filter(row=>(filter==='all'||String(row.state)===filter)&&(!search||(row.issue+' '+row.side).toUpperCase().includes(search)));
+  byId('journal-visible-count').textContent=rows.length+' of '+journalData.rows.length+' displayed records';
   table('journal-rows',rows,row=>[new Date(row.at).toLocaleString('en-GB',{timeZone:journalData.limits.timezone}),row.issue,row.side,tradeCash(row.stake),resultLabel(row.state),row.pnl===null?'—':tradeCash(row.pnl)]);
-  if(!rows.length)return;
+  if(!rows.length){byId('journal-rows').querySelector('td').textContent=journalData.rows.length?'No matching records. Clear filters or choose another date.':'No records yet for this date / mode.';return;}
   for(const [index,tr] of Array.from(byId('journal-rows').children).entries()){
     const row=rows[index],pill=document.createElement('span');pill.className='result-pill '+resultClass(row.state);pill.textContent=resultLabel(row.state);tr.children[4].replaceChildren(pill);
     if(row.pnl!==null)tr.children[5].className=row.pnl<0?'negative':row.pnl>0?'positive':'';
@@ -195,7 +197,8 @@ function renderJournalRows(){
 }
 byId('journal-result-filter').addEventListener('change',renderJournalRows);
 async function loadJournal(){renderJournal(await api(journalURL()),true);await loadJournalAccount();}
-byId('journal-refresh').addEventListener('click',()=>run(loadJournal,'Journal refreshed. Saved targets loaded.'));
+byId('journal-search').addEventListener('input',renderJournalRows);
+byId('journal-clear-search').addEventListener('click',()=>{byId('journal-search').value='';byId('journal-result-filter').value='all';renderJournalRows();});
 byId('journal-today').addEventListener('click',()=>run(async()=>{byId('journal-date').value='';await loadJournal();},'Today journal loaded.'));
 for(const id of ['journal-mode','journal-date'])byId(id).addEventListener('change',()=>{updateOrderControls();run(loadJournal,'Selected history loaded. Saved targets loaded.');});
 byId('journal-limits-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{if(!journalData)throw Error('Refresh journal first.');renderJournal(await api(journalURL(),'PUT',{revision:journalData.revision,limits:journalLimits()}),true);},'Daily targets saved. Strategy rules unchanged.');});
@@ -206,7 +209,7 @@ run(async()=>{await loadSettings();const results=await Promise.allSettled([refre
 
 function restoreReady(){return settings&&strategyData.l1&&strategyData.twelve&&policyData&&messageData;}
 function updateMaintenanceControls(){for(const btn of document.querySelectorAll('[data-action]'))btn.disabled=busy||maintenanceBusy;}
-function updateReadyControls(){updateMaintenanceControls();updateOrderControls();for(const id of ['journal-server-refresh','journal-disconnect'])byId(id).disabled=!journalAccount?.active;for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
+function updateReadyControls(){updateMaintenanceControls();updateOrderControls();for(const id of ['trade-refresh','journal-refresh'])byId(id).disabled=busy||workspaceRefreshing;for(const id of ['journal-server-refresh','journal-disconnect'])byId(id).disabled=!journalAccount?.active;for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
 
 byId('journal-copy-sync').addEventListener('click',()=>run(async()=>{
   const response=await fetch('/static/js/trxchart-history-bridge.js',{credentials:'same-origin'});
@@ -230,7 +233,7 @@ setInterval(async()=>{
 let reconnectFormOpen=false;
 function renderJournalAccount(data){
   if(!data||typeof data.active!=='boolean'){
-    journalAccount=null;renderAccountBalance(null);
+    journalAccount=null;renderAccountBalance(null);byId('trade-account').classList.remove('account-connected');
     byId('journal-connect-form').hidden=false;
     byId('trade-connection-badge').textContent='CONNECTION UNKNOWN';
     byId('trade-connection-badge').className='result-pill pending';
@@ -242,6 +245,7 @@ function renderJournalAccount(data){
   const label={connected:'Connected · server sync ချိတ်ဆက်ပြီး',disconnected:'Not connected · မချိတ်ရသေး',expired:'Login expired · ပြန်ချိတ်ရန်',unavailable:'Sync delayed · ပြန်စမ်းနေသည်',invalid_data:'History format error · ပြန်စမ်းနေသည်',storage:'Session storage error · ပြန်ချိတ်ရန်'}[data.status]||'Connection status unknown';
   byId('journal-account-state').textContent=label+' · Last sync: '+date(data.last_sync)+(data.error?' · '+data.error:'')+(data.active&&!data.worker_alive?' · Sync worker is not running.':'');
   const healthy=data.active&&data.status==='connected'&&data.worker_alive;
+  byId('trade-account').classList.toggle('account-connected',Boolean(healthy&&!reconnectFormOpen));
   byId('journal-connect-form').hidden=Boolean(healthy&&!reconnectFormOpen);
   byId('trade-account-help').textContent=healthy?'အကောင့် ချိတ်ထားပါသည်။ Email / password ပြန်ထည့်လိုပါက Connect / reconnect account ကိုနှိပ်ပါ။':data.active?'အကောင့် session ရှိသေးပေမယ့် result sync နောက်ကျနေသည်။ Status ကိုစစ်ပါ၊ လိုအပ်လျှင် အောက်က form ဖြင့် ပြန်ချိတ်ပါ။':'အကောင့် မချိတ်ထားပါ။ အောက်တွင် TRXChart Phone / Email နှင့် Password ထည့်ပြီး Connect TRXChart ကိုနှိပ်ပါ။';
   byId('journal-server-refresh').disabled=!data.active;
@@ -332,14 +336,43 @@ for(const [id,side] of [['order-big','BIG'],['order-small','SMALL']])byId(id).ad
 // It never places or retries an order and stores only an opaque stream/cursor locally.
 let tradeFeedBusy=false,tradeFeedStream=null,tradeFeedCursor=null;
 let manualOrders=[],tradeSync=null,tradeFeedError=null;
+let journalFeedBusy=false,workspaceRefreshing=false;
+async function refreshJournalFromFeed(){if(journalFeedBusy)return;journalFeedBusy=true;const url=journalURL();try{const data=await api(url);if(!busy&&url===journalURL())renderJournal(data,false);}catch(error){byId('journal-refresh-state').textContent='Results update delayed: '+error.message;}finally{journalFeedBusy=false;}}
+async function refreshWorkspace(view){
+  if(busy||workspaceRefreshing||leavingAdmin)return;
+  workspaceRefreshing=true;const mode=view==='trade'?'real':byId('journal-mode').value,url=journalURL(),target=byId(view==='trade'?'trade-refresh-state':'journal-refresh-state');
+  const before=journalData?.synced_at?.[mode],balanceBefore=journalAccount?.balance_at;let historyUpdated=false;
+  for(const id of ['trade-refresh','journal-refresh']){byId(id).disabled=true;byId(id).setAttribute('aria-busy','true');}
+  target.textContent='Refreshing '+mode.toUpperCase()+' history'+(view==='trade'?' and balance':'')+'…';
+  try{
+    const connected=Boolean(journalAccount?.active);
+    if(connected)await api('/api/admin/trxchart-account/refresh','POST',{mode});
+    const until=Date.now()+12000;
+    do{
+      const data=await api(url);if(!busy&&url===journalURL())renderJournal(data,false);
+      historyUpdated=Boolean(data.synced_at?.[mode]&&data.synced_at[mode]!==before);
+      await loadTradeFeed();await loadJournalAccount();
+      const balanceUpdated=view!=='trade'||(journalAccount?.balance_current&&journalAccount.balance_at!==balanceBefore);
+      if(!connected||(historyUpdated&&balanceUpdated))break;
+      if(Date.now()>=until)break;await new Promise(resolve=>setTimeout(resolve,750));
+    }while(!leavingAdmin);
+    target.textContent=!connected?'Saved history refreshed. Connect TRXChart for provider updates.':historyUpdated?mode.toUpperCase()+' history updated'+(view==='trade'&&!journalAccount?.balance_current?' · balance is last known':'')+'. Checked '+new Date().toLocaleTimeString():'Saved history reloaded; provider update still pending. '+(journalAccount?.error||'Watch the sync status.');
+  }catch(error){target.textContent='Refresh failed: '+error.message;}
+  finally{workspaceRefreshing=false;for(const id of ['trade-refresh','journal-refresh']){byId(id).disabled=busy;byId(id).removeAttribute('aria-busy');}}
+}
+byId('trade-refresh').addEventListener('click',()=>refreshWorkspace('trade'));
+byId('journal-refresh').addEventListener('click',()=>refreshWorkspace('journal'));
 const optimisticOrders=new Map();
 function renderManualOrders(rows){
   manualOrders=rows;
   for(const row of rows)optimisticOrders.delete(row.id);
   const all=[...optimisticOrders.values(),...rows].sort((a,b)=>new Date(b.at)-new Date(a.at));
   const list=byId('trade-orders');list.replaceChildren();
-  const waiting=all.filter(row=>row.state===-1&&['accepted','pending'].includes(row.outcome));
-  byId('trade-wait-count').textContent=waiting.length+' WAIT';
+  const ageOf=row=>Math.max(0,(Date.now()-new Date(row.at).valueOf())/1000);
+  const waiting=all.filter(row=>row.state===-1&&['accepted','pending'].includes(row.outcome)&&ageOf(row)<=180);
+  const review=all.filter(row=>row.state===-1&&['accepted','pending'].includes(row.outcome)&&ageOf(row)>180);
+  byId('trade-submissions').hidden=!all.length;
+  byId('trade-wait-count').textContent=waiting.length+' WAIT'+(review.length?' · '+review.length+' CHECK HISTORY':'');
   if(!all.length){const li=document.createElement('li');li.className='activity-empty';li.textContent='Your next order will appear here immediately as WAIT.';list.append(li);return;}
   for(const row of all){
     const li=document.createElement('li'),info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small'),result=document.createElement('div'),pill=document.createElement('span'),note=document.createElement('small');
@@ -349,7 +382,7 @@ function renderManualOrders(rows){
     pill.className='result-pill '+(row.state===1?'win':row.state===0||row.outcome==='rejected'?'loss':'pending');pill.textContent=label;
     note.textContent=row.state!==-1?(row.pnl!==null?(row.pnl>0?'+':'')+tradeCash(row.pnl)+' MMK': 'Confirmed round result'):row.outcome==='pending'?'Sending · never retried':row.outcome==='accepted'?'Submitted · awaiting provider result':row.outcome==='rejected'?'Provider rejected this order':row.outcome==='not_sent'?'Order was not submitted':'Check REAL history before another order';
     if(label==='CHECK HISTORY')note.textContent='Result not linked yet. Check verified account activity below.';
-    result.className='activity-result';result.append(pill,note);li.append(info,result);list.append(li);
+    result.className='activity-result';result.append(pill,note);if(label==='CHECK HISTORY'){const link=document.createElement('a');link.href='#journal';link.textContent='Find in Results ↗';link.addEventListener('click',()=>{byId('journal-search').value=row.issue||row.side;renderJournalRows();});result.append(link);}li.append(info,result);list.append(li);
   }
 }
 function renderTradeSync(){
@@ -370,22 +403,23 @@ function renderTradeActivity(rows){
   const latest=rows.find(row=>row.state===0||row.state===1);
   byId('trade-latest').textContent=latest?resultLabel(latest.state)+' · '+latest.side+' · '+(latest.pnl===null?'—':tradeCash(latest.pnl))+' MMK':'Waiting for pending orders to settle…';
   byId('trade-latest').className='latest-outcome '+(latest?resultClass(latest.state):'pending');
-  for(const row of rows.slice(0,6)){
+  for(const row of rows.slice(0,12)){
     const li=document.createElement('li'),info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small'),result=document.createElement('div'),pill=document.createElement('span'),pnl=document.createElement('small');
     title.textContent=row.side+' · '+tradeCash(row.stake)+' MMK';detail.textContent=row.issue+' · '+date(row.at);info.append(title,detail);
-    pill.className='result-pill '+resultClass(row.state);pill.textContent=resultLabel(row.state);pnl.textContent=row.pnl===null?'Awaiting settlement':(row.pnl>0?'+':'')+tradeCash(row.pnl)+' MMK';pnl.className=row.pnl<0?'negative':row.pnl>0?'positive':'';result.className='activity-result';result.append(pill,pnl);li.append(info,result);list.append(li);
+    pill.className='result-pill '+resultClass(row.state);pill.textContent=row.state===-1?'WAIT':resultLabel(row.state);pnl.textContent=row.pnl===null?'Awaiting settlement':(row.pnl>0?'+':'')+tradeCash(row.pnl)+' MMK';pnl.className=row.pnl<0?'negative':row.pnl>0?'positive':'';result.className='activity-result';result.append(pill,pnl);li.append(info,result);list.append(li);
   }
 }
 async function loadTradeFeed(){
   if(tradeFeedBusy||leavingAdmin)return;
   tradeFeedBusy=true;
   try{
-    const params=new URLSearchParams();if(tradeFeedStream&&tradeFeedCursor!==null){params.set('stream',tradeFeedStream);params.set('after',String(tradeFeedCursor));}if(!byId('trade').hidden)params.set('watch','1');const query=params.size?'?'+params:'';
+    const params=new URLSearchParams();if(tradeFeedStream&&tradeFeedCursor!==null){params.set('stream',tradeFeedStream);params.set('after',String(tradeFeedCursor));}if(!byId('trade').hidden||(!byId('journal').hidden&&byId('journal-mode').value==='real'))params.set('watch','1');const query=params.size?'?'+params:'';
     const data=await api('/api/admin/trade-feed'+query);
     if(!Array.isArray(data.recent)||!Array.isArray(data.events)||!Number.isSafeInteger(data.cursor))throw Error('Invalid settlement feed.');
     renderTradeActivity(data.recent);
     renderManualOrders(Array.isArray(data.orders)?data.orders:[]);
     tradeFeedError=null;tradeSync=data.sync||null;renderTradeSync();
+    if(!busy&&!byId('journal').hidden&&journalData&&Number.isSafeInteger(data.journal_revision)&&data.journal_revision!==journalData.revision)refreshJournalFromFeed();
     if(data.stream!==tradeFeedStream){
       tradeFeedStream=data.stream;tradeFeedCursor=data.stream?savedTradeCursor(data.stream):null;
       if(tradeFeedCursor===null||tradeFeedCursor>data.cursor)tradeFeedCursor=data.cursor;

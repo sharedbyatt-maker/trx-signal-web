@@ -722,13 +722,14 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         if after is not None and (not after.isascii() or not after.isdecimal() or len(after) > 15):
             return jsonify(error='Invalid settlement cursor.'), 400
         try:
-            _, journal = journal_read()
+            revision, journal = journal_read()
             if request.args.get('watch') == '1':
                 store.history_sync.watch_trade()
             result = feed(journal, int(after) if after is not None else None,
                           request.args.get('stream'))
             result['orders'] = store.orders.recent(journal)
             result['sync'] = store.history_sync.timing()
+            result['journal_revision'] = revision
             return jsonify(result)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
@@ -763,7 +764,10 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     @protect
     def refresh_trxchart_account():
         try:
-            return jsonify(store.history_sync.refresh())
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                raise ValueError('Provide a history refresh request.')
+            return jsonify(store.history_sync.refresh(data.get('mode', 'real')))
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
 

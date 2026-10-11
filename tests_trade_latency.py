@@ -219,3 +219,29 @@ def test_invalid_provider_field_diagnostic_never_echoes_private_row():
     with pytest.raises(ProviderError) as caught:
         HistorySync.provider_rows({'success': True, 'list': [row]}, 'real')
     assert 'SECRET' not in str(caught.value) and 'field:' in str(caught.value)
+
+
+def test_manual_refresh_modes_and_feed_revision_are_private(admin):
+    client, store, provider = setup(admin)
+    path = '/api/admin/trxchart-account/refresh'
+    assert client.post(path, json={'mode': 'demo'}).status_code == 401
+    login(client)
+    client.post('/api/admin/trxchart-account', json=connect_body(), headers=headers(client))
+    assert client.post(path, json={'mode': 'demo'}).status_code == 403
+    assert client.post(path, json={'mode': 'invalid'}, headers=headers(client)).status_code == 400
+    assert not store.history_sync.full_refresh_requested
+    result = client.post(path, json={'mode': 'demo'}, headers=headers(client))
+    assert result.status_code == 200 and store.history_sync.full_refresh_requested
+    assert provider.calls[-1][:2] == ('GET', '/api/user/info')  # handler only queues reads
+    data = client.get('/api/admin/trade-feed').json
+    assert data['journal_revision'] == store.private_get('trade_journal')['revision']
+    store.history_sync.watch_trade();provider.calls.clear()
+    store.history_sync.sync_once()
+    assert not store.history_sync.full_refresh_requested
+    assert ('GET', '/api/demo/history?size=500') in [c[:2] for c in provider.calls]
+    assert all(c[0] == 'GET' for c in provider.calls)
+    provider.calls.clear()
+    assert client.post(path, json={'mode': 'real'}, headers=headers(client)).status_code == 200
+    store.history_sync.sync_once()
+    assert ('GET', '/api/demo/history?size=500') not in [c[:2] for c in provider.calls]
+    assert ('GET', '/api/bet/history?size=500') in [c[:2] for c in provider.calls]
