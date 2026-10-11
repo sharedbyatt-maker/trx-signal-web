@@ -81,9 +81,13 @@ are inside a collapsed disclosure. Trade Results contains date/mode filters,
 daily summary and a WIN / LOSS / Pending history filter; reporting settings and
 import/export tools are collapsed separately.
 
-Accepted or uncertain manual orders wake bounded five-second read-only REAL
-history checks for three minutes. Normal full-mode sync remains once per minute;
-provider failures keep the existing backoff. These checks never repeat an order.
+Trade view heartbeats activate two-second read-only REAL history checks.
+Accepted or uncertain manual orders keep this fast path active for three minutes
+after leaving Trade. REAL results commit before wallet work; wallet reads use a
+separate fifteen-second cadence and Demo is excluded from the fast path. A cached
+API token avoids repeated page fetches; a 401/403 permits one read-only token
+refresh. Fast-path failures retry at 4/8/15 seconds, never minutes. Idle full-mode
+sync remains once per minute with bounded backoff. These checks never repeat an order.
 Notifications require a provider-confirmed settlement, so their timing depends
 on provider publication and server/browser availability.
 
@@ -91,9 +95,26 @@ New REAL settlements are persisted atomically with the encrypted history and
 exposed by authenticated GET `/api/admin/trade-feed`. The first sync is a silent
 baseline. Pending-to-settled changes and later confirmed trades create bounded,
 monotonic events; Demo and imported historical results do not produce alerts.
-The dashboard polls this local feed every 2.5 seconds across admin pages, with
+The dashboard polls this local feed every second across admin pages, including
+while another admin action is busy, with
 an opaque stream/cursor for reload deduplication. Optional desktop notifications
 require an explicit user click and browser permission; they appear while the
 open dashboard tab is in the background. This is not a push service after the
 browser is closed. Alerts cover REAL account results, including activity placed
 elsewhere; no unverified match to an internal order request ID is claimed.
+
+
+Your orders appears immediately as WAIT before the POST response, then reads the
+durable request ledger on every feed update. Provider acceptance is not a WIN.
+Only an explicit provider order ID with matching side and stake, or an accepted
+receipt with a verified round and side, links a settlement. A round-only match
+does not assert a payout. Without a receipt, the card directs the user to verified
+account activity instead of guessing by amount/time. Rejected requests show
+REJECTED; unavailable responses show UNCERTAIN and are never automatically retried.
+The connection panel is above the order controls, exposes Phone / Email and
+Password whenever disconnected or unhealthy, and offers Connect / reconnect
+account without first deleting the existing session. Connection status and LIVE
+use provider sync timestamps; successful local feed reads do not reset freshness.
+Pending draw placeholders are treated as unpublished numbers. Conflicting old
+settled records are held unchanged with a warning while unrelated valid records
+continue updating; strict manual import validation remains unchanged.

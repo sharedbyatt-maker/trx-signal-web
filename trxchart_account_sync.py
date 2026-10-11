@@ -29,8 +29,9 @@ def stamp():
 
 
 class ProviderError(Exception):
-    def __init__(self, code, stage=None, status=None):
+    def __init__(self, code, stage=None, status=None, field=None):
         self.code = code
+        self.stage, self.status = stage, status
         # Only fixed stage labels and integer HTTP statuses can reach the UI.
         stages = {'/login': 'login page', '/api/auth/login': 'account login',
                   '/': 'account page', '/api/session-alive': 'session check',
@@ -43,6 +44,8 @@ class ProviderError(Exception):
             message = f'TRXChart {detail} failed{suffix}. ' + MESSAGES[code]
         else:
             message = MESSAGES[code]
+        if field in ('time', 'issue', 'side', 'state', 'amount', 'payout', 'number', 'order ID'):
+            message += ' Check provider history field: ' + field + '.'
         super().__init__(message)
 
 
@@ -57,15 +60,36 @@ class HistorySync:
         self.failures = 0
         self.follow_until = 0
         self.last_full_sync = 0
+        self.last_wallet_sync = 0
+        self.last_fetch_ms = None
+        self.trade_view_until = 0
 
     def follow_orders(self):
         # Faster read-only checks for three minutes; never resubmit a bet.
         self.follow_until = time.monotonic() + 180
         self.wake.set()
 
+    def order_sent(self, client, token, config, expected, outcome):
+        with self.store.lock:
+            if self.store.private_get('trxchart_account')['revision'] != expected:
+                return  # A disconnect must win over this in-flight POST.
+            config.update(cookies=self.cookies(client), token=token)
+            if outcome != 'rejected':
+                config['balance_current'] = False
+            self.save(config, expected, 'order_session_updated')
+
+    def watch_trade(self):
+        was_fast = self.fast()
+        self.trade_view_until = time.monotonic() + 20
+        if not was_fast:
+            self.wake.set()
+
+    def fast(self):
+        return time.monotonic() < max(self.follow_until, self.trade_view_until)
+
     def poll_delay(self):
-        if not self.failures and time.monotonic() < self.follow_until:
-            return 5
+        if self.fast():
+            return min(15, 2 * 2 ** min(self.failures, 3))
         return min(900, 60 * 2 ** min(self.failures, 4))
 
     def read(self):
@@ -99,6 +123,63 @@ class HistorySync:
                 'balance': value.get('balance'), 'balance_at': value.get('balance_at'),
                 'balance_current': bool(value.get('active') and value.get('balance_current')),
                 'balance_currency': 'MMK'}
+
+    def timing(self):
+        public = self.public()
+        return {'last_sync': public['last_sync'], 'status': public['status'],
+                'active': public['active'], 'error': public['error'],
+                'worker_alive': public['worker_alive'], 'interval_seconds': self.poll_delay(),
+                'provider_fetch_ms': self.last_fetch_ms}
+
+    @staticmethod
+    def provider_rows(data, mode):
+        rows = data.get('list')
+        if data.get('success') is not True or not isinstance(rows, list) or len(rows) > 5000:
+            raise ProviderError('invalid_data')
+        clean = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ProviderError('invalid_data')
+            item = {key: row[key] for key in FIELDS if key in row}
+            for key in ('issueNumber', 'orderId', 'orderNumber', 'id'):
+                if type(item.get(key)) is int:
+                    item[key] = str(item[key])
+            if item.get('state') in ('-1', '0', '1'):
+                item['state'] = int(item['state'])
+            # An unclosed round has no published draw number. Providers may send
+            # -1, empty strings or other placeholders while an order is pending.
+            if type(item.get('state')) is int and item['state'] == -1:
+                item['number'] = None
+            elif item.get('number') in (-1, '-1', '', '-'):
+                item['number'] = None
+            clean.append(item)
+        try:
+            return normalize(clean, mode, 'Asia/Yangon') if clean else []
+        except (ValueError, TypeError) as exc:
+            reasons = {'addTime': 'time', 'issueNumber': 'issue', 'BIG / SMALL': 'side',
+                       'state must': 'state', 'Stake': 'amount', 'monetary': 'payout',
+                       'Result number': 'number', 'order identifier': 'order ID',
+                       'Duplicate or ambiguous': 'order ID'}
+            field = next((value for key, value in reasons.items() if key in str(exc)), None)
+            raise ProviderError('invalid_data', field=field) from None
+
+    def fast_history(self, client, config):
+        token = config.get('token')
+        if not token:
+            token = self.token(client)
+        started = time.monotonic()
+        try:
+            data = self.request(client, 'GET', '/api/bet/history?size=500', headers={'X-API-Token': token})
+        except ProviderError as exc:
+            if exc.status not in (401, 403):
+                raise
+            # One read-only token refresh. A POST is never repeated here.
+            token = self.token(client)
+            data = self.request(client, 'GET', '/api/bet/history?size=500', headers={'X-API-Token': token})
+        config['token'] = token
+        incoming = self.provider_rows(data, 'real')
+        self.last_fetch_ms = round((time.monotonic() - started) * 1000)
+        return incoming
 
     def session(self, value=None):
         client = self.session_factory()
@@ -197,23 +278,7 @@ class HistorySync:
                 warnings[mode] = str(exc)
                 last_failure = exc
                 continue
-            rows = data.get('list')
-            if data.get('success') is not True or not isinstance(rows, list) or len(rows) > 5000:
-                raise ProviderError('invalid_data')
-            clean = []
-            for row in rows:
-                if not isinstance(row, dict):
-                    raise ProviderError('invalid_data')
-                item = {key: row[key] for key in FIELDS if key in row}
-                # Python retains exact JSON integers; convert identifiers before normalizing.
-                for key in ('issueNumber', 'orderId', 'orderNumber', 'id'):
-                    if type(item.get(key)) is int:
-                        item[key] = str(item[key])
-                clean.append(item)
-            try:
-                incoming.extend(normalize(clean, mode, 'Asia/Yangon') if clean else [])
-            except (ValueError, TypeError):
-                raise ProviderError('invalid_data') from None
+            incoming.extend(self.provider_rows(data, mode))
             completed.append(mode)
         if not completed:
             raise last_failure or ProviderError('unavailable')
@@ -234,7 +299,7 @@ class HistorySync:
             warnings['balance'] = 'TRXChart account balance could not be refreshed; existing history is preserved.'
         return incoming, completed, warnings
 
-    def commit(self, client, config, expected, incoming, action, completed, warnings):
+    def commit(self, client, config, expected, incoming, action, completed, warnings, wallet=True):
         with self.store.lock:
             if self.store.private_get('trxchart_account')['revision'] != expected:
                 raise RuntimeError('Connection changed. Reconnect if needed.')
@@ -244,7 +309,25 @@ class HistorySync:
             except Exception:
                 raise ProviderError('storage') from None
             previous = journal['rows']
-            journal['rows'], counts = merge(previous, incoming)
+            try:
+                journal['rows'], counts = merge(previous, incoming)
+            except ValueError as exc:
+                if 'conflict' not in str(exc).lower():
+                    raise
+                # Hold disputed historical rows; an old conflict must not freeze
+                # unrelated new orders or overwrite a previously confirmed result.
+                kept, counts, held = previous, {'added': 0, 'updated': 0, 'unchanged': 0}, 0
+                for row in incoming:
+                    try:
+                        kept, change = merge(kept, [row])
+                        for key in counts:
+                            counts[key] += change[key]
+                    except ValueError as conflict:
+                        if 'conflict' not in str(conflict).lower():
+                            raise
+                        held += 1
+                journal['rows'] = kept
+                warnings['records'] = f'{held} conflicting historical record(s) held for review; other results updated.'
             now = stamp()
             observe(journal, previous, now, 'real' in completed)
             journal['imported_at'] = now
@@ -255,12 +338,31 @@ class HistorySync:
                                     state['revision'], {'action': 'server_history_synced', **counts})
             config.update(cookies=self.cookies(client), active=True, status='connected',
                           last_sync=now, error=' '.join(warnings.values()) or None)
-            balance = getattr(client, 'trxchart_balance', None)
-            config['balance_current'] = balance is not None
-            if balance is not None:
-                config.update(balance=balance, balance_at=now)
+            if wallet:
+                balance = getattr(client, 'trxchart_balance', None)
+                config['balance_current'] = balance is not None
+                if balance is not None:
+                    config.update(balance=balance, balance_at=now)
             self.save(config, expected, action)
             self.failures = 0
+
+    def fast_wallet(self, client):
+        # REAL rows have already committed. Wallet work cannot hold their result
+        # hostage, and its independent cadence avoids five requests on every poll.
+        if time.monotonic() - self.last_wallet_sync < 15:
+            return
+        self.last_wallet_sync = time.monotonic()
+        expected, config = self.read()
+        try:
+            data = self.request(client, 'GET', '/api/user/info', headers={'X-API-Token': config['token']})
+            balance = json_balance(data) if data.get('success') is True else None
+        except ProviderError:
+            balance = None  # History is the authenticated session authority.
+        config['cookies'] = self.cookies(client)
+        config['balance_current'] = balance is not None
+        if balance is not None:
+            config.update(balance=balance, balance_at=stamp())
+        self.save(config, expected, 'balance_refreshed')
 
     def connect(self, data):
         if not isinstance(data, dict) or data.get('consent') is not True:
@@ -321,10 +423,14 @@ class HistorySync:
             if not config.get('active'):
                 return
             with self.session(config) as client:
+                if self.fast():
+                    incoming = self.fast_history(client, config)
+                    self.commit(client, config, expected, incoming, 'synced', ['real'], {}, wallet=False)
+                    self.fast_wallet(client)
+                    return
                 # Refresh the CSRF/API token in this same session, never log in automatically.
                 config['token'] = self.token(client)
-                fast = time.monotonic() < self.follow_until
-                modes = ('real',) if fast and time.monotonic() - self.last_full_sync < 60 else ('real', 'demo')
+                modes = ('real', 'demo')
                 incoming, completed, warnings = self.histories(client, config['token'], modes)
                 self.commit(client, config, expected, incoming, 'synced', completed, warnings)
                 if len(modes) == 2:
@@ -339,7 +445,7 @@ class HistorySync:
                     if code == 'expired':
                         config = {k: config[k] for k in ('account_tag', 'last_sync', 'connected_at') if k in config}
                         config['active'] = False
-                    config.update(status=code, error=MESSAGES[code])
+                    config.update(status=code, error=str(exc) if isinstance(exc, ProviderError) else MESSAGES[code])
                     self.save(config, current, 'sync_failed')
         except RuntimeError:
             pass  # Disconnect/reconnect won the revision lease; drop this in-flight result.

@@ -103,7 +103,7 @@ def test_fast_order_follow_is_bounded_real_only_and_keeps_failure_backoff(admin,
     assert sync.poll_delay() == 60
     sync.last_full_sync = clock[0]
     sync.follow_orders()
-    assert sync.wake.is_set() and sync.poll_delay() == 5
+    assert sync.wake.is_set() and sync.poll_delay() == 2
     provider.calls.clear()
     sync.sync_once()
     assert ('GET', '/api/bet/history?size=500') in [c[:2] for c in provider.calls]
@@ -111,9 +111,9 @@ def test_fast_order_follow_is_bounded_real_only_and_keeps_failure_backoff(admin,
     clock[0] += 61
     provider.calls.clear()
     sync.sync_once()
-    assert ('GET', '/api/demo/history?size=500') in [c[:2] for c in provider.calls]
+    assert ('GET', '/api/demo/history?size=500') not in [c[:2] for c in provider.calls]
     sync.failures = 1
-    assert sync.poll_delay() == 120
+    assert sync.poll_delay() == 4
     sync.failures = 0
     clock[0] += 180
     assert sync.poll_delay() == 60

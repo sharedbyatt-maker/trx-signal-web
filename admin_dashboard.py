@@ -723,8 +723,13 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             return jsonify(error='Invalid settlement cursor.'), 400
         try:
             _, journal = journal_read()
-            return jsonify(feed(journal, int(after) if after is not None else None,
-                                request.args.get('stream')))
+            if request.args.get('watch') == '1':
+                store.history_sync.watch_trade()
+            result = feed(journal, int(after) if after is not None else None,
+                          request.args.get('stream'))
+            result['orders'] = store.orders.recent(journal)
+            result['sync'] = store.history_sync.timing()
+            return jsonify(result)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
 
