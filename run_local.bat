@@ -27,7 +27,7 @@ if errorlevel 1 (
 )
 set PORT=5000
 set ADMIN_COOKIE_SECURE=0
-set TRX_ORDER_ENABLED=0
+if not defined TRX_ORDER_ENABLED set TRX_ORDER_ENABLED=1
 if "%TRX_LOCAL_REAL_ORDERS%"=="1" set TRX_ORDER_ENABLED=1
 echo.
 echo Site:  http://localhost:5000

@@ -1,8 +1,8 @@
 Run locally on Windows
 
 1. Install Python 3.12 or newer. Enable "Add python.exe to PATH".
-2. Double-click run_local.bat. Real orders are disabled, even if an inherited
-   TRX_ORDER_ENABLED setting was enabled.
+2. Double-click run_local.bat. Manual REAL orders are enabled by default. Set
+   TRX_ORDER_ENABLED=0 before launching if you want them disabled.
 3. Open http://localhost:5000 and http://localhost:5000/admin.
 4. Use your admin password. Set ADMIN_PASSWORD_HASH before launching if you
    want to override the existing admin_bootstrap.json password hash.
@@ -12,7 +12,7 @@ Manual REAL orders
 
 run_local_orders_enabled.bat enables REAL BIG / SMALL orders through the
 connected TRXChart account. These are not practice/demo orders. Select Real
-history, connect the account, acknowledge the use of real funds, and confirm
+history, connect the account, enter a whole-number MMK amount, and confirm
 each order. Demo history selection keeps both order buttons disabled.
 No signal engine places orders and no submitted order is automatically retried.
 After an uncertain outcome, check REAL history before another order.
@@ -20,8 +20,11 @@ After an uncertain outcome, check REAL history before another order.
 The order ledger and limits are stored in instance/admin.sqlite3. They survive
 worker/process restarts while that file survives. Deleting instance, moving
 to a fresh installation, or losing ephemeral hosting storage resets local data.
-Default caps: 100 MMK per order, 30 attempts / 3,000 MMK per Bangkok calendar
-day, and at least 30 seconds between attempts. Rejected/unknown attempts count.
+There are no local amount, count, daily-total or spacing caps by default.
+Explicit TRX_ORDER_* environment limits remain available. Use Enable all manual
+orders in the dashboard to enable orders and remove those local caps persistently.
+Provider balance and provider rules still determine whether an order is accepted.
+Total Amount displays provider account balance, not stakes or profit/loss.
 
 Dependencies include tzdata for Windows timezone support. The launcher creates
 .venv automatically and installs requirements. No shared session secret or

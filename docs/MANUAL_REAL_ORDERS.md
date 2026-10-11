@@ -63,8 +63,9 @@ not consume limits. Orders never alter chart signals, ladders, TP/SL policies or
 automatic strategy execution. The displayed journal targets remain reporting
 targets; the manual order caps above are separate server limits.
 
-On Windows use `run_local.bat` for normal operation with orders disabled.
-`run_local_orders_enabled.bat` explicitly enables real orders. `tzdata` is included
+On Windows `run_local.bat` uses the same enabled default; an explicit
+`TRX_ORDER_ENABLED=0` can disable it. `run_local_orders_enabled.bat` explicitly
+enables real orders. `tzdata` is included
 for journal timezones, and the order calendar itself uses a fixed UTC+7 offset.
 No Telegram credentials, instance database, virtual environment or ZIP git pointer
 are committed. Do not place live orders merely to test this integration; the
