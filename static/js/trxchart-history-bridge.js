@@ -5,7 +5,7 @@ function trxHistoryBridge(destination) {
   if (window.__trxHistoryBridge) return alert('History sync is already running in this tab.');
   const origin = new URL(destination).origin;
   const nonce = Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
-  const receiver = window.open(origin + '/admin/trxchart-sync?bridge=' + nonce, '_blank');
+  const receiver = window.open(origin + '/admin/trxchart-sync-open?bridge=' + nonce, '_blank');
   if (!receiver) return alert('Allow the sync window to open, then run this bookmark again.');
   const original = window.fetch;
   let headers = null, accepted = false, running = false, stopped = false, timer;
@@ -61,7 +61,7 @@ function trxHistoryBridge(destination) {
           await read(response,mode);
         } finally { clearTimeout(timeout); active.delete(controller); }
       }
-    } catch (error) { if (!stopped) send({error:error.name==='AbortError'?'History timed out. Next refresh will retry.':error.message}); }
+    } catch (error) { if (!stopped) send({error:error.name==='AbortError'?'History timed out. Next refresh will retry.':error.name==='SyntaxError'?'History response is not valid JSON. No results synced.':error.message}); }
     finally { running = false; }
   }
   function receive(event) {

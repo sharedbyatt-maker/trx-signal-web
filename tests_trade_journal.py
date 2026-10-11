@@ -133,6 +133,9 @@ def test_import_preserves_selected_date_and_rejects_invalid_date_atomically(admi
 def test_browser_sync_login_continuation_is_internal_and_validated(admin):
     client,_,_,_=admin
     nonce='a'*48
+    landing=client.get('/admin/trxchart-sync-open?bridge='+nonce)
+    assert landing.status_code==200 and 'Set-Cookie' not in landing.headers
+    assert "script-src 'self'" in landing.headers['Content-Security-Policy']
     assert client.get('/admin/trxchart-sync?bridge=bad').status_code==400
     assert client.get('/admin/trxchart-sync?bridge='+nonce).location=='/admin/login'
     assert login(client).location=='/admin/trxchart-sync?bridge='+nonce

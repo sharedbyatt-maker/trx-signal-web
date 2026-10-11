@@ -341,6 +341,15 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             return redirect('/admin/login')
         return render_template('admin.html', csrf=csrf())
 
+    @app.get('/admin/trxchart-sync-open')
+    def history_sync_open():
+        # A cross-site popup initially withholds SameSite=Strict cookies. Load
+        # this inert same-origin document first without changing the session.
+        # Its navigation then reaches the authenticated page with normal cookies.
+        if not re.fullmatch(r'[a-f0-9]{48}',request.args.get('bridge','')):
+            return 'Open browser sync from Trade Results.',400
+        return render_template('trxchart_sync_open.html')
+
     @app.get('/admin/trxchart-sync')
     def history_sync_page():
         bridge=request.args.get('bridge','')
