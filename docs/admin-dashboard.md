@@ -8,6 +8,7 @@ Open `/admin` and sign in with the private initial password supplied to the owne
 - Chart: timeframe, visible range selection and indicator defaults on the next page load. All 30 days remain loaded. Visitors can still change their current view.
 - Alerts: Telegram delivery gate (checked at enqueue and worker dispatch), global browser alert gate (updated by normal state polling), and a deliberate Telegram connection test. Telegram credentials stay on the server.
 - Reports: today’s L1 summary and latest 100 retained trades, date-selectable 12-Step daily report and history, latest 200 signal entries and retained 12-Step signal log. These are existing model records, not an expanded historical trade database.
+- Trade Results: opt-in [manual REAL orders](MANUAL_REAL_ORDERS.md), disabled by default, with per-attempt confirmation and persistent server limits. Demo order placement is unavailable.
 - Maintenance: engine-owned 30-day snapshot refresh, feed/RSI response cache refresh and backtest invalidation, backup export and revision-checked restore, audit and delivery history.
 
 A refresh merges source rows chronologically without rewinding `last_issue`, resetting pending signals, changing pending stakes or entry rules, or replaying old notifications. No auto betting, engine pause/restart, or entry-rule editing is exposed.

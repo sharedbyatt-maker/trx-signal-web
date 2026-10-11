@@ -5,3 +5,4 @@ gunicorn>=21.2
 
 
 cryptography>=43
+tzdata>=2025.2

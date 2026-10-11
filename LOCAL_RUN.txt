@@ -1,0 +1,30 @@
+Run locally on Windows
+
+1. Install Python 3.12 or newer. Enable "Add python.exe to PATH".
+2. Double-click run_local.bat. Real orders are disabled, even if an inherited
+   TRX_ORDER_ENABLED setting was enabled.
+3. Open http://localhost:5000 and http://localhost:5000/admin.
+4. Use your admin password. Set ADMIN_PASSWORD_HASH before launching if you
+   want to override the existing admin_bootstrap.json password hash.
+5. Stop with Ctrl+C in the console window.
+
+Manual REAL orders
+
+run_local_orders_enabled.bat enables REAL BIG / SMALL orders through the
+connected TRXChart account. These are not practice/demo orders. Select Real
+history, connect the account, acknowledge the use of real funds, and confirm
+each order. Demo history selection keeps both order buttons disabled.
+No signal engine places orders and no submitted order is automatically retried.
+After an uncertain outcome, check REAL history before another order.
+
+The order ledger and limits are stored in instance/admin.sqlite3. They survive
+worker/process restarts while that file survives. Deleting instance, moving
+to a fresh installation, or losing ephemeral hosting storage resets local data.
+Default caps: 100 MMK per order, 30 attempts / 3,000 MMK per Bangkok calendar
+day, and at least 30 seconds between attempts. Rejected/unknown attempts count.
+
+Dependencies include tzdata for Windows timezone support. The launcher creates
+.venv automatically and installs requirements. No shared session secret or
+Telegram credential file is included. Set your own Telegram configuration if
+you need notifications. Connecting the same TRXChart account locally may sign
+out its existing session on another installation.
