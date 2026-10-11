@@ -26,6 +26,7 @@ class Provider:
         self.calls = []
         self.expired = False
         self.bad_demo = False
+        self.demo_status = None
         self.pending = True
         self.hook = None
     def factory(self):
@@ -56,6 +57,8 @@ class Provider:
                     return Response({'logged_out': False})
                 assert kwargs['headers'] == {'X-API-Token': TOKEN}
                 if path == '/api/demo/history?size=500':
+                    if owner.demo_status:
+                        return Response('SECRET-provider-body', owner.demo_status)
                     if owner.hook:
                         owner.hook()
                         owner.hook = None
@@ -117,7 +120,8 @@ def test_auth_csrf_consent_encrypted_session_and_read_only_transport(admin):
     assert journal['rows'][0]['external_id'] == '20261011123456789'
     assert journal['synced_at']['real'] == journal['synced_at']['demo']
     assert [x[:2] for x in provider.calls] == [('GET', '/login'), ('POST', '/api/auth/login'), ('GET', '/'),
-        ('GET', '/api/session-alive'), ('GET', '/api/bet/history?size=500'), ('GET', '/api/demo/history?size=500')]
+        ('GET', '/api/session-alive'), ('GET', '/api/bet/history?size=500'), ('GET', '/'),
+        ('GET', '/api/demo/history?size=500')]
     with pytest.raises(ValueError, match='not allowed'):
         HistorySync.request(provider.factory(), 'POST', '/api/bet/place')
     with pytest.raises(ValueError, match='not allowed'):
@@ -219,3 +223,22 @@ def test_page_token_supports_dotted_format_without_header_injection(admin):
             sync.token(Page(value))
         assert 'account page token' in str(caught.value)
         assert 'Authorization' not in str(caught.value)
+
+
+def test_demo_unavailability_preserves_verified_real_and_recovers(admin):
+    client, store, provider = setup(admin)
+    login(client)
+    provider.demo_status = 409
+    result = client.post('/api/admin/trxchart-account', json=connect_body(), headers=headers(client))
+    assert result.status_code == 200 and result.json['active']
+    assert 'Demo history' in result.json['error'] and 'HTTP 409' in result.json['error']
+    assert 'SECRET' not in result.text
+    journal = decoded(store, 'trade_journal')
+    assert len(journal['rows']) == 1
+    assert set(journal['synced_at']) == {'real'}
+    provider.demo_status = None
+    store.history_sync.sync_once()
+    journal = decoded(store, 'trade_journal')
+    assert set(journal['synced_at']) == {'real', 'demo'}
+    assert store.history_sync.public()['error'] is None
+    assert sum(method == 'POST' for method, _, _ in provider.calls) == 1
