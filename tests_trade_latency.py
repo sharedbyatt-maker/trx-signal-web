@@ -202,7 +202,7 @@ def test_order_session_refresh_preserves_latest_cookies_but_disconnect_wins(admi
     assert not sync.public()['active'] and 'token' not in decoded(store, 'trxchart_account')
 
 
-@pytest.mark.parametrize('change', [{'side': 'SMALL'}, {'stake': 200}, {'outcome': 'rejected'}])
+@pytest.mark.parametrize('change', [{'side': 'SMALL'}, {'stake': 200}, {'outcome': 'rejected'}, {'issue': '20261011103010001'}])
 def test_explicit_receipt_cannot_settle_a_different_or_rejected_order(change):
     rows = normalize([provider_row(state=1, number=8)], 'real', 'Asia/Yangon')
     order = {'side': 'BIG', 'stake': 100, 'outcome': 'accepted', 'provider_id': 'provider-order'}

@@ -358,6 +358,7 @@ class HistorySync:
             balance = json_balance(data) if data.get('success') is True else None
         except ProviderError:
             balance = None  # History is the authenticated session authority.
+        config['cookies'] = self.cookies(client)
         config['balance_current'] = balance is not None
         if balance is not None:
             config.update(balance=balance, balance_at=stamp())

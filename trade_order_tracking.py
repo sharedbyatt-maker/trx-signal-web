@@ -37,7 +37,8 @@ def result_for(order, rows):
         found = [row for row in real if row.get('external_id') == order['provider_id']]
         if len(found) == 1:
             row = found[0]
-            if row['side'] == order['side'] and row['stake_minor'] == order['stake'] * 100:
+            if (row['side'] == order['side'] and row['stake_minor'] == order['stake'] * 100
+                    and order.get('issue') in (None, row['issue'])):
                 return row, 'order_id'
         return None, None
     # A confirmed receipt's round + side determines WIN/LOSS, but does not
