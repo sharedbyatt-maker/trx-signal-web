@@ -1,5 +1,6 @@
 'use strict';
 const byId = id => document.getElementById(id);
+function quietStatus(id,text){const el=byId(id);if(el.textContent!==text)el.textContent=text;}
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
 const names = {ema:'EMA 5 / 15',sma:'SMA 20 / 50',bb:'Bollinger Bands',rsi:'RSI 14',macd:'MACD',stoch:'Stochastic',tl:'Trend lines',sr:'Support / Resistance',pat:'Patterns',hss:'H / SS · 5m',sig:'Signal arrows'};
 let journalData=null;
@@ -386,11 +387,11 @@ function renderManualOrders(rows){
   }
 }
 function renderTradeSync(){
-  if(tradeFeedError){byId('trade-live-state').textContent='DELAYED';byId('trade-live-state').classList.add('sync-delayed');byId('trade-feed-status').textContent='Result updates delayed: '+tradeFeedError;return;}
+  if(tradeFeedError){quietStatus('trade-live-state','DELAYED');byId('trade-live-state').classList.add('sync-delayed');byId('trade-feed-status').textContent='Result updates delayed: '+tradeFeedError;return;}
   if(!tradeSync){byId('trade-feed-status').textContent='Provider-confirmed results · waiting for sync status';return;}
   const age=tradeSync.last_sync?Math.max(0,Math.floor((Date.now()-new Date(tradeSync.last_sync).valueOf())/1000)):null;
   const fresh=tradeSync.active&&tradeSync.worker_alive&&tradeSync.status==='connected'&&age!==null&&age<15;
-  byId('trade-live-state').textContent=!tradeSync.active?'OFFLINE':fresh?'LIVE':'DELAYED';
+  quietStatus('trade-live-state',!tradeSync.active?'OFFLINE':fresh?'LIVE':'DELAYED');
   byId('trade-live-state').classList.toggle('sync-delayed',!fresh);
   byId('trade-feed-status').textContent=!tradeSync.active?'Connect your account to receive REAL results.':'Provider sync: '+(age===null?'not received':age+'s ago')+' · '+(fresh?'up to date':'updates delayed')+(tradeSync.provider_fetch_ms!==null&&tradeSync.provider_fetch_ms!==undefined?' · fetch '+tradeSync.provider_fetch_ms+' ms':'')+(tradeSync.error?' · '+tradeSync.error:'');
 }
@@ -399,9 +400,9 @@ function saveTradeCursor(stream,cursor){try{localStorage.setItem('trx-settlement
 function settlementMessage(row){return row.side+' · '+tradeCash(row.stake)+' MMK · P/L '+(row.pnl===null?'—':tradeCash(row.pnl))+' MMK · Issue '+row.issue;}
 function renderTradeActivity(rows){
   const list=byId('trade-activity');list.replaceChildren();
-  if(!rows.length){const li=document.createElement('li');li.className='activity-empty';li.textContent='No REAL trades yet. Your next results will appear here.';list.append(li);byId('trade-latest').textContent='No settled REAL results yet.';byId('trade-latest').className='latest-outcome';return;}
+  if(!rows.length){const li=document.createElement('li');li.className='activity-empty';li.textContent='No REAL trades yet. Your next results will appear here.';list.append(li);quietStatus('trade-latest','No settled REAL results yet.');byId('trade-latest').className='latest-outcome';return;}
   const latest=rows.find(row=>row.state===0||row.state===1);
-  byId('trade-latest').textContent=latest?'Last settled: '+resultLabel(latest.state)+' · '+latest.side+' · '+(latest.pnl===null?'—':tradeCash(latest.pnl))+' MMK':'Waiting for pending orders to settle…';
+  quietStatus('trade-latest',latest?'Last settled: '+resultLabel(latest.state)+' · '+latest.side+' · '+(latest.pnl===null?'—':tradeCash(latest.pnl))+' MMK':'Waiting for pending orders to settle…');
   byId('trade-latest').className='latest-outcome '+(latest?resultClass(latest.state):'pending');
   for(const row of rows.slice(0,12)){
     const li=document.createElement('li'),info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small'),result=document.createElement('div'),pill=document.createElement('span'),pnl=document.createElement('small');
