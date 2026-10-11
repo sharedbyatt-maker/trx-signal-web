@@ -156,10 +156,21 @@ class HistorySync:
         alive = self.request(client, 'GET', '/api/session-alive')
         if alive.get('logged_out'):
             raise ProviderError('expired', '/api/session-alive')
-        incoming = []
+        incoming, completed, warnings = [], [], {}
+        last_failure = None
         for mode in ('real', 'demo'):
             path = '/api/bet/history?size=500' if mode == 'real' else '/api/demo/history?size=500'
-            data = self.request(client, 'GET', path, headers={'X-API-Token': token})
+            try:
+                # Page tokens may change after a provider request. Obtain the current
+                # token in this same session before reading the second history mode.
+                mode_token = token if mode == 'real' else self.token(client)
+                data = self.request(client, 'GET', path, headers={'X-API-Token': mode_token})
+            except ProviderError as exc:
+                if exc.code != 'unavailable':
+                    raise  # Expiry and malformed data must not produce a partial save.
+                warnings[mode] = str(exc)
+                last_failure = exc
+                continue
             rows = data.get('list')
             if data.get('success') is not True or not isinstance(rows, list) or len(rows) > 5000:
                 raise ProviderError('invalid_data')
@@ -177,9 +188,12 @@ class HistorySync:
                 incoming.extend(normalize(clean, mode, 'Asia/Yangon') if clean else [])
             except (ValueError, TypeError):
                 raise ProviderError('invalid_data') from None
-        return incoming
+            completed.append(mode)
+        if not completed:
+            raise last_failure or ProviderError('unavailable')
+        return incoming, completed, warnings
 
-    def commit(self, client, config, expected, incoming, action):
+    def commit(self, client, config, expected, incoming, action, completed, warnings):
         with self.store.lock:
             if self.store.private_get('trxchart_account')['revision'] != expected:
                 raise RuntimeError('Connection changed. Reconnect if needed.')
@@ -191,11 +205,13 @@ class HistorySync:
             journal['rows'], counts = merge(journal['rows'], incoming)
             now = stamp()
             journal['imported_at'] = now
-            journal['synced_at'] = {'real': now, 'demo': now}
+            synced_at = journal.setdefault('synced_at', {})
+            for mode in completed:
+                synced_at[mode] = now
             self.store.private_save('trade_journal', self.store.vault.cipher.encrypt(json.dumps(journal).encode()).decode(),
                                     state['revision'], {'action': 'server_history_synced', **counts})
             config.update(cookies=self.cookies(client), active=True, status='connected',
-                          last_sync=now, error=None)
+                          last_sync=now, error=' '.join(warnings.values()) or None)
             self.save(config, expected, action)
             self.failures = 0
 
@@ -228,9 +244,9 @@ class HistorySync:
                 if result.get('success') is not True:
                     raise ProviderError('login_failed', '/api/auth/login')
                 token = self.token(client)
-                incoming = self.histories(client, token)
+                incoming, completed, warnings = self.histories(client, token)
                 self.commit(client, {'token': token, 'account_tag': tag, 'connected_at': stamp()},
-                            expected, incoming, 'connected')
+                            expected, incoming, 'connected', completed, warnings)
         finally:
             self.operation.release()
         self.wake.set()
@@ -260,8 +276,8 @@ class HistorySync:
             with self.session(config) as client:
                 # Refresh the CSRF/API token in this same session, never log in automatically.
                 config['token'] = self.token(client)
-                incoming = self.histories(client, config['token'])
-                self.commit(client, config, expected, incoming, 'synced')
+                incoming, completed, warnings = self.histories(client, config['token'])
+                self.commit(client, config, expected, incoming, 'synced', completed, warnings)
         except (ProviderError, ValueError) as exc:
             self.failures += 1
             with self.store.lock:
