@@ -54,7 +54,9 @@ jobs:
             if [ -f "$js_file" ]; then node --check "$js_file"; fi
           done
       - name: Verify request timeout and recovery
-        run: node tests_transport_stability.js
+        run: |
+          node tests_transport_stability.js
+          node tests_history_bridge.js
       - name: Install Playwright
         run: |
           npm ci

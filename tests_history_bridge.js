@@ -1,0 +1,43 @@
+'use strict';
+const assert=require('node:assert/strict');
+const vm=require('node:vm');
+const fs=require('node:fs');
+const {webcrypto}=require('node:crypto');
+(async()=>{
+  let listener,tick;
+  const messages=[],calls=[];
+  const receiver={closed:false,postMessage:(data,origin)=>messages.push({data,origin})};
+  const original=async(input,options={})=>{
+    calls.push({url:String(input),method:options.method||'GET',headers:new Headers(options.headers)});
+    return new Response(String(input).includes('/demo/')?'{"success":true,"list":[]}':'{"success":true,"list":[{"addTime":"2026-10-11 09:00:00","issueNumber":20261011103010001,"id":20261011103019999,"selectType":"big","amount":100,"profitAmount":198,"state":1,"number":8,"token":"unused-secret"}]}',{status:200});
+  };
+  const window={fetch:original,open:()=>receiver,addEventListener:(type,fn)=>{if(type==='message')listener=fn;},removeEventListener:()=>{listener=null;}};
+  const context={window,location:{origin:'https://trxchart.com'},URL,Request,Response,Headers,AbortController,crypto:webcrypto,Uint8Array,alert:()=>{},setInterval:fn=>{tick=fn;return 1;},clearInterval:()=>{},setTimeout,clearTimeout};
+  vm.createContext(context);vm.runInContext(fs.readFileSync('static/js/trxchart-history-bridge.js','utf8'),context);
+  context.trxHistoryBridge('https://own.example');
+  const wrapped=window.fetch;
+  await wrapped('https://trxchart.com/api/bet/history?size=100',{headers:{'X-API-Token':'fixture-secret'}});
+  assert.equal(messages.length,0);
+  listener({origin:'https://evil.example',source:receiver,data:{type:'trx-history-ready',nonce:'bad'}});
+  assert.equal(messages.length,0);
+  // The nonce is carried by the opened receiver URL, not obtained from credentials.
+  window.__trxHistoryBridge.stop();
+  let popupURL;
+  window.open=url=>{popupURL=url;return receiver;};
+  context.trxHistoryBridge('https://own.example');
+  await window.fetch('https://trxchart.com/api/bet/history?size=100',{headers:{'X-API-Token':'fixture-secret'}});
+  const nonce=new URL(popupURL).searchParams.get('bridge');
+  listener({origin:'https://own.example',source:receiver,data:{type:'trx-history-ready',nonce}});
+  for(let i=0;i<30&&messages.filter(m=>m.data.history).length<2;i++)await new Promise(r=>setTimeout(r,5));
+  const history=messages.filter(m=>m.data.history);
+  assert.equal(history.length,2);
+  const real=history.find(m=>m.data.mode==='real').data.history.list[0];
+  assert.equal(real.issueNumber,'20261011103010001');assert.equal(real.id,'20261011103019999');
+  assert.equal(history.find(m=>m.data.mode==='demo').data.history.list.length,0);
+  assert(!JSON.stringify(messages).includes('fixture-secret'));assert(!JSON.stringify(messages).includes('unused-secret'));
+  assert(calls.every(c=>c.method==='GET'&&new URL(c.url,'https://trxchart.com').origin==='https://trxchart.com'));
+  assert(calls.slice(-2).every(c=>c.headers.get('X-API-Token')==='fixture-secret'));
+  listener({origin:'https://own.example',source:receiver,data:{type:'trx-history-stop',nonce}});
+  assert.equal(window.fetch,original);assert.equal(window.__trxHistoryBridge,undefined);
+  console.log('Browser bridge origin checks, exact IDs, credential isolation, both modes and cleanup passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});
