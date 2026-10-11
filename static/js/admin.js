@@ -401,7 +401,7 @@ function renderTradeActivity(rows){
   const list=byId('trade-activity');list.replaceChildren();
   if(!rows.length){const li=document.createElement('li');li.className='activity-empty';li.textContent='No REAL trades yet. Your next results will appear here.';list.append(li);byId('trade-latest').textContent='No settled REAL results yet.';byId('trade-latest').className='latest-outcome';return;}
   const latest=rows.find(row=>row.state===0||row.state===1);
-  byId('trade-latest').textContent=latest?resultLabel(latest.state)+' · '+latest.side+' · '+(latest.pnl===null?'—':tradeCash(latest.pnl))+' MMK':'Waiting for pending orders to settle…';
+  byId('trade-latest').textContent=latest?'Last settled: '+resultLabel(latest.state)+' · '+latest.side+' · '+(latest.pnl===null?'—':tradeCash(latest.pnl))+' MMK':'Waiting for pending orders to settle…';
   byId('trade-latest').className='latest-outcome '+(latest?resultClass(latest.state):'pending');
   for(const row of rows.slice(0,12)){
     const li=document.createElement('li'),info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small'),result=document.createElement('div'),pill=document.createElement('span'),pnl=document.createElement('small');
