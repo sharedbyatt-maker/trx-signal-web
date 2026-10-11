@@ -92,7 +92,7 @@ class HistorySync:
     def request(client, method, path, **kwargs):
         # Fixed origin and allowlist: a session can never reach another host or place an order.
         allowed = {'POST': {'/api/auth/login'},
-                   'GET': {'/', '/api/session-alive', '/api/bet/history?size=500',
+                   'GET': {'/', '/login', '/api/session-alive', '/api/bet/history?size=500',
                            '/api/demo/history?size=500'}}
         if path not in allowed.get(method, set()):
             raise ValueError('Read-only endpoint is not allowed.')
@@ -111,7 +111,7 @@ class HistorySync:
                         raise ProviderError('invalid_data')
                     parts.append(chunk)
                 text = b''.join(parts).decode('utf-8')
-                if path == '/':
+                if path in ('/', '/login'):
                     return text
                 data = json.loads(text)
                 if not isinstance(data, dict):
@@ -201,6 +201,8 @@ class HistorySync:
             if previous.get('account_tag') and previous['account_tag'] != tag:
                 raise ValueError('This journal is linked to another account. Account histories cannot be mixed.')
             with self.session() as client:
+                # Match the normal login flow, including any initial session cookie.
+                self.request(client, 'GET', '/login')
                 result = self.request(client, 'POST', '/api/auth/login',
                                       json={'phone': phone.strip(), 'password': password, 'twofa': twofa or None})
                 if result.get('success') is not True:

@@ -41,6 +41,8 @@ class Provider:
                 assert kwargs['allow_redirects'] is False and kwargs['timeout'] == (3, 8)
                 path = url.removeprefix(ORIGIN)
                 owner.calls.append((method, path, kwargs))
+                if path == '/login':
+                    return Response('<form>Provider login</form>')
                 if path == '/api/auth/login':
                     assert kwargs['json']['password'] == PASSWORD
                     self.cookies.set('session', COOKIE, domain='trxchart.com', secure=True)
@@ -114,7 +116,7 @@ def test_auth_csrf_consent_encrypted_session_and_read_only_transport(admin):
     assert journal['rows'][0]['issue'] == '20261011103010115'
     assert journal['rows'][0]['external_id'] == '20261011123456789'
     assert journal['synced_at']['real'] == journal['synced_at']['demo']
-    assert [x[:2] for x in provider.calls] == [('POST', '/api/auth/login'), ('GET', '/'),
+    assert [x[:2] for x in provider.calls] == [('GET', '/login'), ('POST', '/api/auth/login'), ('GET', '/'),
         ('GET', '/api/session-alive'), ('GET', '/api/bet/history?size=500'), ('GET', '/api/demo/history?size=500')]
     with pytest.raises(ValueError, match='not allowed'):
         HistorySync.request(provider.factory(), 'POST', '/api/bet/place')
