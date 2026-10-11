@@ -43,6 +43,11 @@ test('visible Results follows committed revisions and keeps drafts; win rate exc
   await page.locator('#journal-search').fill('no matching issue');await expect(page.locator('#journal-rows')).toContainText('No matching records');
   await page.locator('#journal-clear-search').click();await expect(page.locator('#journal-rows tr')).toHaveCount(3);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  if(testInfo.project.name.includes('mobile')){
+    await page.locator('#journal-rows tr').first().scrollIntoViewIfNeeded();
+    const visible=await page.locator('#journal-rows tr').first().evaluate(tr=>[tr.children[4],tr.children[5]].every(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));
+    expect(visible).toBe(true);
+  }
   await page.screenshot({path:testInfo.outputPath('results-focused.png'),fullPage:true});
 });
 

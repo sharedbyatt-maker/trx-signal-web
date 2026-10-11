@@ -138,3 +138,7 @@ CHECK HISTORY, excluded from active WAIT counts, and provide Find in Results.
 Empty submission panels and repeated healthy-account help are hidden; optional
 account tools are collapsed. Background freshness ages quietly while refresh
 actions and settlement alerts retain accessible status messages.
+
+On mobile, Results rows become cards showing side/result and stake/net P/L
+without horizontal scrolling. Full issue and timestamp remain visible below.
+Desktop retains the full six-column table.
