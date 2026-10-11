@@ -28,7 +28,9 @@ class Provider:
         self.bad_demo = False
         self.demo_status = None
         self.pending = True
-        self.balance = None
+        self.balance = 1000
+        self.wallet_status = 200
+        self.wallet_success = True
         self.hook = None
     def factory(self):
         owner = self
@@ -55,8 +57,10 @@ class Provider:
                 if path == '/':
                     return Response("const _AT = '" + TOKEN + "';")
                 if path == '/api/session-alive':
-                    return Response({'logged_out': False, 'balance': owner.balance})
+                    return Response({'logged_out': False})
                 assert kwargs['headers'] == {'X-API-Token': TOKEN}
+                if path == '/api/user/info':
+                    return Response({'success': owner.wallet_success, 'balance': owner.balance, 'phone': 'fixture-private-phone'}, owner.wallet_status)
                 if path == '/api/demo/history?size=500':
                     if owner.demo_status:
                         return Response('SECRET-provider-body', owner.demo_status)
@@ -122,7 +126,7 @@ def test_auth_csrf_consent_encrypted_session_and_read_only_transport(admin):
     assert journal['synced_at']['real'] == journal['synced_at']['demo']
     assert [x[:2] for x in provider.calls] == [('GET', '/login'), ('POST', '/api/auth/login'), ('GET', '/'),
         ('GET', '/api/session-alive'), ('GET', '/api/bet/history?size=500'), ('GET', '/'),
-        ('GET', '/api/demo/history?size=500')]
+        ('GET', '/api/demo/history?size=500'), ('GET', '/'), ('GET', '/api/user/info')]
     with pytest.raises(ValueError, match='not allowed'):
         HistorySync.request(provider.factory(), 'POST', '/api/bet/place')
     with pytest.raises(ValueError, match='not allowed'):
@@ -264,3 +268,40 @@ def test_provider_balance_is_encrypted_and_never_derived_from_profit(admin):
     assert store.history_sync.public()['balance_current']
     store.history_sync.disconnect()
     assert store.history_sync.public()['balance'] is None
+
+
+@pytest.mark.parametrize('status', [403, 409, 500])
+def test_wallet_outage_preserves_history_and_marks_balance_stale(admin, status):
+    client, store, provider = setup(admin)
+    login(client)
+    provider.balance = '12500.50'
+    assert client.post('/api/admin/trxchart-account', json=connect_body(), headers=headers(client)).status_code == 200
+    provider.wallet_status = status
+    provider.pending = False
+    store.history_sync.sync_once()
+    assert decoded(store, 'trade_journal')['rows'][0]['pnl_minor'] == 9600
+    public = store.history_sync.public()
+    assert public['active'] and public['balance'] == '12500.50' and not public['balance_current']
+    assert 'balance could not be refreshed' in public['error']
+    assert 'fixture-private-phone' not in json.dumps(public)
+
+
+def test_wallet_session_expiry_disables_orders_and_drops_private_balance(admin):
+    client, store, provider = setup(admin)
+    login(client)
+    provider.balance = '12500.50'
+    assert client.post('/api/admin/trxchart-account', json=connect_body(), headers=headers(client)).status_code == 200
+    provider.wallet_status = 401
+    store.history_sync.sync_once()
+    public = store.history_sync.public()
+    assert not public['active'] and public['status'] == 'expired' and public['balance'] is None
+
+
+def test_unsuccessful_wallet_response_is_not_presented_as_balance(admin):
+    client, store, provider = setup(admin)
+    login(client)
+    provider.balance = '12500.50'
+    provider.wallet_success = False
+    result = client.post('/api/admin/trxchart-account', json=connect_body(), headers=headers(client))
+    assert result.status_code == 200 and result.json['active']
+    assert result.json['balance'] is None and not result.json['balance_current']

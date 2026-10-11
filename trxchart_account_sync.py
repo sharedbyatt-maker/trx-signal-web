@@ -109,7 +109,7 @@ class HistorySync:
         # Fixed origin and allowlist: a session can never reach another host or place an order.
         allowed = {'POST': {'/api/auth/login'},
                    'GET': {'/', '/login', '/api/session-alive', '/api/bet/history?size=500',
-                           '/api/demo/history?size=500'}}
+                           '/api/demo/history?size=500', '/api/user/info'}}
         if path not in allowed.get(method, set()):
             raise ValueError('Read-only endpoint is not allowed.')
         try:
@@ -203,6 +203,21 @@ class HistorySync:
             completed.append(mode)
         if not completed:
             raise last_failure or ProviderError('unavailable')
+        # The provider's rendered REAL balance uses GET /api/user/info. Read it
+        # after histories so an optional wallet outage cannot discard trade rows.
+        known_balance = getattr(client, 'trxchart_balance', None)
+        try:
+            balance_token = self.token(client)
+            wallet = self.request(client, 'GET', '/api/user/info', headers={'X-API-Token': balance_token})
+            balance = json_balance(wallet) if wallet.get('success') is True else None
+            client.trxchart_balance = balance if balance is not None else known_balance
+            if balance is None and known_balance is None:
+                warnings['balance'] = 'TRXChart account balance is unavailable; existing history is preserved.'
+        except ProviderError as exc:
+            if exc.code == 'expired':
+                raise  # A genuine expired session must never keep order buttons active.
+            client.trxchart_balance = None
+            warnings['balance'] = 'TRXChart account balance could not be refreshed; existing history is preserved.'
         return incoming, completed, warnings
 
     def commit(self, client, config, expected, incoming, action, completed, warnings):

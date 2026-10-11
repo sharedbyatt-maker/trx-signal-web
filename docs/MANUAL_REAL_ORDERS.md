@@ -28,7 +28,8 @@ accepted. No order is sent when either permission button is used.
 | `TRX_ORDER_MIN_INTERVAL_SEC` | `0` (no spacing requirement) |
 
 Explicit environment caps remain available unless overridden by the dashboard.
-**Total Amount** shows the authenticated provider's REAL account balance in MMK,
+**Total Amount** reads the provider's verified `GET /api/user/info` balance
+with a fresh API token, after history sync. It shows the REAL account balance in MMK,
 with its update time. It never uses cumulative stakes or journal profit/loss.
 If the provider does not report a recognized balance, the card shows unavailable;
 a previous balance is labelled as last known when it cannot be refreshed.

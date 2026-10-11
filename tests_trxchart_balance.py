@@ -21,6 +21,7 @@ def test_page_extracts_real_wallet_without_demo_or_history_totals():
     assert from_page('<div id="profit">96</div><div>Total stakes: 5900</div>') is None
     assert from_page('<div id="balance">10</div><span id="walletBalance">20</span>') is None
     assert from_page('<span id="real-balance">0 MMK</span>') == '0.00'
+    assert from_page('<span id="betBalanceVal" class="bet-balance-val">101,471.65 MMK</span>') == '101471.65'
 
 
 def test_json_and_literal_fields_are_read_without_executing_scripts():
