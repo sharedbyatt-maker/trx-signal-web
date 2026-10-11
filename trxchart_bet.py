@@ -15,6 +15,7 @@ from uuid import UUID
 import requests
 
 from trxchart_account_sync import ORIGIN, ProviderError
+from trade_order_tracking import receipt, result_for
 
 ENDPOINT = '/api/bet'
 BANGKOK = timezone(timedelta(hours=7))
@@ -47,6 +48,28 @@ class OrderService:
                        'direction TEXT NOT NULL, amount INTEGER NOT NULL, '
                        'outcome TEXT NOT NULL, http_status INTEGER)')
             db.execute('CREATE INDEX IF NOT EXISTS trxchart_orders_day ON trxchart_orders(day)')
+            db.execute('CREATE TABLE IF NOT EXISTS trxchart_order_receipts('
+                       'request_id TEXT PRIMARY KEY, provider_id TEXT, issue TEXT)')
+
+    def recent(self, journal):
+        with self.store.lock, self.store.connect() as db:
+            rows = db.execute('SELECT o.request_id,o.at,o.direction,o.amount,o.outcome,r.provider_id,r.issue '
+                              'FROM trxchart_orders o LEFT JOIN trxchart_order_receipts r USING(request_id) '
+                              'ORDER BY o.at DESC,o.request_id DESC LIMIT 20').fetchall()
+        result = []
+        for request_id, at, side, amount, outcome, provider_id, issue in rows:
+            order = {'id': request_id, 'at': datetime.fromtimestamp(at, timezone.utc).isoformat(),
+                     'side': side, 'stake': amount, 'outcome': outcome,
+                     'provider_id': provider_id, 'issue': issue, 'state': -1, 'pnl': None}
+            matched, source = result_for(order, journal['rows'])
+            order['result_source'] = source
+            if matched:
+                order['state'] = matched['state']
+                order['issue'] = matched['issue']
+                if source == 'order_id':
+                    order['pnl'] = None if matched['pnl_minor'] is None else matched['pnl_minor'] / 100
+            result.append(order)
+        return result
 
     def limits(self):
         # Zero means no local cap. The owner can re-enable all permissions from
@@ -186,7 +209,12 @@ class OrderService:
                     db.execute('INSERT INTO trxchart_orders VALUES(?,?,?,?,?,?,?)',
                                (request_id, day, at, direction, amount, 'pending', None))
                     self._audit(db, request_id, direction, amount, 'pending', None, at)
+                client.trxchart_order_receipt = {}
                 outcome, status = self._send(client, token, direction, amount)
+                received = getattr(client, 'trxchart_order_receipt', {})
+                update_session = getattr(self.sync, 'order_sent', None)
+                if update_session is not None:
+                    update_session(client, token, config, revision, outcome)
                 follow = getattr(self.sync, 'follow_orders', None)
                 if follow is not None and outcome != 'rejected':
                     follow()
@@ -194,6 +222,10 @@ class OrderService:
             with self.store.lock, self.store.connect() as db:
                 db.execute('UPDATE trxchart_orders SET outcome=?,http_status=? WHERE request_id=?',
                            (outcome, status, request_id))
+                if received:
+                    db.execute('INSERT OR REPLACE INTO trxchart_order_receipts VALUES(?,?,?)',
+                               (request_id, received.get('provider_id'), received.get('issue')))
+                db.execute('DELETE FROM trxchart_order_receipts WHERE request_id NOT IN (SELECT request_id FROM trxchart_orders)')
                 self._audit(db, request_id, direction, amount, outcome, status, self._time()[1])
             wake = getattr(self.sync, 'wake', None)
             if wake is not None:
@@ -229,6 +261,7 @@ class OrderService:
                     return 'rejected', status
                 if data.get('error'):
                     return 'unknown', status
+                client.trxchart_order_receipt = receipt(data)
                 return 'accepted', status
         except (requests.RequestException, ValueError, UnicodeError):
             return 'unknown', status

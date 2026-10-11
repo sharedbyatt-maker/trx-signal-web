@@ -23,7 +23,7 @@ function toast(message,type='success'){
 }
 function notice(message,error=false,options={}){byId('notice').textContent=message;byId('notice').classList.toggle('error',error);if(options.popup!==false)toast(message,options.type||(error?'error':'success'));}
 let actionCommitted=false, lastMaintenance=null, draftNotified=false;
-async function api(url,method='GET',body){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),(url.startsWith('/api/admin/trxchart-account')||url==='/api/admin/trxchart-order')?75000:url.startsWith('/api/admin/trongrid')?60000:20000);try{const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});if(response.status===401){leavingAdmin=true;location.href='/admin/login';throw Error('Session expired.');}const data=await response.json().catch(()=>null);if(!response.ok)throw Error(data?.error||(url==='/api/admin/trxchart-order'?'Order response unavailable. Check REAL history before another order.':`Request failed (${response.status}). Please retry when the server is available.`));if(!data||typeof data!=='object')throw Error('Server returned an invalid response. Please refresh and try again.');if(busy&&(method==='PUT'||method==='DELETE'||url==='/api/admin/restore'||url==='/api/admin/maintenance'||url==='/api/admin/trade-journal/import'))actionCommitted=true;return data;}catch(e){if(url==='/api/admin/trxchart-order'&&(e.name==='AbortError'||e.name==='TypeError'))throw Error('Order response unavailable. Check REAL history before another order. Do not resend this request.');if(e.name==='AbortError')throw Error('Request timed out. Check system status and try again.');throw e;}finally{clearTimeout(timer);}}
+async function api(url,method='GET',body){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),(url.startsWith('/api/admin/trxchart-account')||url==='/api/admin/trxchart-order')?75000:url.startsWith('/api/admin/trongrid')?60000:20000);try{const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});if(response.status===401){leavingAdmin=true;location.href='/admin/login';throw Error('Session expired.');}const data=await response.json().catch(()=>null);if(!response.ok){const error=Error(data?.error||(url==='/api/admin/trxchart-order'?'Order response unavailable. Check REAL history before another order.':`Request failed (${response.status}). Please retry when the server is available.`));error.status=response.status;throw error;}if(!data||typeof data!=='object')throw Error('Server returned an invalid response. Please refresh and try again.');if(busy&&(method==='PUT'||method==='DELETE'||url==='/api/admin/restore'||url==='/api/admin/maintenance'||url==='/api/admin/trade-journal/import'))actionCommitted=true;return data;}catch(e){if(url==='/api/admin/trxchart-order'&&(e.name==='AbortError'||e.name==='TypeError'))throw Error('Order response unavailable. Check REAL history before another order. Do not resend this request.');if(e.name==='AbortError')throw Error('Request timed out. Check system status and try again.');throw e;}finally{clearTimeout(timer);}}
 function sameValue(a,b){if(Object.is(a,b))return true;if(!a||!b||typeof a!=='object'||typeof b!=='object')return false;const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&sameValue(a[k],b[k]));}
 function number(v){return v==null?'—':Number(v).toLocaleString('en-US',{maximumFractionDigits:1});}
 function date(v){if(!v)return '—';const iso=/^\d{4}-\d{2}-\d{2} /.test(v)?v.replace(' ','T')+'Z':v;const d=new Date(iso);return Number.isNaN(d.valueOf())?String(v):d.toLocaleString();}
@@ -227,25 +227,38 @@ setInterval(async()=>{
   finally{journalPolling=false;}
 },10000);
 
+let reconnectFormOpen=false;
 function renderJournalAccount(data){
+  if(!data||typeof data.active!=='boolean'){
+    journalAccount=null;renderAccountBalance(null);
+    byId('journal-connect-form').hidden=false;
+    byId('trade-connection-badge').textContent='CONNECTION UNKNOWN';
+    byId('trade-connection-badge').className='result-pill pending';
+    byId('trade-account-help').textContent='Connection ကို အတည်မပြုနိုင်သေးပါ။ Check connection ကိုနှိပ်ပြီး ပြန်စစ်ပါ။';
+    byId('journal-server-refresh').disabled=true;byId('journal-disconnect').disabled=true;updateOrderControls();return;
+  }
   journalAccount=data;
   renderAccountBalance(data);
   const label={connected:'Connected · server sync ချိတ်ဆက်ပြီး',disconnected:'Not connected · မချိတ်ရသေး',expired:'Login expired · ပြန်ချိတ်ရန်',unavailable:'Sync delayed · ပြန်စမ်းနေသည်',invalid_data:'History format error · ပြန်စမ်းနေသည်',storage:'Session storage error · ပြန်ချိတ်ရန်'}[data.status]||'Connection status unknown';
   byId('journal-account-state').textContent=label+' · Last sync: '+date(data.last_sync)+(data.error?' · '+data.error:'')+(data.active&&!data.worker_alive?' · Sync worker is not running.':'');
-  byId('journal-connect-form').hidden=Boolean(data.active);
+  const healthy=data.active&&data.status==='connected'&&data.worker_alive;
+  byId('journal-connect-form').hidden=Boolean(healthy&&!reconnectFormOpen);
+  byId('trade-account-help').textContent=healthy?'အကောင့် ချိတ်ထားပါသည်။ Email / password ပြန်ထည့်လိုပါက Connect / reconnect account ကိုနှိပ်ပါ။':data.active?'အကောင့် session ရှိသေးပေမယ့် result sync နောက်ကျနေသည်။ Status ကိုစစ်ပါ၊ လိုအပ်လျှင် အောက်က form ဖြင့် ပြန်ချိတ်ပါ။':'အကောင့် မချိတ်ထားပါ။ အောက်တွင် TRXChart Phone / Email နှင့် Password ထည့်ပြီး Connect TRXChart ကိုနှိပ်ပါ။';
   byId('journal-server-refresh').disabled=!data.active;
   byId('journal-disconnect').disabled=!data.active;
-  byId('trade-connection-badge').textContent=data.active?'CONNECTED · REAL':'CONNECT ACCOUNT';
-  byId('trade-connection-badge').className='result-pill '+(data.active?'win':'pending');
+  byId('trade-connection-badge').textContent=healthy?'CONNECTED · REAL':data.active?'SYNC DELAYED':'CONNECT ACCOUNT';
+  byId('trade-connection-badge').className='result-pill '+(healthy?'win':'pending');
   updateOrderControls();
 }
-async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){journalAccount=null;renderAccountBalance(null);byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}await loadOrders();}
+async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){renderJournalAccount(null);byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}await loadOrders();}
+byId('trade-reconnect').addEventListener('click',()=>{reconnectFormOpen=!reconnectFormOpen;renderJournalAccount(journalAccount);if(reconnectFormOpen||!journalAccount?.active)byId('journal-account-phone').focus();});
+byId('trade-check-connection').addEventListener('click',()=>run(loadJournalAccount,'Connection status refreshed.'));
 byId('journal-connect-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{
   if(!journalAccount)throw Error('Connection status is still loading.');
   if(!byId('journal-account-consent').checked)throw Error('Approve encrypted session storage and history access first.');
-  try{const data=await api('/api/admin/trxchart-account','POST',{revision:journalAccount.revision,consent:true,phone:byId('journal-account-phone').value.trim(),password:byId('journal-account-password').value,twofa:byId('journal-account-twofa').value.trim()});renderJournalAccount(data);renderJournal(await api(journalURL()),false);}
-  finally{byId('journal-account-password').value='';byId('journal-account-twofa').value='';byId('journal-account-consent').checked=false;}
-},'TRXChart connected. Server history sync runs every minute while the server is awake.');});
+  try{const data=await api('/api/admin/trxchart-account','POST',{revision:journalAccount.revision,consent:true,phone:byId('journal-account-phone').value.trim(),password:byId('journal-account-password').value,twofa:byId('journal-account-twofa').value.trim()});reconnectFormOpen=false;renderJournalAccount(data);renderJournal(await api(journalURL()),false);await loadTradeFeed();}
+  finally{byId('journal-account-phone').value='';byId('journal-account-password').value='';byId('journal-account-twofa').value='';byId('journal-account-consent').checked=false;}
+},'TRXChart connected. REAL results use fast sync while Trade is open.');});
 byId('journal-server-refresh').addEventListener('click',()=>run(async()=>{renderJournalAccount(await api('/api/admin/trxchart-account/refresh','POST',{}));},'History refresh queued. Results update automatically.'));
 byId('journal-disconnect').addEventListener('click',()=>run(async()=>{renderJournalAccount(await api('/api/admin/trxchart-account','DELETE',{}));},'Server session removed. Imported results are preserved.'));
 
@@ -300,19 +313,54 @@ for(const [id,side] of [['order-big','BIG'],['order-small','SMALL']])byId(id).ad
   if(!journalAccount?.active)throw Error('Connect TRXChart above before placing an order.');
   if(!Number.isSafeInteger(amount)||amount<1||!orderData||(orderData.max_amount>0&&amount>orderData.max_amount))throw Error('Enter a positive whole-number amount within any configured limit.');
   if(!confirm('Place REAL '+side+' order for '+amount+' MMK? This uses your real balance.'))throw Error('Order cancelled.');
-  byId('order-result').textContent='Sending one REAL order…';
+  const requestId=crypto.randomUUID();
+  const orderDraft={id:requestId,at:new Date().toISOString(),side,stake:amount,outcome:'pending',state:-1,pnl:null};
+  optimisticOrders.set(requestId,orderDraft);
+  renderManualOrders(manualOrders);
+  byId('order-result').textContent='WAIT · Sending one REAL order…';
   try{
-    const data=await api('/api/admin/trxchart-order','POST',{direction:side,amount,mode:'real',confirm:true,request_id:crypto.randomUUID()});
+    const data=await api('/api/admin/trxchart-order','POST',{direction:side,amount,mode:'real',confirm:true,request_id:requestId});
+    optimisticOrders.set(requestId,{...orderDraft,outcome:data.outcome});renderManualOrders(manualOrders);
     byId('order-result').textContent=data.message+(data.ok?' Following REAL results for WIN / LOSS…':'');
     if(!data.ok)throw Error(data.message);
     notice(side+' · '+amount+' MMK · '+data.message);
-  }catch(error){byId('order-result').textContent=error.message;throw error;}
-  finally{await loadOrders();await loadJournalAccount();await loadTradeFeed();}
+  }catch(error){const row=optimisticOrders.get(requestId);if(row&&row.outcome==='pending')optimisticOrders.set(requestId,{...row,outcome:[400,401,403,409,429].includes(error.status)?'not_sent':'unknown'});renderManualOrders(manualOrders);byId('order-result').textContent=error.message;throw error;}
+  finally{await loadTradeFeed();await loadOrders();await loadJournalAccount();}
 },'Real order request completed. Check REAL history for settlement.'));
 
 // This feed reads committed account history, independent of report mode/date.
 // It never places or retries an order and stores only an opaque stream/cursor locally.
 let tradeFeedBusy=false,tradeFeedStream=null,tradeFeedCursor=null;
+let manualOrders=[],tradeSync=null,tradeFeedError=null;
+const optimisticOrders=new Map();
+function renderManualOrders(rows){
+  manualOrders=rows;
+  for(const row of rows)optimisticOrders.delete(row.id);
+  const all=[...optimisticOrders.values(),...rows].sort((a,b)=>new Date(b.at)-new Date(a.at));
+  const list=byId('trade-orders');list.replaceChildren();
+  const waiting=all.filter(row=>row.state===-1&&['accepted','pending'].includes(row.outcome));
+  byId('trade-wait-count').textContent=waiting.length+' WAIT';
+  if(!all.length){const li=document.createElement('li');li.className='activity-empty';li.textContent='Your next order will appear here immediately as WAIT.';list.append(li);return;}
+  for(const row of all){
+    const li=document.createElement('li'),info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small'),result=document.createElement('div'),pill=document.createElement('span'),note=document.createElement('small');
+    li.dataset.requestId=row.id;title.textContent=row.side+' · '+tradeCash(row.stake)+' MMK';detail.textContent=date(row.at)+(row.issue?' · '+row.issue:' · Round awaiting confirmation');info.append(title,detail);
+    const elapsed=Math.max(0,Math.floor((Date.now()-new Date(row.at).valueOf())/1000));
+    const label=row.state===1?'WIN':row.state===0?'LOSS':row.outcome==='rejected'?'REJECTED':row.outcome==='not_sent'?'NOT SENT':row.outcome==='unknown'?'UNCERTAIN':elapsed>180?'CHECK HISTORY':'WAIT';
+    pill.className='result-pill '+(row.state===1?'win':row.state===0||row.outcome==='rejected'?'loss':'pending');pill.textContent=label;
+    note.textContent=row.state!==-1?(row.pnl!==null?(row.pnl>0?'+':'')+tradeCash(row.pnl)+' MMK': 'Confirmed round result'):row.outcome==='pending'?'Sending · never retried':row.outcome==='accepted'?'Submitted · awaiting provider result':row.outcome==='rejected'?'Provider rejected this order':row.outcome==='not_sent'?'Order was not submitted':'Check REAL history before another order';
+    if(label==='CHECK HISTORY')note.textContent='Result not linked yet. Check verified account activity below.';
+    result.className='activity-result';result.append(pill,note);li.append(info,result);list.append(li);
+  }
+}
+function renderTradeSync(){
+  if(tradeFeedError){byId('trade-live-state').textContent='DELAYED';byId('trade-live-state').classList.add('sync-delayed');byId('trade-feed-status').textContent='Result updates delayed: '+tradeFeedError;return;}
+  if(!tradeSync){byId('trade-feed-status').textContent='Provider-confirmed results · waiting for sync status';return;}
+  const age=tradeSync.last_sync?Math.max(0,Math.floor((Date.now()-new Date(tradeSync.last_sync).valueOf())/1000)):null;
+  const fresh=tradeSync.active&&tradeSync.worker_alive&&tradeSync.status==='connected'&&age!==null&&age<15;
+  byId('trade-live-state').textContent=!tradeSync.active?'OFFLINE':fresh?'LIVE':'DELAYED';
+  byId('trade-live-state').classList.toggle('sync-delayed',!fresh);
+  byId('trade-feed-status').textContent=!tradeSync.active?'Connect your account to receive REAL results.':'Provider sync: '+(age===null?'not received':age+'s ago')+' · '+(fresh?'up to date':'updates delayed')+(tradeSync.provider_fetch_ms!==null&&tradeSync.provider_fetch_ms!==undefined?' · fetch '+tradeSync.provider_fetch_ms+' ms':'')+(tradeSync.error?' · '+tradeSync.error:'');
+}
 function savedTradeCursor(stream){try{const raw=localStorage.getItem('trx-settlement:'+stream);const n=Number(raw);return raw!==null&&Number.isSafeInteger(n)&&n>=0?n:null;}catch(_){return null;}}
 function saveTradeCursor(stream,cursor){try{localStorage.setItem('trx-settlement:'+stream,String(cursor));}catch(_){} }
 function settlementMessage(row){return row.side+' · '+tradeCash(row.stake)+' MMK · P/L '+(row.pnl===null?'—':tradeCash(row.pnl))+' MMK · Issue '+row.issue;}
@@ -332,10 +380,12 @@ async function loadTradeFeed(){
   if(tradeFeedBusy||leavingAdmin)return;
   tradeFeedBusy=true;
   try{
-    const query=tradeFeedStream&&tradeFeedCursor!==null?'?'+new URLSearchParams({stream:tradeFeedStream,after:String(tradeFeedCursor)}):'';
+    const params=new URLSearchParams();if(tradeFeedStream&&tradeFeedCursor!==null){params.set('stream',tradeFeedStream);params.set('after',String(tradeFeedCursor));}if(!byId('trade').hidden)params.set('watch','1');const query=params.size?'?'+params:'';
     const data=await api('/api/admin/trade-feed'+query);
     if(!Array.isArray(data.recent)||!Array.isArray(data.events)||!Number.isSafeInteger(data.cursor))throw Error('Invalid settlement feed.');
     renderTradeActivity(data.recent);
+    renderManualOrders(Array.isArray(data.orders)?data.orders:[]);
+    tradeFeedError=null;tradeSync=data.sync||null;renderTradeSync();
     if(data.stream!==tradeFeedStream){
       tradeFeedStream=data.stream;tradeFeedCursor=data.stream?savedTradeCursor(data.stream):null;
       if(tradeFeedCursor===null||tradeFeedCursor>data.cursor)tradeFeedCursor=data.cursor;
@@ -354,12 +404,12 @@ async function loadTradeFeed(){
       tradeFeedCursor=data.cursor;
     }
     if(data.stream)saveTradeCursor(data.stream,tradeFeedCursor);
-    byId('trade-feed-status').textContent=data.gap?'Some older alerts expired. Check Trade Results for the full history.':'Provider-confirmed results · checked '+new Date().toLocaleTimeString();
-  }catch(error){byId('trade-feed-status').textContent='Result updates delayed: '+error.message;}
+    if(data.gap)byId('trade-feed-status').textContent+=' · Some older alerts expired. Check Trade Results.';
+  }catch(error){tradeFeedError=error.message;renderTradeSync();}
   finally{tradeFeedBusy=false;}
 }
-setInterval(()=>{if(!busy&&!leavingAdmin)loadTradeFeed();},2500);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!busy)loadTradeFeed();});
+setInterval(()=>{if(!leavingAdmin)loadTradeFeed();renderTradeSync();},1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadTradeFeed();});
 function renderTradeNotificationPermission(){
   const supported='Notification' in window;
   byId('trade-notifications').disabled=!supported||Notification.permission==='denied';

@@ -28,6 +28,7 @@ test('server connection requires consent, clears credentials and allows stopping
   await page.getByRole('button',{name:'Connect TRXChart · တစ်ကြိမ်ချိတ်ဆက်ရန်',exact:true}).click();
   await expect(page.locator('#journal-account-state')).toContainText('Connected');
   await expect(page.locator('#journal-connect-form')).toBeHidden();
+  await expect(page.locator('#journal-account-phone')).toHaveValue('');
   await expect(page.locator('#journal-account-password')).toHaveValue('');
   await expect(page.locator('#journal-account-twofa')).toHaveValue('');
   await expect(page.getByRole('button',{name:'Sync now',exact:true})).toBeEnabled();
