@@ -3,6 +3,7 @@ import copy
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -323,10 +324,13 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             if active_hash and len(password) <= 256 and check_password_hash(active_hash, password):
                 with auth_lock:
                     attempts.pop(key, None)
+                after_login = session.get('history_sync_after_login')
                 session.clear()
                 session.update(admin=True, auth_revision=auth_revision, authenticated_at=time.time(), csrf=secrets.token_urlsafe(32))
                 session.permanent = True
                 store.event('login', {'result': 'success'})
+                if isinstance(after_login,str) and re.fullmatch(r'/admin/trxchart-sync\?bridge=[a-f0-9]{48}',after_login):
+                    return redirect(after_login)
                 return redirect('/admin')
             error = 'Incorrect password.'
         return render_template('admin_login.html', csrf=csrf(), error=error, configured=bool(current_auth()[1]))
@@ -336,6 +340,25 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         if not authorized():
             return redirect('/admin/login')
         return render_template('admin.html', csrf=csrf())
+
+    @app.get('/admin/trxchart-sync-open')
+    def history_sync_open():
+        # A cross-site popup initially withholds SameSite=Strict cookies. Load
+        # this inert same-origin document first without changing the session.
+        # Its navigation then reaches the authenticated page with normal cookies.
+        if not re.fullmatch(r'[a-f0-9]{48}',request.args.get('bridge','')):
+            return 'Open browser sync from Trade Results.',400
+        return render_template('trxchart_sync_open.html')
+
+    @app.get('/admin/trxchart-sync')
+    def history_sync_page():
+        bridge=request.args.get('bridge','')
+        if not re.fullmatch(r'[a-f0-9]{48}',bridge):
+            return 'Open browser sync from Trade Results.',400
+        if not authorized():
+            session['history_sync_after_login']='/admin/trxchart-sync?bridge='+bridge
+            return redirect('/admin/login')
+        return render_template('trxchart_sync.html',csrf=csrf())
 
     @app.post('/api/admin/password')
     @protect
@@ -717,8 +740,38 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             incoming=normalize(data.get('history'),mode,data.get('source_timezone','Asia/Yangon'))
             value['rows'],counts=merge(value['rows'],incoming)
             value['imported_at']=utcnow()
+            result=snapshot(value,revision,mode,data.get('date'))
             revision=store.private_save('trade_journal',store.vault.cipher.encrypt(json.dumps(value).encode()).decode(),revision,{'action':'history_imported',**counts})
-            return jsonify(**snapshot(value,revision,mode),import_result=counts)
+            result['revision']=revision
+            return jsonify(**result,import_result=counts)
+        except ValueError as exc:return jsonify(error=str(exc)),400
+        except RuntimeError as exc:return jsonify(error=str(exc)),409
+
+    @app.post('/api/admin/trade-journal/sync')
+    @protect
+    def sync_trade_journal():
+        from trade_journal import normalize,merge,snapshot
+        data=request.get_json(silent=True)
+        if not isinstance(data,dict):return jsonify(error='Invalid history sync.'),400
+        try:
+            mode=data.get('mode')
+            zone=data.get('source_timezone')
+            history=data.get('history')
+            # Empty successful histories are normal for unused Real/Demo accounts.
+            empty=isinstance(history,dict) and history.get('success') is True and history.get('list')==[] and history.get('mode',mode)==mode
+            if empty:
+                if mode not in ('real','demo') or zone not in ('Asia/Bangkok','Asia/Yangon','UTC'):raise ValueError('Invalid history mode or timezone.')
+                incoming=[]
+            else:incoming=normalize(history,mode,zone)
+            # Merge against current state atomically; a browser refresh cannot
+            # overwrite another mode, manual import, or saved target settings.
+            with store.lock:
+                revision,value=journal_read()
+                value['rows'],counts=merge(value['rows'],incoming)
+                value['imported_at']=utcnow()
+                value.setdefault('synced_at',{})[mode]=value['imported_at']
+                revision=store.private_save('trade_journal',store.vault.cipher.encrypt(json.dumps(value).encode()).decode(),revision,{'action':'browser_history_synced','mode':mode,**counts})
+                return jsonify(**snapshot(value,revision,mode),import_result=counts)
         except ValueError as exc:return jsonify(error=str(exc)),400
         except RuntimeError as exc:return jsonify(error=str(exc)),409
 

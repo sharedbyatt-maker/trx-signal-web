@@ -142,7 +142,7 @@ def snapshot(value, revision, mode='real', day=None, now=None):
                       'stake': r['stake_minor'] / 100, 'pnl': r['pnl_minor'] / 100 if r['pnl_minor'] is not None else None}
                      for r in reversed(selected[-500:])],
             'display_truncated': len(selected) > 500, 'stored_records': len(value['rows']),
-            'imported_at': value.get('imported_at'),
+            'imported_at': value.get('imported_at'), 'synced_at': value.get('synced_at',{}),
             'coverage': 'Imported records only; this is not a verified complete account-day total. Pending records are excluded from P/L.'}
 
 

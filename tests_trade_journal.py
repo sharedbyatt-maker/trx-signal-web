@@ -95,3 +95,50 @@ def test_private_routes_revision_encryption_atomic_import_and_backup(admin):
 def test_export_mode_mismatch_rejected():
     with pytest.raises(ValueError,match='mode differs'):
         normalize({'success':True,'mode':'demo','list':[row()]},'real','UTC')
+
+
+def test_browser_sync_auth_empty_modes_and_preserved_targets(admin):
+    client,store,_,_=admin
+    url='/api/admin/trade-journal/sync'
+    assert client.post(url,json={}).status_code==401
+    login(client)
+    assert client.post(url,json={}).status_code==403
+    targets={'tp':50,'sl':100,'timezone':'Asia/Yangon'}
+    client.put('/api/admin/trade-journal',json={'revision':0,'limits':targets},headers=headers(client))
+    for mode in ('real','demo'):
+        data={'mode':mode,'source_timezone':'Asia/Yangon','history':{'success':True,'list':[row(orderId='sync-'+mode)]}}
+        first=client.post(url,json=data,headers=headers(client))
+        assert first.status_code==200 and first.json['import_result']['added']==1
+        second=client.post(url,json=data,headers=headers(client))
+        assert second.json['import_result']['unchanged']==1
+        assert second.json['limits']==targets and mode in second.json['synced_at']
+    empty=client.post(url,json={'mode':'demo','source_timezone':'Asia/Yangon','history':{'success':True,'list':[]}},headers=headers(client))
+    assert empty.status_code==200 and empty.json['stored_records']==2
+    assert len(client.get('/api/admin/trade-journal/export?mode=real').json['list'])==1
+    assert len(client.get('/api/admin/trade-journal/export?mode=demo').json['list'])==1
+    for bad in ({'success':False,'list':[]},{'success':True,'list':[],'mode':'real'}):
+        assert client.post(url,json={'mode':'demo','source_timezone':'UTC','history':bad},headers=headers(client)).status_code==400
+
+
+def test_import_preserves_selected_date_and_rejects_invalid_date_atomically(admin):
+    client,store,_,_=admin;login(client)
+    data={'revision':0,'mode':'real','source_timezone':'Asia/Yangon','date':'2026-10-10','history':{'success':True,'list':[row()]}}
+    response=client.post('/api/admin/trade-journal/import',json=data,headers=headers(client))
+    assert response.status_code==200 and response.json['date']=='2026-10-10' and response.json['summary']['pnl']==98
+    data.update(revision=1,date='invalid')
+    assert client.post('/api/admin/trade-journal/import',json=data,headers=headers(client)).status_code==400
+    assert store.private_get('trade_journal')['revision']==1
+
+
+def test_browser_sync_login_continuation_is_internal_and_validated(admin):
+    client,_,_,_=admin
+    nonce='a'*48
+    landing=client.get('/admin/trxchart-sync-open?bridge='+nonce)
+    assert landing.status_code==200 and 'Set-Cookie' not in landing.headers
+    assert "script-src 'self'" in landing.headers['Content-Security-Policy']
+    assert client.get('/admin/trxchart-sync?bridge=bad').status_code==400
+    assert client.get('/admin/trxchart-sync?bridge='+nonce).location=='/admin/login'
+    assert login(client).location=='/admin/trxchart-sync?bridge='+nonce
+    page=client.get('/admin/trxchart-sync?bridge='+nonce)
+    assert page.status_code==200 and 'Accept browser sync' in page.text
+    assert "script-src 'self'" in page.headers['Content-Security-Policy']

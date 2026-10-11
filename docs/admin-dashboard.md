@@ -212,3 +212,37 @@ Exports contain private financial history; keep them safe. Re-import restores
 records but does not apply exported targets: save those separately. On Render
 Free, local storage and its vault key can reset during restart/deploy; export
 beforehand. This is a manual import workflow, not automatic account sync.
+
+## Read-only browser history sync
+
+Trade Results now offers a connection bookmark. Save its generated URL as a
+bookmark, run it on the signed-in `https://trxchart.com` tab, accept the connection
+in the private sync window, and open Terminal → History once. The bridge captures
+that history request's authentication in the TRXChart tab only, then makes GET
+requests to `/api/bet/history?size=500` and `/api/demo/history?size=500` once a
+minute. It does not login again, place orders or send authentication headers,
+cookies or passwords to this application. The existing provider session is used;
+logout, closed tabs, browser suspension or an expired admin session pauses sync.
+This is browser-assisted sync, not a 24-hour server account connection.
+
+Only whitelisted history fields are transferred. Large JSON integer issue/order
+IDs are converted to strings before parsing to preserve their exact value.
+The receiver requires explicit acceptance, the exact provider origin, matching
+opener window and a random connection nonce. Saves remain admin-authenticated,
+CSRF-protected, encrypted, and atomic against current journal state. No CORS,
+password, or strategy protections are relaxed. A successful empty Demo history is
+accepted without clearing Real records. Duplicate snapshots are idempotent;
+pending orders can settle. Conflicting settled results reject the snapshot.
+
+History retrieval is limited to the latest 500 records per mode. It does not
+verify full-day coverage, archive unlimited history, or make Render Free local
+storage persistent. Export both modes before platform replacement/deploy. The
+public terminal never receives private history. Visible Trade Results refreshes
+saved rows every ten seconds without replacing target drafts. Manual import
+preserves the selected report date instead of switching to today.
+
+Verified on October 11 via the signed-in provider's history UI and client code:
+Real uses `/api/bet/history`, Demo uses `/api/demo/history`, both return a successful
+`list` containing full `addTime`, issue, stake, payout and state. Production sync
+still requires the user to activate the connection bookmark in their browser;
+local fixtures validate transport, settlement, credentials isolation and exact IDs.

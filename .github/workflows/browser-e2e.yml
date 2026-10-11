@@ -54,11 +54,15 @@ jobs:
             if [ -f "$js_file" ]; then node --check "$js_file"; fi
           done
       - name: Verify request timeout and recovery
-        run: node tests_transport_stability.js
+        run: |
+          node tests_transport_stability.js
+          node tests_history_bridge.js
       - name: Install Playwright
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Verify browser history sync
+        run: npx playwright test e2e/trxchart-sync.spec.js
       - name: Run browser E2E suite
         run: npm run test:e2e
       - name: Upload Playwright report and layout captures
