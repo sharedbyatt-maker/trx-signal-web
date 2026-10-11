@@ -85,6 +85,7 @@ def fixture_settings():
             os.kill(int(boots[0]), signal.SIGKILL)
             replacement = ready(2)
             assert replacement[0] != replacement[1]
+            assert log_path.read_text().count('TRX runtime rss_mb=') == 2
             assert requests.get(f'http://127.0.0.1:{port}/', timeout=2).status_code == 200
             assert requests.get(f'http://127.0.0.1:{port}/__fixture_settings', timeout=2).json() == {
                 'timeframe': 5, 'market': False}

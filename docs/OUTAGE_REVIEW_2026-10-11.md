@@ -48,6 +48,12 @@ preload modes and kills a fixture worker to verify that the replacement
 worker serves requests with engine/Telegram threads running. The fixture sends
 no external API or Telegram requests.
 
+Each production worker logs current/peak RSS, open descriptor count and engine/
+Telegram thread liveness at startup and every minute. These logs contain no
+credentials, endpoint URLs, positions or request bodies. Together with the
+supervisor's worker exit/signal logs, this improves evidence for future failures;
+it cannot reconstruct telemetry that was not recorded during the old incident.
+
 No L1/12-Step decision, stake, settlement, history or notification rule changes
 are included. These are availability improvements, not a proven retrospective
 root-cause repair or an always-on guarantee for Render Free. Ephemeral database
