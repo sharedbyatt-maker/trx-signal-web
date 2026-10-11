@@ -711,6 +711,35 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
             raise ValueError('Trade journal storage is unreadable. Preserve your exported history before replacing storage.') from None
         return state['revision'],value
 
+    from trxchart_account_sync import HistorySync, ProviderError
+    store.history_sync = HistorySync(store)
+
+    @app.route('/api/admin/trxchart-account', methods=['GET', 'POST', 'DELETE'])
+    @protect
+    def trxchart_account():
+        try:
+            if request.method == 'POST':
+                store.history_sync.connect(request.get_json(silent=True))
+                if os.environ.get('TRX_NO_ENGINE') != '1':
+                    store.history_sync.start()
+            elif request.method == 'DELETE':
+                store.history_sync.disconnect()
+            return jsonify(store.history_sync.public())
+        except ProviderError as exc:
+            return jsonify(error=str(exc)), 502
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        except RuntimeError as exc:
+            return jsonify(error=str(exc)), 409
+
+    @app.post('/api/admin/trxchart-account/refresh')
+    @protect
+    def refresh_trxchart_account():
+        try:
+            return jsonify(store.history_sync.refresh())
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+
     @app.route('/api/admin/trade-journal',methods=['GET','PUT'])
     @protect
     def trade_journal():

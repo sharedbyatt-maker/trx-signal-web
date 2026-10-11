@@ -22,6 +22,7 @@ def test_worker_starts_engines_and_recovers_after_crash(tmp_path, preload):
 import app
 assert app.core._engine_thread is None
 assert app.core._tg_thread is None
+assert app.admin_store.history_sync.thread is None
 wait = threading.Event()
 def engine():
     with app.core.LOCK:
@@ -33,7 +34,8 @@ application = app.app
 @application.get('/__fixture_settings')
 def fixture_settings():
     return {'timeframe': app.admin_store.cached['settings']['timeframe'],
-            'market': app.admin_store.control('telegram')['settings']['engines']['market']}
+            'market': app.admin_store.control('telegram')['settings']['engines']['market'],
+            'journal_workers': sum(t.name == 'trxchart-history-sync' for t in threading.enumerate())}
 ''')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -88,7 +90,7 @@ def fixture_settings():
             assert log_path.read_text().count('TRX runtime rss_mb=') == 2
             assert requests.get(f'http://127.0.0.1:{port}/', timeout=2).status_code == 200
             assert requests.get(f'http://127.0.0.1:{port}/__fixture_settings', timeout=2).json() == {
-                'timeframe': 5, 'market': False}
+                'timeframe': 5, 'market': False, 'journal_workers': 1}
         finally:
             server.terminate()
             try:

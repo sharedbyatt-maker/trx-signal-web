@@ -3,6 +3,7 @@ const byId = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
 const names = {ema:'EMA 5 / 15',sma:'SMA 20 / 50',bb:'Bollinger Bands',rsi:'RSI 14',macd:'MACD',stoch:'Stochastic',tl:'Trend lines',sr:'Support / Resistance',pat:'Patterns',hss:'H / SS · 5m',sig:'Signal arrows'};
 let journalData=null;
+let journalAccount=null;
 let leavingAdmin=false;
 let revision = null, settings = null, polling = false, busy = false, maintenanceBusy = false;
 function toast(message,type='success'){
@@ -22,7 +23,7 @@ function toast(message,type='success'){
 }
 function notice(message,error=false,options={}){byId('notice').textContent=message;byId('notice').classList.toggle('error',error);if(options.popup!==false)toast(message,options.type||(error?'error':'success'));}
 let actionCommitted=false, lastMaintenance=null, draftNotified=false;
-async function api(url,method='GET',body){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),url.startsWith('/api/admin/trongrid')?60000:20000);try{const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});if(response.status===401){leavingAdmin=true;location.href='/admin/login';throw Error('Session expired.');}const data=await response.json().catch(()=>null);if(!response.ok)throw Error(data?.error||`Request failed (${response.status}). Please retry when the server is available.`);if(!data||typeof data!=='object')throw Error('Server returned an invalid response. Please refresh and try again.');if(busy&&(method==='PUT'||method==='DELETE'||url==='/api/admin/restore'||url==='/api/admin/maintenance'||url==='/api/admin/trade-journal/import'))actionCommitted=true;return data;}catch(e){if(e.name==='AbortError')throw Error('Request timed out. Check system status and try again.');throw e;}finally{clearTimeout(timer);}}
+async function api(url,method='GET',body){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),url.startsWith('/api/admin/trxchart-account')?75000:url.startsWith('/api/admin/trongrid')?60000:20000);try{const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});if(response.status===401){leavingAdmin=true;location.href='/admin/login';throw Error('Session expired.');}const data=await response.json().catch(()=>null);if(!response.ok)throw Error(data?.error||`Request failed (${response.status}). Please retry when the server is available.`);if(!data||typeof data!=='object')throw Error('Server returned an invalid response. Please refresh and try again.');if(busy&&(method==='PUT'||method==='DELETE'||url==='/api/admin/restore'||url==='/api/admin/maintenance'||url==='/api/admin/trade-journal/import'))actionCommitted=true;return data;}catch(e){if(e.name==='AbortError')throw Error('Request timed out. Check system status and try again.');throw e;}finally{clearTimeout(timer);}}
 function sameValue(a,b){if(Object.is(a,b))return true;if(!a||!b||typeof a!=='object'||typeof b!=='object')return false;const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&sameValue(a[k],b[k]));}
 function number(v){return v==null?'—':Number(v).toLocaleString('en-US',{maximumFractionDigits:1});}
 function date(v){if(!v)return '—';const iso=/^\d{4}-\d{2}-\d{2} /.test(v)?v.replace(' ','T')+'Z':v;const d=new Date(iso);return Number.isNaN(d.valueOf())?String(v):d.toLocaleString();}
@@ -177,7 +178,7 @@ function renderJournalSync(data){
   }));
 }
 function renderJournal(data,fill=false){journalData=data;renderJournalSync(data);byId('journal-date').value=data.date;if(fill){byId('journal-tp').value=data.limits.tp;byId('journal-sl').value=data.limits.sl;byId('journal-zone').value=data.limits.timezone;}const s=data.summary;const cash=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});stats('journal-stats',[[data.date===data.today?'Today net P/L · MMK':'Day net P/L · MMK',cash(s.pnl)],['Wins / losses',s.wins+' / '+s.losses],['Pending',String(s.pending)],['Orders / staked MMK',s.trades+' / '+cash(s.staked)]]);const status={tp_reached:'TP reached',sl_reached:'SL reached',within_limits:'Within daily targets',limits_disabled:'Daily targets disabled'}[s.status];byId('journal-status').textContent=status+' · '+data.mode.toUpperCase()+' · '+data.date+' ('+data.limits.timezone+') · Last import: '+date(data.imported_at);byId('journal-coverage').textContent=data.coverage+(data.display_truncated?' Table limited to latest 500 rows.':'');table('journal-rows',data.rows,r=>[new Date(r.at).toLocaleString('en-GB',{timeZone:data.limits.timezone}),r.issue,r.side,cash(r.stake),r.state===1?'WIN':r.state===0?'LOSS':'PENDING',r.pnl===null?'Pending':cash(r.pnl)]);updateDraftSummary();}
-async function loadJournal(){renderJournal(await api(journalURL()),true);}
+async function loadJournal(){renderJournal(await api(journalURL()),true);await loadJournalAccount();}
 byId('journal-refresh').addEventListener('click',()=>run(loadJournal,'Journal refreshed. Saved targets loaded.'));
 byId('journal-today').addEventListener('click',()=>run(async()=>{byId('journal-date').value='';await loadJournal();},'Today journal loaded.'));
 for(const id of ['journal-mode','journal-date'])byId(id).addEventListener('change',()=>run(loadJournal,'Selected history loaded. Saved targets loaded.'));
@@ -189,7 +190,7 @@ run(async()=>{await loadSettings();const results=await Promise.allSettled([refre
 
 function restoreReady(){return settings&&strategyData.l1&&strategyData.twelve&&policyData&&messageData;}
 function updateMaintenanceControls(){for(const btn of document.querySelectorAll('[data-action]'))btn.disabled=busy||maintenanceBusy;}
-function updateReadyControls(){updateMaintenanceControls();for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
+function updateReadyControls(){updateMaintenanceControls();for(const id of ['journal-server-refresh','journal-disconnect'])byId(id).disabled=!journalAccount?.active;for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
 
 byId('journal-copy-sync').addEventListener('click',()=>run(async()=>{
   const response=await fetch('/static/js/trxchart-history-bridge.js',{credentials:'same-origin'});
@@ -205,7 +206,25 @@ let journalPolling=false;
 setInterval(async()=>{
   if(busy||journalPolling||document.hidden||leavingAdmin||byId('journal').hidden||!journalData)return;
   const url=journalURL();journalPolling=true;
-  try{const data=await api(url);if(!busy&&url===journalURL())renderJournal(data,false);}
+  try{const data=await api(url);if(!busy&&url===journalURL()){renderJournal(data,false);await loadJournalAccount();}}
   catch(error){byId('journal-status').textContent='History refresh failed: '+error.message;}
   finally{journalPolling=false;}
 },10000);
+
+function renderJournalAccount(data){
+  journalAccount=data;
+  const label={connected:'Connected · server sync ချိတ်ဆက်ပြီး',disconnected:'Not connected · မချိတ်ရသေး',expired:'Login expired · ပြန်ချိတ်ရန်',unavailable:'Sync delayed · ပြန်စမ်းနေသည်',invalid_data:'History format error · ပြန်စမ်းနေသည်',storage:'Session storage error · ပြန်ချိတ်ရန်'}[data.status]||'Connection status unknown';
+  byId('journal-account-state').textContent=label+' · Last sync: '+date(data.last_sync)+(data.error?' · '+data.error:'')+(data.active&&!data.worker_alive?' · Sync worker is not running.':'');
+  byId('journal-connect-form').hidden=Boolean(data.active);
+  byId('journal-server-refresh').disabled=!data.active;
+  byId('journal-disconnect').disabled=!data.active;
+}
+async function loadJournalAccount(){try{renderJournalAccount(await api('/api/admin/trxchart-account'));}catch(error){byId('journal-account-state').textContent='Connection status could not be refreshed: '+error.message;}}
+byId('journal-connect-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{
+  if(!journalAccount)throw Error('Connection status is still loading.');
+  if(!byId('journal-account-consent').checked)throw Error('Approve encrypted session storage and history access first.');
+  try{const data=await api('/api/admin/trxchart-account','POST',{revision:journalAccount.revision,consent:true,phone:byId('journal-account-phone').value.trim(),password:byId('journal-account-password').value,twofa:byId('journal-account-twofa').value.trim()});renderJournalAccount(data);renderJournal(await api(journalURL()),false);}
+  finally{byId('journal-account-password').value='';byId('journal-account-twofa').value='';byId('journal-account-consent').checked=false;}
+},'TRXChart connected. Server history sync runs every minute while the server is awake.');});
+byId('journal-server-refresh').addEventListener('click',()=>run(async()=>{renderJournalAccount(await api('/api/admin/trxchart-account/refresh','POST',{}));},'History refresh queued. Results update automatically.'));
+byId('journal-disconnect').addEventListener('click',()=>run(async()=>{renderJournalAccount(await api('/api/admin/trxchart-account','DELETE',{}));},'Server session removed. Imported results are preserved.'));

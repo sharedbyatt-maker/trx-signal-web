@@ -62,7 +62,7 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
       - name: Verify browser history sync
-        run: npx playwright test e2e/trxchart-sync.spec.js
+        run: npx playwright test e2e/trxchart-sync.spec.js e2e/trxchart-account.spec.js
       - name: Run browser E2E suite
         run: npm run test:e2e
       - name: Upload Playwright report and layout captures

@@ -32,6 +32,9 @@ def post_worker_init(worker):
     os.environ.pop("TRX_NO_ENGINE", None)
     application.core.start_engine()
     application.l1_capital_service.start()
+    history_sync = getattr(application.admin_store, 'history_sync', None)
+    if history_sync is not None:
+        history_sync.start()
     _log_runtime(worker, application)
 
     def diagnostics():
