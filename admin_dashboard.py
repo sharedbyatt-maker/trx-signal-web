@@ -714,6 +714,14 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
     from trxchart_account_sync import HistorySync, ProviderError
     store.history_sync = HistorySync(store)
 
+    @app.get('/api/admin/trxchart-account/check')
+    @protect
+    def check_trxchart_login_page():
+        try:
+            return jsonify(store.history_sync.check_login_page())
+        except ProviderError as exc:
+            return jsonify(ok=False, error=str(exc)), 502
+
     @app.route('/api/admin/trxchart-account', methods=['GET', 'POST', 'DELETE'])
     @protect
     def trxchart_account():

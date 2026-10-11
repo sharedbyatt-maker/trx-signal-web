@@ -251,6 +251,8 @@ Connection setup now offers a draggable bookmark on desktop, with a copy-URL fal
 
 ## Server account history sync
 
+Protected GET `/api/admin/trxchart-account/check` checks the fixed provider login page without sending account credentials. Provider failures report only a fixed stage label and HTTP status, never response bodies, session values or submitted credentials. HTTP 403 is treated as provider unavailability, not proof of an expired account. Page token parsing supports bounded dotted tokens as well as the original opaque format.
+
 Trade Results now provides a private Connect TRXChart form as the primary path. It uses the provider’s observed POST `/api/auth/login` payload (`phone`, `password`, optional `twofa`), cookie session, and page-injected `X-API-Token`. Passwords and 2FA are used once and never persisted. Session cookies and the API token are encrypted in private storage, excluded from public responses, logs and general backups. This is a full account session, not a provider-issued read-only scope; explicit consent is required before connection. Provider login can invalidate other 6Lottery/Telegram/TRXChart sessions.
 
 The isolated worker fetches the page token, checks `/api/session-alive`, and reads Real and Demo history at 60-second intervals with capped exponential retry backoff. Both histories validate before one journal merge, preserving daily targets and exact large identifiers. The transport allowlist permits only login and read-only GETs; order endpoints and redirects are forbidden. Expired sessions stop syncing without automatic re-login. Disconnect removes server credentials and invalidates in-flight imports through a revision lease, preserving journal records. A different account cannot reuse an already linked journal.

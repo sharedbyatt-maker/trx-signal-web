@@ -186,3 +186,36 @@ def test_provider_errors_are_redacted_and_redirects_never_followed():
     with pytest.raises(ProviderError) as caught:
         HistorySync.request(Redirect(), 'GET', '/')
     assert caught.value.code == 'expired' and 'SECRET' not in str(caught.value)
+
+
+def test_login_preflight_is_private_credential_free_and_redacted(admin):
+    client, store, provider = setup(admin)
+    path = '/api/admin/trxchart-account/check'
+    assert client.get(path).status_code == 401
+    login(client)
+    result = client.get(path)
+    assert result.status_code == 200 and result.json['ok']
+    assert [x[:2] for x in provider.calls] == [('GET', '/login')]
+    assert not store.history_sync.public()['active']
+    class Forbidden:
+        def request(self, *args, **kwargs): return Response('SECRET-body', 403)
+    with pytest.raises(ProviderError) as caught:
+        HistorySync.request(Forbidden(), 'GET', '/login')
+    assert caught.value.code == 'unavailable'
+    assert 'login page' in str(caught.value) and 'HTTP 403' in str(caught.value)
+    assert 'SECRET' not in str(caught.value)
+
+
+def test_page_token_supports_dotted_format_without_header_injection(admin):
+    _, store, _ = setup(admin)
+    sync = store.history_sync
+    class Page:
+        def __init__(self, value): self.value = value
+        def request(self, *args, **kwargs): return Response(self.value)
+    token = 'fixture.segment-' + 'x' * 300 + '.signature='
+    assert sync.token(Page('const _AT = "' + token + '";')) == token
+    for value in ('no token', "const _AT = 'bad\\r\\nAuthorization: injection';"):
+        with pytest.raises(ProviderError) as caught:
+            sync.token(Page(value))
+        assert 'account page token' in str(caught.value)
+        assert 'Authorization' not in str(caught.value)

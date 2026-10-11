@@ -26,9 +26,21 @@ def stamp():
 
 
 class ProviderError(Exception):
-    def __init__(self, code):
+    def __init__(self, code, stage=None, status=None):
         self.code = code
-        super().__init__(MESSAGES[code])
+        # Only fixed stage labels and integer HTTP statuses can reach the UI.
+        stages = {'/login': 'login page', '/api/auth/login': 'account login',
+                  '/': 'account page', '/api/session-alive': 'session check',
+                  '/api/bet/history?size=500': 'Real history',
+                  '/api/demo/history?size=500': 'Demo history',
+                  'token': 'account page token'}
+        detail = stages.get(stage)
+        if detail:
+            suffix = f' (HTTP {status})' if type(status) is int and 100 <= status <= 599 else ''
+            message = f'TRXChart {detail} failed{suffix}. ' + MESSAGES[code]
+        else:
+            message = MESSAGES[code]
+        super().__init__(message)
 
 
 class HistorySync:
@@ -100,10 +112,12 @@ class HistorySync:
             response = client.request(method, ORIGIN + path, timeout=(3, 8),
                                       allow_redirects=False, stream=True, **kwargs)
             with response:
-                if response.status_code in (401, 403) or 300 <= response.status_code < 400:
-                    raise ProviderError('login_failed' if path == '/api/auth/login' else 'expired')
+                if response.status_code == 403:
+                    raise ProviderError('unavailable', path, 403)
+                if response.status_code == 401 or 300 <= response.status_code < 400:
+                    raise ProviderError('login_failed' if path == '/api/auth/login' else 'expired', path, response.status_code)
                 if response.status_code != 200:
-                    raise ProviderError('login_failed' if path == '/api/auth/login' and response.status_code == 400 else 'unavailable')
+                    raise ProviderError('login_failed' if path == '/api/auth/login' and response.status_code == 400 else 'unavailable', path, response.status_code)
                 parts, size = [], 0
                 for chunk in response.iter_content(65536):
                     size += len(chunk)
@@ -123,19 +137,25 @@ class HistorySync:
             raise ProviderError('invalid_data') from None
         except Exception:
             # Never expose provider responses, URLs, request bodies or exception text.
-            raise ProviderError('unavailable') from None
+            raise ProviderError('unavailable', path) from None
 
     def token(self, client):
         page = self.request(client, 'GET', '/')
-        found = re.search(r"(?:const|let|var)\s+_AT\s*=\s*(['\"])([a-zA-Z0-9_-]{16,256})\1", page)
+        found = re.search(r"(?:const|let|var)\s+_AT\s*=\s*(['\"])([a-zA-Z0-9_.=-]{16,4096})\1", page)
         if not found:
-            raise ProviderError('expired')
+            raise ProviderError('expired', 'token')
         return found[2]
+
+    def check_login_page(self):
+        # Credential-free reachability check; no login or session mutation.
+        with self.session() as client:
+            self.request(client, 'GET', '/login')
+        return {'ok': True, 'stage': 'login page', 'http_status': 200}
 
     def histories(self, client, token):
         alive = self.request(client, 'GET', '/api/session-alive')
         if alive.get('logged_out'):
-            raise ProviderError('expired')
+            raise ProviderError('expired', '/api/session-alive')
         incoming = []
         for mode in ('real', 'demo'):
             path = '/api/bet/history?size=500' if mode == 'real' else '/api/demo/history?size=500'
@@ -206,7 +226,7 @@ class HistorySync:
                 result = self.request(client, 'POST', '/api/auth/login',
                                       json={'phone': phone.strip(), 'password': password, 'twofa': twofa or None})
                 if result.get('success') is not True:
-                    raise ProviderError('login_failed')
+                    raise ProviderError('login_failed', '/api/auth/login')
                 token = self.token(client)
                 incoming = self.histories(client, token)
                 self.commit(client, {'token': token, 'account_tag': tag, 'connected_at': stamp()},
