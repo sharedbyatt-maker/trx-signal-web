@@ -1,13 +1,13 @@
 # Manual real orders
 
-The ZIP's manual order feature is integrated into Trade Results in the private
+The ZIP's manual order feature is integrated into the dedicated Trade menu in the private
 admin dashboard. It uses the known `POST https://trxchart.com/api/bet` endpoint.
 It is explicitly labelled **REAL** and never invoked by the signal engines.
-Demo order placement is unavailable; selecting Demo history disables the buttons.
+Demo order placement is unavailable. The Results report mode never changes Trade’s REAL order mode.
 No alternate demo endpoint is inferred from the history endpoints.
 
 Manual orders are enabled by default with no local amount, daily count, daily
-total or spacing cap. Connect TRXChart, select Real history, enter a positive
+total or spacing cap. Open Trade, connect TRXChart, enter a positive
 whole-number MMK amount, then confirm BIG or SMALL. The extra consent checkbox
 has been removed; each order still requires its own real-money confirmation.
 Login, CSRF, connected-session and request-ID checks remain in place.
@@ -71,3 +71,29 @@ for journal timezones, and the order calendar itself uses a fixed UTC+7 offset.
 No Telegram credentials, instance database, virtual environment or ZIP git pointer
 are committed. Do not place live orders merely to test this integration; the
 Python and browser regression fixtures use fake provider responses.
+
+
+## Trade workspace and confirmed results
+
+Trade contains Total Amount, editable amount presets, BIG / SMALL, account
+connection and recent REAL activity. Presets only edit the amount. Order permissions
+are inside a collapsed disclosure. Trade Results contains date/mode filters,
+daily summary and a WIN / LOSS / Pending history filter; reporting settings and
+import/export tools are collapsed separately.
+
+Accepted or uncertain manual orders wake bounded five-second read-only REAL
+history checks for three minutes. Normal full-mode sync remains once per minute;
+provider failures keep the existing backoff. These checks never repeat an order.
+Notifications require a provider-confirmed settlement, so their timing depends
+on provider publication and server/browser availability.
+
+New REAL settlements are persisted atomically with the encrypted history and
+exposed by authenticated GET `/api/admin/trade-feed`. The first sync is a silent
+baseline. Pending-to-settled changes and later confirmed trades create bounded,
+monotonic events; Demo and imported historical results do not produce alerts.
+The dashboard polls this local feed every 2.5 seconds across admin pages, with
+an opaque stream/cursor for reload deduplication. Optional desktop notifications
+require an explicit user click and browser permission; they appear while the
+open dashboard tab is in the background. This is not a push service after the
+browser is closed. Alerts cover REAL account results, including activity placed
+elsewhere; no unverified match to an internal order request ID is claimed.
