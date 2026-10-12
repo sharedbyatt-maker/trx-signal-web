@@ -133,12 +133,34 @@ window.TRXDraw = (() => {
   function labelOf(t) {
     return api && api.fulls && api.fulls[t - 1] ? api.fulls[t - 1] : null;
   }
+  // Source wall-clock minutes match the chart's timeframe buckets without
+  // browser timezone conversion. Future points keep a fixed time as bars arrive.
+  function sourceMinute(value){
+    const m=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5])/60000:null;
+  }
+  function futureMinute(t){
+    const n=api?.labels?.length||0,last=sourceMinute(api?.times?.[n-1]);
+    return n&&t>n&&last!=null?last+(t-n)*(api.group||1):null;
+  }
+  function futureSlot(p,next){
+    const n=next.labels?.length||0,tf=next.group||1;
+    const first=sourceMinute(next.times?.[0]),last=sourceMinute(next.times?.[n-1]);
+    if(!n||first==null||last==null)return null;
+    const target=Math.floor(p.futureTime/tf)*tf;
+    if(target<first)return null;
+    if(target>last)return n+Math.round((target-last)/tf);
+    let lo=0,hi=n-1;
+    while(lo<hi){const mid=(lo+hi)>>1,minute=sourceMinute(next.times[mid]);if(minute==null)return null;if(minute<target)lo=mid+1;else hi=mid;}
+    return lo+1;
+  }
   function serializePoint(p) {
-    const lb = p.lb || labelOf(p.t);
+    const futureTime=p.futureTime??futureMinute(p.t);
+    const lb = futureTime!=null?null:p.lb || labelOf(p.t);
     const n = api && Array.isArray(api.fulls) ? api.fulls.length : 0;
     const anchorLb = !lb && n > 0 && p.t != null && p.t > n ? api.fulls[n - 1] : null;
     const offset = anchorLb ? Math.max(0, Math.round(Number(p.t) - n)) : null;
-    return { p: Number(p.p), lb: lb || null, t: p.t, anchorLb: anchorLb || null, offset };
+    return { p: Number(p.p), lb: lb || null, t: p.t, anchorLb: anchorLb || null, offset,...(futureTime!=null?{futureTime}: {}) };
   }
   function rowsSignature(rows) {
     try { return JSON.stringify(rows || []); } catch (_e) { return ""; }
@@ -161,7 +183,9 @@ window.TRXDraw = (() => {
         if (t != null && (!Number.isInteger(t) || t < 1 || t > 10000000)) throw new Error("Invalid drawing time");
         const offset = pt.offset == null ? null : Number(pt.offset);
         if (offset != null && (!Number.isInteger(offset) || offset < 0 || offset > 10000)) throw new Error("Invalid future offset");
-        return {p:Number(pt.p),t,lb:pt.lb==null?null:String(pt.lb).slice(0,96),anchorLb:pt.anchorLb==null?null:String(pt.anchorLb).slice(0,96),offset};
+        const futureTime=pt.futureTime==null?null:Number(pt.futureTime);
+        if(futureTime!=null&&(typeof pt.futureTime==='boolean'||!Number.isInteger(futureTime)||futureTime<1||futureTime>100000000))throw new Error('Invalid future time');
+        return {p:Number(pt.p),t,lb:pt.lb==null?null:String(pt.lb).slice(0,96),anchorLb:pt.anchorLb==null?null:String(pt.anchorLb).slice(0,96),offset,...(futureTime!=null?{futureTime}: {})};
       });
       const out={...row,id:String(row.id||"").slice(0,96),type:row.type,points};
       if(row.type==="fib" && row.fibLevels!=null && (!Array.isArray(row.fibLevels) || row.fibLevels.length>64)) throw new Error("Invalid Fibonacci levels");
@@ -201,7 +225,7 @@ window.TRXDraw = (() => {
     if(practice)return;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(serializeDrawings())); } catch (_e) {}
   }
-  function save() { recordHistory(); saveLocal(); queueServerSave(); updateManager(); }
+  function save() { drawings.forEach(d=>d.points=d.points.map(serializePoint));recordHistory(); saveLocal(); queueServerSave(); updateManager(); }
   function needPoints(type) { return (type === "hline" || type === "vline") ? 1 : 2; }
   function labelIndexMap() {
     if (api && api.labelMap instanceof Map && api.labelMap.size) return api.labelMap;
@@ -214,10 +238,11 @@ window.TRXDraw = (() => {
       const pts = [];
       (row.points || []).forEach((p) => {
         let t = null;
-        if (p.lb != null && map.has(p.lb)) t = map.get(p.lb);
+        if(p.futureTime!=null)t=futureSlot(p,api);
+        else if (p.lb != null && map.has(p.lb)) t = map.get(p.lb);
         else if (p.anchorLb != null && map.has(p.anchorLb) && Number.isInteger(Number(p.offset))) t = map.get(p.anchorLb) + Number(p.offset);
         else if (p.t != null) t = p.t;
-        pts.push({ t, p: Number(p.p), lb: p.lb != null ? p.lb : null, anchorLb:p.anchorLb||null, offset:p.offset==null?null:Number(p.offset) });
+        pts.push({ t, p: Number(p.p), lb: p.lb != null ? p.lb : null, anchorLb:p.anchorLb||null, offset:p.offset==null?null:Number(p.offset),...(p.futureTime!=null?{futureTime:p.futureTime}: {}) });
       });
       if (pts.length >= needPoints(row.type)) drawings.push(defaults({
         ...row, id: row.id || uid(), color: row.color || "#2962ff",
@@ -365,9 +390,9 @@ window.TRXDraw = (() => {
     if (!api || !api.labels || !api.labels.length) return null;
     const n = api.labels.length;
     const ct = api.chart.timeScale().coordinateToTime(x);
-    const logical = ct == null ? api.chart.timeScale().coordinateToLogical(x) : null;
-    let t = ct != null && Number.isFinite(Number(ct)) ? Math.round(ct) : logical != null ? Math.round(logical)+1 : n;
-    t = Math.max(1, Math.min(n + 12, t));
+    const logical = api.chart.timeScale().coordinateToLogical(x);
+    let t = logical != null&&Number.isFinite(logical)?Math.round(logical)+1:ct != null && Number.isFinite(Number(ct)) ? Math.round(ct) : n;
+    t = Math.max(1, Math.min(n + 10000, t));
     let p = api.series.coordinateToPrice(y);
     if (p == null || isNaN(p)) return null;
     if (snap) p = nearestOHLC(t, p, y);
@@ -542,7 +567,7 @@ window.TRXDraw = (() => {
   function undo(){ if(placing){placing=null;placeStage=0;setTool("cursor");redraw();return;} travelHistory(-1); }
   function clearAll(){ drawings=[]; placing=null; selectedId=null; drag=null; save(); updatePanel(); redraw(); }
   function deleteSelected(){ if(!selectedId)return; drawings=drawings.filter(d=>d.id!==selectedId); selectedId=null; save(); updatePanel(); redraw(); }
-  function duplicateSelected(){ const d=selected(); if(!d||drawings.length>=MAX_CLIENT_DRAWINGS)return; const cp=defaults(JSON.parse(JSON.stringify(d))); cp.id=uid(); cp.locked=false; cp.hidden=false; cp.points=cp.points.map(p=>({ ...p,t:p.t==null?p.t:p.t+1,p:Number.isFinite(p.p)?p.p+.5:p.p,lb:null })); cp.points.forEach(p=>{p.lb=labelOf(p.t)||null;}); drawings.push(cp); selectedId=cp.id; save(); updatePanel(); redraw(); }
+  function duplicateSelected(){ const d=selected(); if(!d||drawings.length>=MAX_CLIENT_DRAWINGS)return; const cp=defaults(JSON.parse(JSON.stringify(d))); cp.id=uid(); cp.locked=false; cp.hidden=false; cp.points=cp.points.map(p=>({t:p.t==null?p.t:p.t+1,p:Number.isFinite(p.p)?p.p+.5:p.p,lb:null})); cp.points.forEach(p=>{p.lb=labelOf(p.t)||null;}); drawings.push(cp); selectedId=cp.id; save(); updatePanel(); redraw(); }
   function toggleLock(){ const d=selected(); if(!d)return; d.locked=!d.locked; drag=null; save(); updatePanel(); redraw(); }
   function toggleHide(){ const d=selected(); if(!d)return; d.hidden=true; selectedId=null; save(); updatePanel(); redraw(); }
   function showAll(){ drawings.forEach(d=>d.hidden=false); save(); updatePanel(); redraw(); }
@@ -704,9 +729,9 @@ window.TRXDraw = (() => {
     hover={x,y};
     if(drag){const d=drawings.find(z=>z.id===drag.id);if(!d||d.locked){drag=null;lockChart(tool!=="cursor");return;}
       if(drag.mode==="handle"){
-        const np=fromXY(x,y,true);if(np){if(d.type==="vline")d.points[drag.index]={...d.points[drag.index],t:np.t,lb:labelOf(np.t)||null};else if(d.type==="hline")d.points[0]={...d.points[0],p:np.p};else d.points[drag.index]={t:np.t,p:np.p,lb:labelOf(np.t)||null};redraw();}return;
+        const np=fromXY(x,y,true);if(np){if(d.type==="vline")d.points[drag.index]={p:d.points[drag.index].p,t:np.t,lb:labelOf(np.t)||null};else if(d.type==="hline")d.points[0]={...d.points[0],p:np.p};else d.points[drag.index]={t:np.t,p:np.p,lb:labelOf(np.t)||null};redraw();}return;
       }
-      const dx=x-drag.start.x,dy=y-drag.start.y;d.points=drag.origPx.map((o,i)=>{if(d.type==="hline"){const p=api.series.coordinateToPrice(o.y+dy);return{...drag.origData[i],p:(p==null||isNaN(p))?drag.origData[i].p:p};}const np=fromXY(o.x+dx,d.type==="vline"?0:o.y+dy,false);if(!np)return drag.origData[i];return d.type==="vline"?{...drag.origData[i],t:np.t,lb:labelOf(np.t)||null}:{t:np.t,p:np.p,lb:labelOf(np.t)||null};});redraw();return;
+      const dx=x-drag.start.x,dy=y-drag.start.y;d.points=drag.origPx.map((o,i)=>{if(d.type==="hline"){const p=api.series.coordinateToPrice(o.y+dy);return{...drag.origData[i],p:(p==null||isNaN(p))?drag.origData[i].p:p};}const np=fromXY(o.x+dx,d.type==="vline"?0:o.y+dy,false);if(!np)return drag.origData[i];return d.type==="vline"?{p:drag.origData[i].p,t:np.t,lb:labelOf(np.t)||null}:{t:np.t,p:np.p,lb:labelOf(np.t)||null};});redraw();return;
     }
     if(placing&&placing.points.length===1)redraw();
     else if(tool==="hline"||tool==="vline")redraw();
@@ -752,7 +777,7 @@ window.TRXDraw = (() => {
 
   function onData(next){
     const newLabels=next.labels||[];const map=next.labelMap instanceof Map&&next.labelMap.size?next.labelMap:(next.fulls&&next.fulls.length?new Map(next.fulls.map((lb,i)=>[lb,i+1]).filter(x=>x[0])):new Map(newLabels.map((lb,i)=>[lb,i+1])));
-    if(drawings.length)drawings.forEach(d=>d.points.forEach(p=>{if(p.lb!=null)p.t=map.has(p.lb)?map.get(p.lb):null;else if(p.anchorLb!=null)p.t=map.has(p.anchorLb)?map.get(p.anchorLb)+Number(p.offset||0):null;else if(p.t==null||p.t<1)p.t=null;}));
+    if(drawings.length)drawings.forEach(d=>d.points.forEach(p=>{if(p.futureTime!=null)p.t=futureSlot(p,next);else if(p.lb!=null)p.t=map.has(p.lb)?map.get(p.lb):null;else if(p.anchorLb!=null)p.t=map.has(p.anchorLb)?map.get(p.anchorLb)+Number(p.offset||0):null;else if(p.t==null||p.t<1)p.t=null;}));
     api=next;if(!restored)restore();updatePanel();redraw();
   }
   function init(){
@@ -760,5 +785,5 @@ window.TRXDraw = (() => {
     hintEl=document.createElement("div");hintEl.className="draw-hint";hintEl.textContent=HINTS.cursor;wrapEl.appendChild(hintEl);buildPanel();buildFibPanel();buildPersistenceToolbar();buildManager();bindEvents();updatePanel();resize();
   }
   document.addEventListener("DOMContentLoaded",init);if(document.readyState!=="loading")init();
-  return {useCursor,onData,redraw,undo,redo,beginPractice,endPractice,clearAll,pullServer,pushServer,exportDrawings,_dbg:()=>({tool,apiReady:!!api,count:drawings.length,practice,historyAt,historyLength:history.length,fibMode,selectedId,dragging:!!drag,placing:!!placing,magnet,serverRevision,serverConflict,selected:selected()?{type:selected().type,locked:selected().locked,hidden:selected().hidden,width:selected().width,style:selected().style,extendLeft:selected().extendLeft,extendRight:selected().extendRight}:null,hidden:drawings.filter(d=>d.hidden).length})};
+  return {useCursor,onData,redraw,undo,redo,beginPractice,endPractice,clearAll,pullServer,pushServer,exportDrawings,_dbg:()=>({tool,apiReady:!!api,count:drawings.length,practice,historyAt,historyLength:history.length,fibMode,selectedId,dragging:!!drag,placing:!!placing,magnet,serverRevision,serverConflict,selected:selected()?{type:selected().type,points:clone(selected().points),locked:selected().locked,hidden:selected().hidden,width:selected().width,style:selected().style,extendLeft:selected().extendLeft,extendRight:selected().extendRight}:null,hidden:drawings.filter(d=>d.hidden).length})};
 })();
