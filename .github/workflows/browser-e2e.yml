@@ -57,12 +57,15 @@ jobs:
         run: |
           node tests_transport_stability.js
           node tests_history_bridge.js
+          node tests_user_view_stability.js
       - name: Install Playwright
         run: |
           npm ci
           npx playwright install --with-deps chromium
       - name: Verify browser history sync
         run: npx playwright test e2e/trxchart-sync.spec.js e2e/trxchart-account.spec.js
+      - name: Verify User View recovery and persistence
+        run: npx playwright test e2e/user-view-stability.spec.js
       - name: Verify user chart workspace
         run: npx playwright test e2e/chart-workspace.spec.js
       - name: Verify future drawing placement and anchors

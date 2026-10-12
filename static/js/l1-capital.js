@@ -113,9 +113,13 @@
   }
 
   let refreshing = false;
+  let lastAttempt = 0;
   async function refresh() {
     if (refreshing) return;
+    if(navigator.onLine===false){render({ready:false,stale:true,feed_status:'OFFLINE'});return;}
+    if(document.hidden&&!window.TRXAlerts?.isEnabled?.()&&Date.now()-lastAttempt<10000)return;
     refreshing = true;
+    lastAttempt=Date.now();
     try {
       const x = await TRXNet.run(async signal => {
         const r = await fetch("/api/l1-capital", {cache: "no-store", signal});
@@ -133,6 +137,7 @@
 
   refresh();
   setInterval(refresh, 1000);
+  window.addEventListener('trx:view-resume',refresh);
   setInterval(() => { if (lastSnapshot) render(lastSnapshot, false); }, 1000);
 })();
 

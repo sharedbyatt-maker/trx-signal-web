@@ -5,6 +5,7 @@ window.TRXContext = (() => {
   let l1Trades = [], dailyEvents = [], l1Unavailable = true, dailyUnavailable = true;
   let historySignature = "", historyDate = "", visibleLimit = 5, expandedKey = "";
   let stateReceived = 0, l1Received = 0, historyRows = [], setupSignature = "", frameSignature = "";
+  let observedLatestIssue = '';
   const finite = v => typeof v === "number" && Number.isFinite(v);
   const put = (id, value, tone = "") => {
     const el = $(id);
@@ -25,7 +26,7 @@ window.TRXContext = (() => {
   const sourceDateTime = value => sourceDate(value)?.toLocaleString([], {year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit", hour12:false}) || "—";
   const receiptAge = () => stateReceived ? Math.max(0,(Date.now()-stateReceived)/1000) : Infinity;
 
-  const fresh = () => !!state?.connected && receiptAge() < 15 && (!finite(state?.feed_health?.seconds_since_advance) || state.feed_health.seconds_since_advance+receiptAge()<120) && !/OFFLINE|STALE|DELAY|ERROR|DEGRADED/i.test(
+  const fresh = () => navigator.onLine !== false && !!state?.connected && receiptAge() < 15 && (!observedLatestIssue || String(window.TRXChart?.getComparisons()?.latestIssue||'')>=observedLatestIssue) && (!finite(state?.feed_health?.seconds_since_advance) || state.feed_health.seconds_since_advance+receiptAge()<120) && !/OFFLINE|STALE|DELAY|ERROR|DEGRADED/i.test(
     (state.feed_health?.status || "") + " " + ($("conn-txt")?.textContent || "OFFLINE"));
 
   function renderContext() {
@@ -69,7 +70,7 @@ window.TRXContext = (() => {
   const toneOf = text => /^(UP|RISING|ARMED)$/.test(text) ? "tone-up" : /^(DOWN|FALLING)$/.test(text) ? "tone-down" : "";
   const currentIssue = () => {
     const engine=String(state?.history?.at(-1)?.issue || ""), chart=window.TRXChart?.getComparisons()?.latestIssue || "";
-    return chart>engine ? chart : engine;
+    return [chart,engine,observedLatestIssue].sort().at(-1);
   };
   const l1Ready = () => fresh() && l1?.ready && Date.now()-l1Received<15000 && (!l1.source_issue || String(l1.source_issue)===currentIssue());
   const validTarget = (p, issue=currentIssue()) => fresh() && /^(BIG|SMALL)$/.test(p?.target || "") &&
@@ -215,6 +216,7 @@ window.TRXContext = (() => {
     isFresh: fresh,
     isValidTarget: validTarget,
     isL1Ready: l1Ready,
+    onLatest(row) {if(String(row.issue)>observedLatestIssue){observedLatestIssue=String(row.issue);renderContext();}},
     onState(s) { state=s; stateReceived=Date.now(); renderContext(); renderHistory(); },
     onL1(x) { l1=x; l1Received=Date.now(); l1Unavailable=!Array.isArray(x?.trades); if (!l1Unavailable) l1Trades=x.trades; renderContext(); renderHistory(); },
     onDaily(d) { daily=d; dailyUnavailable=!d?.report || !Array.isArray(d.report.recent_events); if(!dailyUnavailable) dailyEvents=[...(d.history || []).flatMap(r=>r.recent_events || []), ...(d.report?.recent_events || [])]; renderHistory(); },

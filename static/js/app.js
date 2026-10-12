@@ -1,5 +1,32 @@
 const $ = (id) => document.getElementById(id);
 const fmtInt = (n) => n.toLocaleString("en-US");
+const browserOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+function normalizeRound(row) {
+  if(!row||typeof row!=='object'||Array.isArray(row))throw new Error('Invalid chart round');
+  const id=row.issue;
+  if(!(typeof id==='string'&&/^[A-Za-z0-9:_.-]{1,96}$/.test(id))&&!(Number.isSafeInteger(id)&&id>=0))throw new Error('Invalid chart issue');
+  if(!(typeof row.number==='number'||typeof row.number==='string'&&/^[0-9]$/.test(row.number)))throw new Error('Invalid result digit');
+  const number=Number(row.number),type=number>=5?'BIG':'SMALL';
+  if(!Number.isInteger(number)||number<0||number>9||row.type!=null&&row.type!==type)throw new Error('Invalid result digit or type');
+  if(row.block_time!=null&&(typeof row.block_time!=='string'||row.block_time.length>128))throw new Error('Invalid result time');
+  if(row.block_time&& !Number.isFinite(Date.parse(row.block_time.replace(' ','T')+(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(row.block_time)?'':'Z'))))throw new Error('Invalid result time');
+  if(row.block_time_utc!=null&&(typeof row.block_time_utc!=='string'||!Number.isFinite(Date.parse(row.block_time_utc))))throw new Error('Invalid result time');
+  const issue=String(id);
+  return {...row,issue,number,type,short_issue:issue.slice(-6),block_time:row.block_time||''};
+}
+function normalizeHistory(rows, tuples=false) {
+  if(!Array.isArray(rows))throw new Error('Invalid chart history');
+  const normalized=rows.map(row=>{
+    if(tuples){if(!Array.isArray(row)||row.length<2)throw new Error('Invalid chart history');return normalizeRound({issue:row[0],number:row[1],block_time:row[2]??''});}
+    return normalizeRound(row);
+  });
+  return [...new Map(normalized.map(r=>[r.issue,r])).values()].sort((a,b)=>a.issue<b.issue?-1:a.issue>b.issue?1:0);
+}
+function normalizeState(s){
+  if(!s||typeof s!=='object'||Array.isArray(s)||s.log!=null&&!Array.isArray(s.log))throw new Error('Invalid state response');
+  return {...s,history:normalizeHistory(s.history)};
+}
+function chartUpdateStatus(message){const el=$('chart-update-status');if(el){if(el.textContent!==message)el.textContent=message;el.hidden=!message;}}
 
 /* ================= 30-day full history buffer ================= */
 let fullRows = [];            // from /api/history ([issue, number, blockTime] tuples)
@@ -25,8 +52,9 @@ function mergeRows(a, b) {
 
 let historyRequest = null;
 async function fetchFullHistory(force, strict = false) {
+  if(browserOffline()){if(strict)throw new Error('Browser offline');return;}
   if (historyRequest) {
-    await historyRequest;
+    try{await historyRequest;}catch(e){if(strict&&!force)throw e;}
     if (force) return fetchFullHistory(true, strict);
     return;
   }
@@ -50,13 +78,7 @@ async function loadFullHistory(force, strict = false) {
       return r.json();
     }, 12000);
     if(strict && (!Array.isArray(data.history)||!data.history.length))throw new Error("No chart history available. Existing chart retained.");
-    const inc = (data.history || []).map(([issue, number, btime]) => ({
-      issue: String(issue),
-      short_issue: String(issue).slice(-6),
-      number,
-      block_time: btime ? String(btime) : "",
-      type: number >= 5 ? "BIG" : "SMALL",
-    }));
+    const inc = normalizeHistory(data?.history, true);
     if (inc.length) {
       // A forced fetch is a fresh authoritative 30-day snapshot, not an append.
       // Incremental fetches append/replace by issue.
@@ -76,9 +98,9 @@ async function loadFullHistory(force, strict = false) {
       retainedLiveArrival = fullRows.length > 0 && fullRows[fullRows.length - 1].issue > issueAtStart;
     }
     if (!retainedLiveArrival) {
-      lastResultUtc = data.last_time_utc || null;
-      if (data.last_time) lastResultTime = data.last_time;
-      else if (fullRows.length) lastResultTime = fullRows[fullRows.length - 1].block_time;
+      const newest=fullRows.at(-1);
+      lastResultUtc = (!newest?.block_time||data.last_time===newest.block_time)&&typeof data.last_time_utc==='string'?data.last_time_utc:null;
+      lastResultTime = newest?.block_time || data.last_time || '';
     }
     const metaEl = $("chart-meta");
     if (metaEl) {
@@ -432,7 +454,9 @@ function render(s, merged, received = true) {
   if (received) {
     const fh = s.feed_health || {};
     const fstat = fh.status || (s.connected ? "LIVE" : "OFFLINE");
-    if (!s.connected || fstat === "OFFLINE") {
+    if (browserOffline()) {
+      setConn(false, 'OFFLINE · browser connection lost');
+    } else if (!s.connected || fstat === "OFFLINE") {
       setConn(false, s.error ? "OFFLINE: " + s.error : "OFFLINE");
     } else if (fstat === "STALE") {
       setConn(false, `STALE FEED${fh.seconds_since_advance != null ? " · " + Math.round(fh.seconds_since_advance) + "s" : ""}`);
@@ -457,39 +481,43 @@ let refreshing = false;
 let lastState = null;
 let lastStateReceived = 0;
 let lastKnownIssue = "";
+let lastStateAttempt = 0, gapRetryAt = 0;
 
 let refreshRequest=null, manualChartRefreshing=false;
 async function refresh(){
   if(manualChartRefreshing)return;
+  if(browserOffline()){setConn(false,'OFFLINE · browser connection lost');return;}
   if(refreshRequest)return refreshRequest;
+  if(document.hidden&&!window.TRXAlerts?.isEnabled?.()&&Date.now()-lastStateAttempt<15000)return;
   refreshRequest=loadState();try{return await refreshRequest;}finally{refreshRequest=null;}
 }
 async function loadState() {
   if (refreshing) return;          // guard: never overlap polls
   refreshing = true;
+  lastStateAttempt=Date.now();
   try {
     const s = await TRXNet.run(async signal => {
       const r = await fetch("/api/state", { cache: "no-store", signal });
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
-    if (!s || !Array.isArray(s.history)) throw new Error("Invalid state response");
-    lastState = s;
+    const validState=normalizeState(s);
+    lastState = validState;
     lastStateReceived = Date.now();
 
     // refresh the 30-day chart buffer periodically or when it falls behind
     const lastLocal = fullRows.length ? fullRows[fullRows.length - 1].issue : "";
-    const lastLive = s.history && s.history.length ? s.history[s.history.length - 1].issue : "";
+    const lastLive = validState.history.at(-1)?.issue||'';
     if (!fullRows.length || (lastLive && lastLive > lastLocal)) {
       fetchFullHistory(false).then(() => {
-        if (lastState === s && Date.now() - lastStateReceived < 15000) {
-          if (window.TRXChart) TRXChart.update({...s, history:mergeRows(fullRows,s.history)});
+        if (lastState === validState && Date.now() - lastStateReceived < 15000) {
+          if (window.TRXChart) TRXChart.update({...validState, history:mergeRows(fullRows,validState.history)});
         }
-      });
+      }).catch(()=>{});
     }
 
-    const merged = mergeRows(fullRows, s.history);
-    render(s, merged);
+    const merged = mergeRows(fullRows, validState.history);
+    render(validState, merged);
   } catch (e) {
     setConn(false, "Connection error: " + (e && e.message ? e.message : e));
     if (lastState) safeRender(renderAnalytics, lastState);
@@ -505,7 +533,7 @@ $('chart-refresh')?.addEventListener('click',async()=>{
   try{
     if(refreshRequest)await refreshRequest;
     const results=await Promise.allSettled([
-      TRXNet.run(async signal=>{const r=await fetch('/api/state',{cache:'no-store',signal});if(!r.ok)throw new Error('State HTTP '+r.status);const s=await r.json();if(!s||!Array.isArray(s.history))throw new Error('Invalid chart state');return s;}),
+      TRXNet.run(async signal=>{const r=await fetch('/api/state',{cache:'no-store',signal});if(!r.ok)throw new Error('State HTTP '+r.status);return normalizeState(await r.json());}),
       fetchFullHistory(true,true)
     ]);
     const failed=results.find(r=>r.status==='rejected');if(failed)throw failed.reason;
@@ -528,7 +556,7 @@ function tickClock() {
   const offset = -now.getTimezoneOffset();
   const zone = "UTC" + (offset >= 0 ? "+" : "−") + String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0") + ":" + String(Math.abs(offset) % 60).padStart(2, "0");
   $("clock").title = "Local time · " + zone;
-  if (lastStateReceived && Date.now() - lastStateReceived >= 15000) setConn(false, "OFFLINE · state update overdue");
+  if (lastStateReceived && Date.now() - lastStateReceived >= 15000 && !/OFFLINE|ERROR|STALE|DEGRADED/i.test($('conn-txt')?.textContent||'')) setConn(false, "OFFLINE · state update overdue");
   if (lastState) safeRender(renderAnalytics, lastState);
   setTxt("ctb-zone", "LOCAL " + zone);
 
@@ -650,39 +678,49 @@ refresh();
 let latestPolling = false;
 let latestPollTimer = 0;
 const LATEST_POLL_VISIBLE_MS = 250;
-const LATEST_POLL_HIDDEN_MS = 1200;
+const LATEST_POLL_HIDDEN_MS = 5000;
 function scheduleLatestPoll(delay) {
   clearTimeout(latestPollTimer);
-  const ms = delay != null ? delay : (document.hidden ? LATEST_POLL_HIDDEN_MS : LATEST_POLL_VISIBLE_MS);
+  const backgroundDelay=window.TRXAlerts?.isEnabled?.()?1200:LATEST_POLL_HIDDEN_MS;
+  const ms = delay != null ? delay : (browserOffline()?LATEST_POLL_HIDDEN_MS:document.hidden?backgroundDelay:LATEST_POLL_VISIBLE_MS);
   latestPollTimer = setTimeout(pollLatest, ms);
 }
 async function pollLatest() {
   if (latestPolling) return;
   latestPolling = true;
   try {
+    if(browserOffline())return;
     const d = await TRXNet.run(async signal => {
       const r = await fetch("/api/latest", { cache: "no-store", signal });
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
-    const rd = d.round;
-    if (!rd || !rd.issue || rd.issue === lastKnownIssue) return;
+    if(!d?.round)return;
+    const rd = normalizeRound(d.round);
     if (lastKnownIssue && String(rd.issue) < String(lastKnownIssue)) return;
-    const first = lastKnownIssue === "";
-    const previousIssue = lastKnownIssue;
     lastKnownIssue = rd.issue;
-    if (first || !lastState) return;
+    window.TRXContext?.onLatest(rd);
+    if (!lastState) return;
+    const chartRows=window.TRXChart?.studyInfo?.().rows||lastState.history;
+    const previousIssue=String(chartRows.at(-1)?.issue||'');
+    if(rd.issue>=previousIssue&&rd.block_time){lastResultTime=rd.block_time;lastResultUtc=rd.block_time_utc||null;}
+    if(previousIssue&&rd.issue<=previousIssue&&fullIssueSet.has(rd.issue)){chartUpdateStatus('');return;}
 
     // Never synthesize across missing rounds. Browser sleep/network gaps can jump
     // several sequential issues; catch history up first so the ±1 walk stays exact.
     try {
       if (/^\d+$/.test(String(previousIssue)) && /^\d+$/.test(String(rd.issue))
           && BigInt(String(rd.issue)) > BigInt(String(previousIssue)) + 1n) {
-        await fetchFullHistory(true);
+        if(Date.now()<gapRetryAt)return;
+        gapRetryAt=Date.now()+1500;
+        chartUpdateStatus('Syncing missing chart history…');
+        await fetchFullHistory(true,true);
         await refresh();
+        gapRetryAt=0;
+        if(String(window.TRXChart?.studyInfo?.().rows.at(-1)?.issue||'')>=rd.issue)chartUpdateStatus('');
         return;
       }
-    } catch (_e) { /* non-standard issue format: fall back to normal path */ }
+    } catch (_e) { chartUpdateStatus('Chart history delayed · retrying. Existing chart retained.');return; }
     if (!fullIssueSet.has(String(rd.issue))) {
       fullRows.push({
         issue: String(rd.issue),
@@ -705,13 +743,18 @@ async function pollLatest() {
       }
       if (lastState) safeRender(renderAnalytics, lastState);
     }
-  } catch (e) { /* noop */ }
+    chartUpdateStatus('');
+  } catch (e) { if(!browserOffline())chartUpdateStatus('Latest chart update unavailable · retrying. Existing chart retained.'); }
   finally {
     latestPolling = false;
     scheduleLatestPoll();
   }
 }
-document.addEventListener("visibilitychange", () => scheduleLatestPoll(0));
+function resumePublicView(){if(browserOffline())return;lastHistFetch=0;refresh();fetchFullHistory(false);scheduleLatestPoll(0);window.dispatchEvent(new Event('trx:view-resume'));}
+document.addEventListener("visibilitychange", () => {if(!document.hidden)resumePublicView();else scheduleLatestPoll();});
+window.addEventListener('online',resumePublicView);
+window.addEventListener('pageshow',e=>{if(e.persisted)resumePublicView();});
+window.addEventListener('offline',()=>{setConn(false,'OFFLINE · browser connection lost');scheduleLatestPoll();if(lastState)safeRender(renderAnalytics,lastState);});
 scheduleLatestPoll(0);
 fetchRsiExtremes();
 setInterval(fetchRsiExtremes, 3600000);   // 1h
@@ -745,6 +788,7 @@ function notifySignal(label, issue) {
 
 const alertedIssues = new Map();
 window.TRXAlerts = {
+  isEnabled(){return document.body.dataset.adminAlerts!=='0'&&soundOn;},
   signal(engine, pending) {
     if (document.body.dataset.adminAlerts === "0" || !soundOn || !pending || !window.TRXContext?.isValidTarget(pending)) return;
     const key = String(pending.issue) + ":" + pending.target;

@@ -25,7 +25,7 @@ assert '${tailFingerprint}' in chart
 
 # Fast append refuses to bridge missing sequential issues.
 assert 'BigInt(String(rd.issue)) > BigInt(String(previousIssue)) + 1n' in app
-assert 'await fetchFullHistory(true);' in app
+assert 'await fetchFullHistory(true,true);' in app
 assert 'await refresh();' in app
 
 # Drawing and indicator toolbar controls are independently operable.
