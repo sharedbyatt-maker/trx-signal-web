@@ -6,8 +6,9 @@ const width=r=>r.to-r.from;
 test('history navigation pauses follow; Live and Reset restore recent view while Fit shows full history',async({page})=>{
   await ready(page);await expect(page.locator('#chart-follow')).toBeChecked();
   await page.locator('#chart-more-toggle').click();await page.locator('#fit-btn').click();
-  await expect(page.locator('#chart-follow')).not.toBeChecked();const fitted=await view(page);
+  await expect(page.locator('#chart-follow')).not.toBeChecked();await expect.poll(async()=>width(await view(page))).toBeGreaterThan(323);const fitted=await view(page);
   await page.locator('#zoom-reset-btn').click();await expect(page.locator('#chart-follow')).toBeChecked();
+  await expect.poll(async()=>width(await view(page))).toBeCloseTo(323,2);
   expect(width(await view(page))).toBeLessThan(width(fitted));
   await page.locator('#chart-more-toggle').click();await page.locator('#zoom-in-btn').click();
   const box=await page.locator('#tv-chart').boundingBox();
@@ -17,8 +18,12 @@ test('history navigation pauses follow; Live and Reset restore recent view while
   await page.evaluate(()=>{const info=window.TRXChart.studyInfo(),last=info.rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),short_issue:'new',number:8,type:'BIG',block_time:'2026-09-13 14:00:00'});});
   expect(width(await view(page))).toBeCloseTo(width(before),2);expect((await view(page)).from).toBeCloseTo(before.from,2);
   await page.getByRole('button',{name:'Back to Live',exact:true}).click();await expect(page.locator('#chart-follow')).toBeChecked();
+  await expect.poll(async()=>width(await view(page))).toBeCloseTo(323,2);
   const live=await view(page);await page.evaluate(()=>{const info=window.TRXChart.studyInfo(),last=info.rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),short_issue:'new2',number:3,type:'SMALL',block_time:'2026-09-13 14:01:00'});});
-  expect((await view(page)).to).toBeGreaterThan(live.to);expect(width(await view(page))).toBeCloseTo(width(live),2);
+  await expect.poll(async()=>(await view(page)).to).toBeGreaterThan(live.to);expect(width(await view(page))).toBeCloseTo(width(live),2);
+  await page.locator('#zoom-in-btn').click();await expect.poll(async()=>width(await view(page))).toBeCloseTo(242.25,2);
+  await page.evaluate(()=>{window.TRXChart.backToLive();const last=window.TRXChart.studyInfo().rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),number:8,type:'BIG'});});
+  await expect.poll(async()=>width(await view(page))).toBeCloseTo(323,2);
 });
 
 test('manual refresh shows progress, preserves historical zoom and drawings, and reports history failure',async({page})=>{

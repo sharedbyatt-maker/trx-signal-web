@@ -92,6 +92,7 @@ window.TRXChart = (() => {
 
   const $ = (id) => document.getElementById(id);
   let followLive = true, viewChanging = false, updatingSeries = false;
+  let pendingViewRange = null;
   let navigating = false, navigationUntil = 0;
   let inspecting = false, inspectorIssue = null;
   function viewStatus() {
@@ -102,11 +103,14 @@ window.TRXChart = (() => {
     if($('chart-follow'))$('chart-follow').checked=followLive&&!replay;
   }
   function setViewRange(range) {
+    const requested={...range};pendingViewRange=requested;
     const old=viewChanging;viewChanging=true;
     try{[chart,rsiChart,macdChart,stochChart].filter(Boolean).forEach(c=>c.timeScale().setVisibleLogicalRange(range));}
     finally{viewChanging=old;}
+    requestAnimationFrame(()=>{if(pendingViewRange===requested)pendingViewRange=null;});
     scheduleDrawRedraw();viewStatus();
   }
+  function currentViewRange(){return pendingViewRange||chart?.timeScale().getVisibleLogicalRange();}
   function backToLive() {
     if(replay)stopReplay();
     followLive=true;anchorRecent();viewStatus();
@@ -1494,7 +1498,7 @@ window.TRXChart = (() => {
   /* ================= toolbar ================= */
   function bindToolbar() {
     $('chart-live')?.addEventListener('click',backToLive);
-    $('chart-follow')?.addEventListener('change',()=>{followLive=$('chart-follow').checked;if(followLive){const r=chart?.timeScale().getVisibleLogicalRange();if(r)followRange(r);}viewStatus();});
+    $('chart-follow')?.addEventListener('change',()=>{followLive=$('chart-follow').checked;if(followLive){const r=currentViewRange();if(r)followRange(r);}viewStatus();});
     $('chart-more-toggle')?.addEventListener('click',()=>{const panel=$('chart-more'),open=panel.hidden;panel.hidden=!open;$('chart-more-toggle').setAttribute('aria-expanded',String(open));});
     $('chart-inspect')?.addEventListener('click',()=>{if(inspecting){cancelInspect();return;}window.TRXDraw?.useCursor();inspecting=true;$('chart-inspect').setAttribute('aria-pressed','true');$('candle-inspector').hidden=false;$('inspector-hint').textContent='Tap a candle to pin its details. Drag to move the chart.';});
     $('inspector-close')?.addEventListener('click',cancelInspect);
@@ -1530,7 +1534,7 @@ window.TRXChart = (() => {
     }
     const fitBtn = $("fit-btn");
     if (fitBtn) fitBtn.addEventListener("click", () => {
-      followLive=false;viewChanging=true;
+      followLive=false;pendingViewRange=null;viewChanging=true;
       [chart, rsiChart, macdChart, stochChart].forEach((c) => {
         if (c) c.timeScale().fitContent();
       });
@@ -1540,7 +1544,7 @@ window.TRXChart = (() => {
        (wheel/pinch zoom already works; these buttons do discrete steps) */
     const zoomStep = (mult) => {
       if(!chart)return;
-      try{const r=chart.timeScale().getVisibleLogicalRange();if(!r)return;
+      try{const r=currentViewRange();if(!r)return;
         const mid=(r.from+r.to)/2,half=Math.max(8,((r.to-r.from)/2)*mult);
         const to=followLive?curBars.length+4:mid+half;
         setViewRange({from:followLive?to-2*half:mid-half,to});
@@ -1645,7 +1649,7 @@ window.TRXChart = (() => {
 
     // capture current view so setData() cannot scroll/zoom the chart
     const prevRange = (() => {
-      try { return chart.timeScale().getVisibleLogicalRange(); } catch (e) { return null; }
+      try { return currentViewRange(); } catch (e) { return null; }
     })();
     const anchorSlot=prevRange?Math.max(0,Math.min(curFulls.length-1,Math.floor(prevRange.from))):0;
     const viewAnchor=curFulls[anchorSlot];
@@ -1856,7 +1860,7 @@ window.TRXChart = (() => {
       notifyStudy();return true;
     }
     const issue = String(row.issue);
-    const liveRange=chart.timeScale().getVisibleLogicalRange();
+    const liveRange=currentViewRange();
     if (curLabelMap instanceof Map && curLabelMap.has(issue)) return true;
 
     const dir = row.type === "BIG" ? 1 : -1;
