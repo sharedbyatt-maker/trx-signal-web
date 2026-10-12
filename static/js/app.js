@@ -454,7 +454,9 @@ function render(s, merged, received = true) {
   if (received) {
     const fh = s.feed_health || {};
     const fstat = fh.status || (s.connected ? "LIVE" : "OFFLINE");
-    if (!s.connected || fstat === "OFFLINE") {
+    if (browserOffline()) {
+      setConn(false, 'OFFLINE · browser connection lost');
+    } else if (!s.connected || fstat === "OFFLINE") {
       setConn(false, s.error ? "OFFLINE: " + s.error : "OFFLINE");
     } else if (fstat === "STALE") {
       setConn(false, `STALE FEED${fh.seconds_since_advance != null ? " · " + Math.round(fh.seconds_since_advance) + "s" : ""}`);

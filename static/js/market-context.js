@@ -26,7 +26,7 @@ window.TRXContext = (() => {
   const sourceDateTime = value => sourceDate(value)?.toLocaleString([], {year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit", hour12:false}) || "—";
   const receiptAge = () => stateReceived ? Math.max(0,(Date.now()-stateReceived)/1000) : Infinity;
 
-  const fresh = () => !!state?.connected && receiptAge() < 15 && (!observedLatestIssue || String(window.TRXChart?.getComparisons()?.latestIssue||'')>=observedLatestIssue) && (!finite(state?.feed_health?.seconds_since_advance) || state.feed_health.seconds_since_advance+receiptAge()<120) && !/OFFLINE|STALE|DELAY|ERROR|DEGRADED/i.test(
+  const fresh = () => navigator.onLine !== false && !!state?.connected && receiptAge() < 15 && (!observedLatestIssue || String(window.TRXChart?.getComparisons()?.latestIssue||'')>=observedLatestIssue) && (!finite(state?.feed_health?.seconds_since_advance) || state.feed_health.seconds_since_advance+receiptAge()<120) && !/OFFLINE|STALE|DELAY|ERROR|DEGRADED/i.test(
     (state.feed_health?.status || "") + " " + ($("conn-txt")?.textContent || "OFFLINE"));
 
   function renderContext() {

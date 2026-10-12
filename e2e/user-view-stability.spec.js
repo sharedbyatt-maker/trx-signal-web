@@ -103,3 +103,13 @@ test('unsynced drawings retry after connection recovery without losing local dat
   await ready(page);await expect.poll(()=>page.evaluate(()=>window.TRXDraw._dbg().serverRevision)).toBe(0);await draw(page);await expect.poll(()=>writes).toBe(1);
   failed=false;await page.evaluate(()=>window.dispatchEvent(new Event('trx:view-resume')));await expect.poll(()=>page.evaluate(()=>window.TRXDraw._dbg().serverRevision)).toBe(1);expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('trx_drawings_v3')).length)).toBe(1);
 });
+
+test('a delayed successful state response cannot mark an offline browser live',async({page})=>{
+  let hold=false,release,arrived=false,delivered=false;const gate=new Promise(r=>release=r);
+  await page.route('**/api/state',async r=>{const x=await r.fetch(),d=await x.json();d.strat_pending={...armed,tier:0,step:0};if(hold){d.__offlineResponse=true;arrived=true;await gate;}await r.fulfill({json:d});delivered=true;});
+  try{
+    await ready(page);await expect(page.locator('#st-pending')).toHaveText('BIG');hold=true;delivered=false;await expect.poll(()=>arrived).toBe(true);
+    await page.evaluate(()=>{Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false});window.dispatchEvent(new Event('offline'));});release();await expect.poll(()=>delivered).toBe(true);await expect.poll(()=>page.evaluate(()=>lastState?.__offlineResponse)).toBe(true);
+    await expect(page.locator('#conn-txt')).toContainText('browser connection lost');await expect(page.locator('#st-pending')).toHaveText('UNAVAILABLE');expect((await snapshot(page)).bars.length).toBe(360);
+  }finally{release();}
+});
