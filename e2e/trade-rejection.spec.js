@@ -20,6 +20,7 @@ test('rejected receipt shows saved HTTP diagnosis, stays non-loss and opens REAL
   await page.locator('#trade').getByRole('link',{name:/View results ↗/i}).click();
   await page.locator('#journal-mode').selectOption('demo');
   await expect(page.locator('#journal-mode')).toHaveValue('demo');
+  await page.locator('#journal').getByText('Report settings',{exact:true}).click();
   await page.locator('#journal-tp').fill('999');
   await page.locator('#journal').getByRole('link',{name:'Go to Trade ↗'}).click();
   await page.locator('#trade-orders').getByRole('link',{name:'Check REAL history ↗'}).click();
@@ -30,13 +31,14 @@ test('rejected receipt shows saved HTTP diagnosis, stays non-loss and opens REAL
   await expect(page.locator('#journal-tp')).toHaveValue('999');
   expect(queries.some(q=>q.searchParams.get('mode')==='real'&&q.searchParams.get('date')==='2026-10-11')).toBe(true);
   expect(orderPosts).toBe(0);
+  page.once('dialog',dialog=>dialog.accept());
   await page.goto('/admin#trade');await expect(page.locator('#trade-orders')).toContainText('HTTP 400');
   await expect(page.locator('#trade-orders')).not.toContainText('LOSS');expect(orderPosts).toBe(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('rejected-order-diagnosis.png'),fullPage:true});
 });
 
-test('fresh verified sync clears a stale connection-expiry banner without clearing a new order error',async({page})=>{
+test('fresh verified sync clears a stale connection-expiry banner',async({page})=>{
   let recovered=false;
   await page.route('**/api/admin/trxchart-account',r=>r.request().method()==='POST'?r.fulfill({status:502,json:{error:'TRXChart session check failed (HTTP 401). TRXChart session expired or was signed out elsewhere. Connect again.'}}):r.fulfill({json:recovered?{revision:1,active:true,status:'connected',worker_alive:true,last_sync:new Date().toISOString()}:{revision:0,active:false,status:'disconnected'}}));
   await page.goto('/admin/login');await page.getByLabel('Admin password').fill('fixture-admin-password');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.goto('/admin#trade');
