@@ -657,7 +657,7 @@ window.TRXDraw = (() => {
     toggle.addEventListener('click',()=>{const open=options.hidden;closeOptions();if(open){options.hidden=false;toggle.setAttribute('aria-expanded','true');managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';}});
     $('dt-options-close').addEventListener('click',closeOptions);
     document.addEventListener('keydown',ev=>{if(ev.key==='Escape'){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');}});
-    $('dt-toggle-btn').addEventListener('click',()=>{if(host.classList.contains('collapsed')){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';setTool('cursor');}});
+    $('dt-toggle-btn').addEventListener('click',()=>{window.TRXChart?.cancelInspect();if(host.classList.contains('collapsed')){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';setTool('cursor');}});
     managerEl=document.createElement('section');managerEl.id='drawing-manager';managerEl.className='draw-drawer';managerEl.hidden=true;managerEl.setAttribute('aria-label','Drawing list and presets');wrapEl.append(managerEl);
     list.addEventListener('click',()=>{managerEl.hidden=!managerEl.hidden;list.setAttribute('aria-expanded',String(!managerEl.hidden));if(!managerEl.hidden){closeOptions();if(fibPanelEl)fibPanelEl.style.display='none';updateManager();}});
     list.setAttribute('aria-expanded','false');

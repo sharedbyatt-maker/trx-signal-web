@@ -92,6 +92,7 @@ window.TRXChart = (() => {
 
   const $ = (id) => document.getElementById(id);
   let followLive = true, viewChanging = false, updatingSeries = false;
+  let navigating = false, navigationUntil = 0;
   let inspecting = false, inspectorIssue = null;
   function viewStatus() {
     const status = $('chart-view-status');
@@ -114,7 +115,7 @@ window.TRXChart = (() => {
     const to=curBars.length+4,width=Math.max(16,range.to-range.from);
     setViewRange({from:Math.max(0,to-width),to});
   }
-  function cancelInspect(){inspecting=false;inspectorIssue=null;if($('candle-inspector'))$('candle-inspector').hidden=true;$('chart-inspect')?.setAttribute('aria-pressed','false');}
+  function cancelInspect(){inspecting=false;inspectorIssue=null;if($('candle-inspector'))$('candle-inspector').hidden=true;$('inspector-values')?.replaceChildren();$('chart-inspect')?.setAttribute('aria-pressed','false');}
   function inspectCandle(time) {
     const slot=Number(time),bar=curBars[slot-1];
     if(!inspecting||!bar)return;
@@ -1381,10 +1382,20 @@ window.TRXChart = (() => {
   function syncRanges() {
     // N-way visible-range sync (main <-> rsi <-> macd <-> stoch), feedback-guarded
     const charts = [chart, rsiChart, macdChart, stochChart].filter(Boolean);
+    // Range notifications also arrive asynchronously after setData and resize.
+    // Only direct navigation should pause live following.
+    ['tv-chart','rsi-chart','macd-chart','stoch-chart'].forEach(id=>{
+      const pane=$(id);if(!pane)return;
+      pane.addEventListener('pointerdown',()=>{navigating=true;},{capture:true,passive:true});
+      pane.addEventListener('wheel',()=>{navigationUntil=performance.now()+300;},{capture:true,passive:true});
+    });
+    const endNavigation=()=>{if(navigating)navigationUntil=performance.now()+300;navigating=false;};
+    window.addEventListener('pointerup',endNavigation,{passive:true});
+    window.addEventListener('pointercancel',endNavigation,{passive:true});
     charts.forEach((src) => {
       src.timeScale().subscribeVisibleLogicalRangeChange((r) => {
         if (!r || rangeLock) return;
-        if(!viewChanging&&!updatingSeries&&!replay&&curBars.length&&r.to<curBars.length-1){followLive=false;viewStatus();}
+        if((navigating||performance.now()<navigationUntil)&&!viewChanging&&!updatingSeries&&!replay&&curBars.length&&r.to<curBars.length-1){followLive=false;viewStatus();}
         rangeLock = true;
         try { charts.forEach((c) => { if (c !== src) c.timeScale().setVisibleLogicalRange(r); }); }
         catch (e) { /* noop */ }
