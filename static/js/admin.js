@@ -269,6 +269,8 @@ function renderJournalAccount(data){
   const label={connected:'Connected · server sync ချိတ်ဆက်ပြီး',disconnected:'Not connected · မချိတ်ရသေး',expired:'Login expired · ပြန်ချိတ်ရန်',unavailable:'Sync delayed · ပြန်စမ်းနေသည်',invalid_data:'History format error · ပြန်စမ်းနေသည်',storage:'Session storage error · ပြန်ချိတ်ရန်'}[data.status]||'Connection status unknown';
   byId('journal-account-state').textContent=label+' · Last sync: '+date(data.last_sync)+(data.error?' · '+data.error:'')+(data.active&&!data.worker_alive?' · Sync worker is not running.':'');
   const healthy=data.active&&data.status==='connected'&&data.worker_alive;
+  const syncAge=(Date.now()-new Date(data.last_sync).valueOf())/1000;
+  if(!busy&&healthy&&syncAge>=0&&syncAge<=30&&/^TRXChart (?:session check|account page|account page token) failed(?: \(HTTP \d{3}\))?\. TRXChart session expired or was signed out elsewhere\. Connect again\.$/.test(byId('notice').textContent))notice('TRXChart connection recovered. REAL history is updating.',false,{popup:false});
   byId('trade-account').classList.toggle('account-connected',Boolean(healthy&&!reconnectFormOpen));
   byId('journal-connect-form').hidden=Boolean(healthy&&!reconnectFormOpen);
   byId('trade-account-help').textContent=healthy?'အကောင့် ချိတ်ထားပါသည်။ Email / password ပြန်ထည့်လိုပါက Connect / reconnect account ကိုနှိပ်ပါ။':data.active?'အကောင့် session ရှိသေးပေမယ့် result sync နောက်ကျနေသည်။ Status ကိုစစ်ပါ၊ လိုအပ်လျှင် အောက်က form ဖြင့် ပြန်ချိတ်ပါ။':'အကောင့် မချိတ်ထားပါ။ အောက်တွင် TRXChart Phone / Email နှင့် Password ထည့်ပြီး Connect TRXChart ကိုနှိပ်ပါ။';

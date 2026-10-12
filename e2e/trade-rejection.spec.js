@@ -35,3 +35,13 @@ test('rejected receipt shows saved HTTP diagnosis, stays non-loss and opens REAL
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('rejected-order-diagnosis.png'),fullPage:true});
 });
+
+test('fresh verified sync clears a stale connection-expiry banner without clearing a new order error',async({page})=>{
+  let recovered=false;
+  await page.route('**/api/admin/trxchart-account',r=>r.request().method()==='POST'?r.fulfill({status:502,json:{error:'TRXChart session check failed (HTTP 401). TRXChart session expired or was signed out elsewhere. Connect again.'}}):r.fulfill({json:recovered?{revision:1,active:true,status:'connected',worker_alive:true,last_sync:new Date().toISOString()}:{revision:0,active:false,status:'disconnected'}}));
+  await page.goto('/admin/login');await page.getByLabel('Admin password').fill('fixture-admin-password');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.goto('/admin#trade');
+  await page.getByLabel('TRXChart Phone / Email',{exact:true}).fill('fixture@example.invalid');await page.getByLabel('TRXChart Password',{exact:true}).fill('fixture-password');await page.locator('#journal-account-consent').check();await page.locator('#journal-connect-form').getByRole('button',{name:/Connect TRXChart/}).click();
+  await expect(page.locator('#notice')).toContainText('HTTP 401');recovered=true;
+  await expect(page.locator('#notice')).toContainText('connection recovered',{timeout:20000});
+  await expect(page.locator('#trade-connection-badge')).toHaveText('CONNECTED · REAL');
+});
