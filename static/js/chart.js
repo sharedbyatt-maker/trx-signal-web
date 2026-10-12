@@ -1396,8 +1396,8 @@ window.TRXChart = (() => {
       pane.addEventListener('wheel',()=>{navigationUntil=performance.now()+300;},{capture:true,passive:true});
     });
     const endNavigation=()=>{if(navigating)navigationUntil=performance.now()+300;navigating=false;};
-    window.addEventListener('pointerup',endNavigation,{passive:true});
-    window.addEventListener('pointercancel',endNavigation,{passive:true});
+    window.addEventListener('pointerup',endNavigation,{capture:true,passive:true});
+    window.addEventListener('pointercancel',endNavigation,{capture:true,passive:true});
     charts.forEach((src) => {
       src.timeScale().subscribeVisibleLogicalRangeChange((r) => {
         if (!r || rangeLock) return;
