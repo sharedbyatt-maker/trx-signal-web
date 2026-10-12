@@ -75,7 +75,9 @@ class HistorySync:
             if self.store.private_get('trxchart_account')['revision'] != expected:
                 return  # A disconnect must win over this in-flight POST.
             config.update(cookies=self.cookies(client), token=token)
-            if outcome != 'rejected':
+            if getattr(client, 'trxchart_order_reason', None) == 'session_expired':
+                config.update(active=False, status='expired', balance_current=False, error=MESSAGES['expired'])
+            elif outcome != 'rejected':
                 config['balance_current'] = False
             self.save(config, expected, 'order_session_updated')
 

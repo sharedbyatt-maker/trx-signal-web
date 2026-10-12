@@ -142,3 +142,21 @@ actions and settlement alerts retain accessible status messages.
 On mobile, Results rows become cards showing side/result and stake/net P/L
 without horizontal scrolling. Full issue and timestamp remain visible below.
 Desktop retains the full six-column table.
+
+## Rejected request diagnostics
+
+Rejected submissions retain their HTTP status and a fixed diagnostic code across
+receipt reloads and process restarts. Only recognized exact provider error
+phrases/codes become fixed messages; arbitrary response text, credentials and
+tokens are discarded. Conflicting or unrecognized error messages remain unknown
+within the known rejection. HTTP 400 alone does not identify which field or
+provider trading rule failed. Older rejected receipts retain their status but
+cannot recover a response body that was never saved.
+
+The receipt offers Check REAL history for its own date and reporting timezone,
+switches out of Demo, and preserves unsaved reporting targets. A rejected request
+is neither a settled LOSS nor active WAIT. Explicit session/token refusal marks
+the account expired; HTTP 403 alone is permission refusal and does not assert
+expiry. Every financial POST still runs at most once per request ID. Reading an
+error body, opening history or refreshing never retries the order. No unverified
+provider payload change is made based on an HTTP status alone.

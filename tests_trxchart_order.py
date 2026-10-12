@@ -371,3 +371,65 @@ def test_sent_order_follows_results_without_resubmitting(service, response, foll
     place(svc, request_id=request_id)
     assert len(sync.client.calls) == 1
     assert calls == (['follow'] if followed else [])
+
+
+@pytest.mark.parametrize('status,body,code', [
+    (400, {'error': 'invalid direction'}, 'invalid_direction'),
+    (400, {'error': {'code': 'insufficient_balance'}}, 'insufficient_balance'),
+    (200, {'success': False, 'message': 'betting is closed'}, 'round_closed'),
+    (401, {'message': 'SECRET-password-token'}, 'session_expired'),
+    (403, {'message': 'SECRET-password-token'}, 'permission_denied'),
+    (429, {'message': 'SECRET-password-token'}, 'rate_limited'),
+    (400, {'error': 'SECRET-password-token'}, 'invalid_request'),
+    (400, {'error': 'invalid amount', 'message': 'insufficient funds'}, 'invalid_request'),
+])
+def test_rejection_diagnosis_survives_restart_replay_and_receipt_reload(service, status, body, code):
+    svc, sync, store, clock = service
+    sync.client.response = Response(status, body)
+    request_id = str(uuid4())
+    out = place(svc, request_id=request_id)
+    assert out['outcome'] == 'rejected' and out['reason_code'] == code
+    assert f'HTTP {status}' in out['message']
+    restarted = OrderService(sync, AdminStore(store.path), now=clock)
+    replay = place(restarted, request_id=request_id)
+    assert replay['message'] == out['message'] and replay['reason_code'] == code
+    assert replay['replayed'] and len(sync.client.calls) == 1
+    row = restarted.recent({'rows': []})[0]
+    assert row['message'] == out['message'] and row['http_status'] == status
+    assert row['state'] == -1 and row['pnl'] is None
+    with store.connect() as db:
+        saved = str(db.execute('SELECT * FROM trxchart_order_diagnostics').fetchall())
+    assert 'SECRET-password-token' not in saved + json.dumps(store.events()) + json.dumps(out) + json.dumps(row)
+
+
+@pytest.mark.parametrize('raw', [b'not json SECRET', b'x' * (MAX_RESPONSE_BYTES + 1), requests.Timeout()])
+def test_bounded_error_body_failure_keeps_known_http_rejection(service, raw):
+    svc, sync, _, _ = service
+    sync.client.response = Response(400, raw=raw)
+    out = place(svc)
+    assert out['outcome'] == 'rejected' and out['reason_code'] == 'invalid_request'
+    assert len(sync.client.calls) == 1 and sync.client.response.closed
+
+
+def test_existing_ledger_http_status_is_visible_without_inventing_missing_reason(service):
+    svc, _, store, clock = service
+    with store.connect() as db:
+        db.execute('INSERT INTO trxchart_orders VALUES(?,?,?,?,?,?,?)',
+                   (str(uuid4()), clock.value.date().isoformat(), clock.value.timestamp(), 'SMALL', 200, 'rejected', 400))
+    row = svc.recent({'rows': []})[0]
+    assert row['reason_code'] == 'invalid_request' and 'exact reason is unavailable' in row['message']
+
+
+def test_order_auth_rejection_invalidates_account_but_permission_refusal_does_not(service):
+    from trxchart_account_sync import HistorySync
+    _, _, store, _ = service
+    sync = HistorySync(store)
+    class Session:
+        cookies = []
+        trxchart_order_reason = 'session_expired'
+    sync.order_sent(Session(), 'fixture-token', {'active': True, 'status': 'connected', 'balance_current': True}, 0, 'rejected')
+    revision, config = sync.read()
+    assert not config['active'] and config['status'] == 'expired' and not config['balance_current']
+    Session.trxchart_order_reason = 'permission_denied'
+    sync.order_sent(Session(), 'fixture-token', {'active': True, 'status': 'connected'}, revision, 'rejected')
+    assert sync.public()['active']

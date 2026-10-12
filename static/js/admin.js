@@ -348,7 +348,7 @@ for(const [id,side] of [['order-big','BIG'],['order-small','SMALL']])byId(id).ad
   byId('order-result').textContent='WAIT · Sending one REAL order…';
   try{
     const data=await api('/api/admin/trxchart-order','POST',{direction:side,amount,mode:'real',confirm:true,request_id:requestId});
-    optimisticOrders.set(requestId,{...orderDraft,outcome:data.outcome});renderManualOrders(manualOrders);
+    optimisticOrders.set(requestId,{...orderDraft,outcome:data.outcome,http_status:data.http_status,reason_code:data.reason_code,message:data.message});renderManualOrders(manualOrders);
     byId('order-result').textContent=data.message+(data.ok?' Following REAL results for WIN / LOSS…':'');
     if(!data.ok)throw Error(data.message);
     notice(side+' · '+amount+' MMK · '+data.message);
@@ -404,9 +404,9 @@ function renderManualOrders(rows){
     const elapsed=Math.max(0,Math.floor((Date.now()-new Date(row.at).valueOf())/1000));
     const label=row.state===1?'WIN':row.state===0?'LOSS':row.outcome==='rejected'?'REJECTED':row.outcome==='not_sent'?'NOT SENT':row.outcome==='unknown'?'UNCERTAIN':elapsed>180?'CHECK HISTORY':'WAIT';
     pill.className='result-pill '+(row.state===1?'win':row.state===0||row.outcome==='rejected'?'loss':'pending');pill.textContent=label;
-    note.textContent=row.state!==-1?(row.pnl!==null?(row.pnl>0?'+':'')+tradeCash(row.pnl)+' MMK': 'Confirmed round result'):row.outcome==='pending'?'Sending · never retried':row.outcome==='accepted'?'Submitted · awaiting provider result':row.outcome==='rejected'?'Provider rejected this order':row.outcome==='not_sent'?'Order was not submitted':'Check REAL history before another order';
+    note.textContent=row.state!==-1?(row.pnl!==null?(row.pnl>0?'+':'')+tradeCash(row.pnl)+' MMK': 'Confirmed round result'):row.outcome==='pending'?'Sending · never retried':row.outcome==='accepted'?'Submitted · awaiting provider result':row.outcome==='rejected'?(row.message||('Provider rejected this order'+(Number.isInteger(row.http_status)?' (HTTP '+row.http_status+')':''))):row.outcome==='not_sent'?'Order was not submitted':'Check REAL history before another order';
     if(label==='CHECK HISTORY')note.textContent='Result not linked yet. Check verified account activity below.';
-    result.className='activity-result';result.append(pill,note);if(label==='CHECK HISTORY'){const link=document.createElement('a');link.href='#journal';link.textContent='Find in Results ↗';link.addEventListener('click',()=>{byId('journal-search').value=row.issue||row.side;renderJournalRows();});result.append(link);}li.append(info,result);list.append(li);
+    result.className='activity-result';result.append(pill,note);if(label==='CHECK HISTORY'||row.outcome==='rejected'||row.outcome==='unknown'){const link=document.createElement('a');link.href='#journal';link.textContent=label==='CHECK HISTORY'?'Find in Results ↗':'Check REAL history ↗';link.addEventListener('click',()=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:journalData?.limits.timezone||'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(row.at)).map(p=>[p.type,p.value]));byId('journal-mode').value='real';byId('journal-date').value=parts.year+'-'+parts.month+'-'+parts.day;byId('journal-result-filter').value='all';byId('journal-search').value=row.issue||row.side;run(async()=>{const url=journalURL(),data=await api(url);if(url===journalURL())renderJournal(data,false);},'REAL history loaded. A rejected request is not a settled loss.');});result.append(link);}li.append(info,result);list.append(li);
   }
 }
 function renderTradeSync(){
