@@ -42,7 +42,7 @@ window.TRXDraw = (() => {
   const PRESET_KEY = 'trx_drawing_presets_v1';
   const clone = value => JSON.parse(JSON.stringify(value));
   function historySignature(rows) {
-    return JSON.stringify(rows.map(d=>({...d,points:d.points.map(p=>({...p,t:p.lb||p.anchorLb?null:p.t}))})));
+    return rowsSignature(rows);
   }
   function resetHistory() { history = [clone(serializeDrawings())]; historyAt = 0; updateHistoryButtons(); }
   function recordHistory() {
@@ -78,6 +78,7 @@ window.TRXDraw = (() => {
   }
   let serverRevision = null, serverConflict = false, serverSyncTimer = null, syncStatusEl = null;
   let serverPushRequest = null, serverPushQueued = false;
+  let syncedDrawingSignature = null;
   async function syncRequest(url, options={}) {
     return TRXNet.run(async signal => {
       const r=await fetch(url,{...options,signal});
@@ -163,7 +164,18 @@ window.TRXDraw = (() => {
     return { p: Number(p.p), lb: lb || null, t: p.t, anchorLb: anchorLb || null, offset,...(futureTime!=null?{futureTime}: {}) };
   }
   function rowsSignature(rows) {
-    try { return JSON.stringify(rows || []); } catch (_e) { return ""; }
+    const canonical=value=>{
+      if(Array.isArray(value))return value.map(canonical);
+      if(!value||typeof value!=='object')return value;
+      if('p' in value){
+        value={...value,lb:value.lb??null,anchorLb:value.anchorLb??null,offset:value.offset??null};
+        if(value.futureTime!=null)value={...value,t:null,lb:null,anchorLb:null,offset:null};
+        else if(value.lb!=null)value={...value,t:null,anchorLb:null,offset:null};
+        else if(value.anchorLb!=null)value={...value,t:null};
+      }
+      return Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])]));
+    };
+    try { return JSON.stringify(canonical(rows || [])); } catch (_e) { return ""; }
   }
   function backupLocalSnapshot(reason) {
     try {
@@ -221,9 +233,18 @@ window.TRXDraw = (() => {
       points: d.points.map(serializePoint),
     }));
   }
+  let saveNoticeTimer=0;
+  function drawingSaveNotice(message,retry=false){
+    clearTimeout(saveNoticeTimer);const status=$('drawing-save-status'),button=$('drawing-save-retry');
+    if(status){status.textContent=message;status.hidden=!message;}if(button)button.hidden=!retry;
+  }
   function saveLocal() {
-    if(practice)return;
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(serializeDrawings())); } catch (_e) {}
+    if(practice)return true;
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(serializeDrawings()));
+      if($('drawing-save-status')&&!$('drawing-save-status').hidden){drawingSaveNotice('Drawings saved locally.');saveNoticeTimer=setTimeout(()=>drawingSaveNotice(''),3000);}
+      return true;
+    } catch (_e) {drawingSaveNotice('Drawing save failed · Export before reload.',true);setSyncStatus('LOCAL SAVE FAILED · EXPORT BACKUP',true);return false;}
   }
   function save() { drawings.forEach(d=>d.points=d.points.map(serializePoint));recordHistory(); saveLocal(); queueServerSave(); updateManager(); }
   function needPoints(type) { return (type === "hline" || type === "vline") ? 1 : 2; }
@@ -233,8 +254,8 @@ window.TRXDraw = (() => {
     return new Map(((api && api.labels) || []).map((lb, i) => [lb, i + 1]));
   }
   function replaceFromRows(raw) {
-    const map = labelIndexMap(); drawings = [];
-    sanitizeClientRows(raw).forEach((row) => {
+    const rows=sanitizeClientRows(raw),map = labelIndexMap(),nextDrawings=[];
+    rows.forEach((row) => {
       const pts = [];
       (row.points || []).forEach((p) => {
         let t = null;
@@ -244,18 +265,18 @@ window.TRXDraw = (() => {
         else if (p.t != null) t = p.t;
         pts.push({ t, p: Number(p.p), lb: p.lb != null ? p.lb : null, anchorLb:p.anchorLb||null, offset:p.offset==null?null:Number(p.offset),...(p.futureTime!=null?{futureTime:p.futureTime}: {}) });
       });
-      if (pts.length >= needPoints(row.type)) drawings.push(defaults({
+      if (pts.length >= needPoints(row.type)) nextDrawings.push(defaults({
         ...row, id: row.id || uid(), color: row.color || "#2962ff",
         points: pts.slice(0, needPoints(row.type)),
       }));
     });
-    selectedId = null; updatePanel(); updateManager(); redraw();
+    drawings=nextDrawings;selectedId = null; updatePanel(); updateManager(); redraw();
   }
   function restore() {
     if (!api || !api.labels) return;
     restored = true;
     try { replaceFromRows(JSON.parse(localStorage.getItem(STORE_KEY) || "[]")); }
-    catch (_e) { drawings = []; }
+    catch (_e) { drawingSaveNotice('Saved drawings could not be loaded · Import a backup.'); }
     resetHistory(); updatePanel();
     if (syncToken()) pullServer(false);
   }
@@ -281,13 +302,14 @@ window.TRXDraw = (() => {
     if (practice || !syncToken() || serverRevision == null || serverConflict) return false;
     setSyncStatus("SYNCING…");
     try {
-      const r=await syncRequest("/api/drawings",{method:"PUT",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({expected_revision:serverRevision,drawings:serializeDrawings()})});
+      const snapshot=serializeDrawings(),signature=rowsSignature(snapshot);
+      const r=await syncRequest("/api/drawings",{method:"PUT",headers:authHeaders({"Content-Type":"application/json"}),body:JSON.stringify({expected_revision:serverRevision,drawings:snapshot})});
       const j=r.data;
       if(practice)return false;
       if(r.status===401){setSyncToken("");serverRevision=null;setSyncStatus("AUTH NEEDED",true);return false;}
       if(r.status===409){backupLocalSnapshot("revision-conflict");serverConflict=true;setSyncStatus("CONFLICT · TAP SYNC",true);return false;}
       if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
-      serverRevision=Number(j.revision);serverConflict=false;setSyncStatus(`SYNCED r${serverRevision}`);return true;
+      serverRevision=Number(j.revision);syncedDrawingSignature=signature;serverConflict=false;setSyncStatus(`SYNCED r${serverRevision}`);return true;
     } catch(e){setSyncStatus("LOCAL · SERVER ERROR",true);return false;}
   }
   async function pullServer(interactive=true) {
@@ -325,6 +347,7 @@ window.TRXDraw = (() => {
       }
 
       serverRevision=remoteRev;serverConflict=false;
+      syncedDrawingSignature=rowsSignature(remote);
       if(remote.length){replaceFromRows(remote);resetHistory();saveLocal();setSyncStatus(`PULLED r${serverRevision}`);}
       else if(local.length){setSyncStatus("SERVER EMPTY · UPLOADING");await pushServer();}
       else setSyncStatus(`SYNCED r${serverRevision}`);
@@ -769,6 +792,8 @@ window.TRXDraw = (() => {
     document.querySelectorAll(".dt-btn[data-tool]").forEach(btn=>btn.addEventListener("click",()=>setTool(btn.dataset.tool)));
     document.querySelectorAll(".dt-swatch").forEach(sw=>sw.addEventListener("click",()=>{color=sw.dataset.color;document.querySelectorAll(".dt-swatch").forEach(s=>s.classList.toggle("active",s.dataset.color===color));const d=selected();if(d){d.color=color;save();redraw();}if(placing)placing.color=color;}));
     $("chart-magnet")?.addEventListener("click",toggleMagnet);
+    $('drawing-save-retry')?.addEventListener('click',saveLocal);
+    window.addEventListener('trx:view-resume',()=>{if(practice||!syncToken()||serverConflict)return;if(serverRevision==null){pullServer(false);return;}if(rowsSignature(serializeDrawings())!==syncedDrawingSignature)queueServerSave();});
     const bind=(id,fn)=>{const el=$(id);if(el)el.addEventListener("click",fn);};bind("dt-undo",undo);bind("dt-redo",redo);bind("dt-clear",clearAll);bind("dt-del",deleteSelected);
     document.addEventListener("keydown",ev=>{if(/input|textarea|select/i.test((document.activeElement||{}).tagName||""))return;if((ev.key==="Delete"||ev.key==="Backspace")&&selectedId&&!drag){ev.preventDefault();deleteSelected();}if(ev.key==="Escape")setTool("cursor");if((ev.key==="z"||ev.key==="Z")&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();ev.shiftKey?redo():undo();}if(ev.key.toLowerCase()==="y"&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();redo();}const hotkeys={t:"trend",r:"ray",h:"hline",v:"vline",b:"rect",f:"fib"};const k=ev.key.toLowerCase();if(hotkeys[k]&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey)setTool(hotkeys[k]);});
     new ResizeObserver(()=>{resize();layoutFibPanel();}).observe(wrapEl);

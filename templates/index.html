@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=67">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/polish.css') }}?v=1">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/terminal-theme.css') }}?v=1">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/chart-workspace.css') }}?v=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chart-workspace.css') }}?v=2">
 </head>
 <body data-admin-timeframe="{{ defaults.timeframe }}" data-admin-alerts="{{ '1' if defaults.alerts else '0' }}" data-admin-signals="{{ '1' if defaults.indicators.sig|default(false) else '0' }}">
 <header>
@@ -86,6 +86,9 @@
       <label class="chart-follow-label"><input type="checkbox" id="chart-follow" checked> Auto-follow</label>
       <button class="tf-btn" id="chart-magnet" aria-pressed="true" title="Snap drawing points to candle values">Magnet ON</button>
       <span id="chart-refresh-status" role="status"></span>
+      <span id="chart-update-status" class="chart-note" role="status" hidden></span>
+      <span id="drawing-save-status" class="chart-note" role="status" hidden></span>
+      <button type="button" id="drawing-save-retry" class="tf-btn" hidden>Retry save</button>
     </div>
     <section id="chart-more" class="chart-more" hidden aria-label="More chart controls">
         <label class="range-select-wrap" for="history-range-select">
@@ -99,7 +102,7 @@
         </label>
       <button class="tf-btn fit" id="fit-btn" title="Show all loaded candles">Fit History</button>
       <label for="chart-future-space">Future space
-        <select id="chart-future-space" aria-label="Future drawing space">
+        <select id="chart-future-space" class="range-select" aria-label="Future drawing space">
           <option value="4">4 bars</option><option value="20">20 bars</option><option value="50" selected>50 bars</option><option value="100">100 bars</option><option value="200">200 bars</option>
         </select>
       </label>
@@ -388,13 +391,13 @@
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/transport.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=62"></script>
-<script src="{{ url_for('static', filename='js/draw.js') }}?v=50"></script>
-<script src="{{ url_for('static', filename='js/market-context.js') }}?v=5"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=58"></script>
-<script src="{{ url_for('static', filename='js/daily12.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=63"></script>
+<script src="{{ url_for('static', filename='js/draw.js') }}?v=51"></script>
+<script src="{{ url_for('static', filename='js/market-context.js') }}?v=6"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=59"></script>
+<script src="{{ url_for('static', filename='js/daily12.js') }}?v=5"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=7"></script>
-<script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=7"></script>
+<script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=8"></script>
 </body>
 </html>
 

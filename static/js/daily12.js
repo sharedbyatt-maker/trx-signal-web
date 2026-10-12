@@ -78,6 +78,7 @@
   let refreshing = false;
   async function refresh(){
     if (refreshing) return;
+    if(navigator.onLine===false){window.TRXContext?.onDailyError();return;}
     refreshing = true;
     try {
       const d = await TRXNet.run(async signal => {
@@ -95,4 +96,5 @@
   }
   refresh();
   setInterval(refresh, 10000);
+  window.addEventListener('trx:view-resume',refresh);
 })();

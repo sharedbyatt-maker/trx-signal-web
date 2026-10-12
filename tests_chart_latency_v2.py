@@ -13,7 +13,7 @@ staking_pos = core.index('types_strat = [x["type"] for x in parsed_history]', fr
 assert staking_pos > fresh_pos
 
 assert 'LATEST_POLL_VISIBLE_MS = 250' in appjs
-assert 'LATEST_POLL_HIDDEN_MS = 1200' in appjs
+assert 'LATEST_POLL_HIDDEN_MS = 5000' in appjs
 assert 'scheduleLatestPoll(0)' in appjs
 assert 'setInterval(pollLatest, 400)' not in appjs
 

@@ -1649,7 +1649,6 @@ window.TRXChart = (() => {
     ).join("|");
     const key = `${contextRevision}:${hist.length}:${lastIssue}:${tailFingerprint}:${group}:${viewMode}:${JSON.stringify(opts)}:${(s.log || []).length}`;
     if (!force && key === lastKey) return;
-    lastKey = key;
 
 
     // capture current view so setData() cannot scroll/zoom the chart
@@ -1822,7 +1821,7 @@ window.TRXChart = (() => {
         ? (/▲/.test(tags[tags.length - 1] || "") ? " green" : " red")
         : "");
     }
-    updateInspector();viewStatus();notifyStudy();
+    updateInspector();viewStatus();notifyStudy();lastKey=key;
   }
 
   function drawSrLevels(levels) {
@@ -1874,19 +1873,13 @@ window.TRXChart = (() => {
     const close = last.c + dir;
     let time = last.time;
     let isNewBar = group === 1;
+    const bucket=timeframeBucket(row,group,contextRows.length);
 
     // Higher TFs use the same source block-time bucket rule as full aggregation.
     // If parsing is unavailable, return false so authoritative /api/state renders it.
     if (group > 1) {
-      const bt = String(row.block_time || row.blockTime || "");
-      const prevBt = String(curTimes[curTimes.length - 1] || "");
-      const parseMinute = (s) => {
-        const m = s.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::\d{2})?$/);
-        return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-      };
-      const curMin = parseMinute(bt), prevMin = parseMinute(prevBt);
-      if (curMin == null || prevMin == null) return false;
-      isNewBar = Math.floor(curMin / group) !== Math.floor(prevMin / group) || bt.slice(0,10) !== prevBt.slice(0,10);
+      if(bucket.key.startsWith('legacy:'))return false;
+      isNewBar = bucket.labelTime !== curTimes[curTimes.length-1];
     }
 
     let raw;
@@ -1907,14 +1900,13 @@ window.TRXChart = (() => {
       curBars.push({ time, o: raw.open, h: raw.high, l: raw.low, c: close });
       curCloses.push(close);
       curLabels.push(row.short_issue || issue.slice(-6));
-      curTimes.push(row.block_time || row.hm || "");
+      curTimes.push(bucket.labelTime || row.block_time || row.hm || "");
       curFulls.push(issue);
     } else {
       curBars[curBars.length - 1] = { time, o: raw.open, h: raw.high, l: raw.low, c: close };
       curCloses[curCloses.length - 1] = close;
       curLabels[curLabels.length - 1] = row.short_issue || issue.slice(-6);
-      curTimes[curTimes.length - 1] = row.block_time || row.hm || curTimes[curTimes.length - 1];
-      curFulls[curFulls.length - 1] = issue;
+      // The bucket start time and first issue remain stable as the candle forms.
     }
     if (!(curLabelMap instanceof Map)) curLabelMap = new Map();
     curLabelMap.set(issue, time);
@@ -2057,7 +2049,7 @@ window.TRXChart = (() => {
       try { const r = chart.timeScale().getVisibleLogicalRange(); return { from: r.from, to: r.to }; }
       catch (e) { return null; }
     },
-    _qa: { calcStoch, structuralLookbackBars, hssShape, detectHssCandidates, srLevels, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice()}) },
+    _qa: { calcStoch, structuralLookbackBars, hssShape, detectHssCandidates, srLevels, displaySnapshot:()=>({bars:curBars.map(b=>({...b})),rsi:curRsiValues.slice(),latestTime:curTimes.at(-1),latestAnchor:curFulls.at(-1)}) },
   };
 })();
 

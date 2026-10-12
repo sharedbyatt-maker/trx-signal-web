@@ -11,6 +11,9 @@
 #chart-magnet{min-height:40px;padding:6px 10px}
 #chart-magnet[aria-pressed=true],#chart-inspect[aria-pressed=true]{background:#204c62;color:#cff4ff;border-color:#548fac}
 #chart-refresh-status{flex:1;min-width:0;min-height:1.3em;overflow-wrap:anywhere}
+.chart-note{color:#edc487;flex-basis:100%;overflow-wrap:anywhere}
+#chart-update-status[hidden],#drawing-save-status[hidden],#drawing-save-retry[hidden]{display:none!important}
+#drawing-save-retry{min-height:40px;padding:6px 10px}
 #chart-refresh.is-refreshing{animation:chart-refresh-pulse 1s ease-in-out infinite}
 @keyframes chart-refresh-pulse{50%{opacity:.45}}
 .chart-more{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin:0 12px 10px;background:#122633;border:1px solid #304956;border-radius:8px}
@@ -34,6 +37,7 @@
  #chart-card .chart-primary .tf-btn{min-width:0;width:100%;min-height:44px;padding:6px 3px}
  .chart-utility{gap:6px 10px;margin:4px 8px 8px}.chart-follow-label,#chart-magnet{min-height:44px}
  #chart-refresh-status{flex-basis:100%}
+ #drawing-save-retry{min-height:44px}
  .chart-more{margin:0 8px 8px}.chart-more .tf-btn,.chart-more select{min-height:44px}
  #chart-card .draw-tools .dt-btn{min-width:44px;width:44px;height:44px}
  #chart-card .draw-tools{max-height:58px;width:calc(100% - 16px)}

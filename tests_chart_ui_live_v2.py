@@ -14,7 +14,7 @@ def test_multi_tf_fast_append_and_compact_font_guard():
     js=Path('static/js/chart.js').read_text(encoding='utf-8')
     css=Path('static/css/style.css').read_text(encoding='utf-8')
     assert 'group !== 1' not in js[js.index('function appendLatest'):js.index('function toggleSignals')]
-    assert 'Math.floor(curMin / group)' in js
+    assert 'isNewBar = bucket.labelTime !== curTimes' in js
     assert 'curBars[curBars.length - 1] =' in js
     assert 'body { font-size: 12px; }' in css
     assert '.tf-btn { font-size: 10px; }' in css
