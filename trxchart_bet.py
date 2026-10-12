@@ -16,6 +16,7 @@ import requests
 
 from trxchart_account_sync import ORIGIN, ProviderError
 from trade_order_tracking import receipt, result_for
+from trade_order_diagnostics import diagnosis, reason_for
 
 ENDPOINT = '/api/bet'
 BANGKOK = timezone(timedelta(hours=7))
@@ -50,17 +51,22 @@ class OrderService:
             db.execute('CREATE INDEX IF NOT EXISTS trxchart_orders_day ON trxchart_orders(day)')
             db.execute('CREATE TABLE IF NOT EXISTS trxchart_order_receipts('
                        'request_id TEXT PRIMARY KEY, provider_id TEXT, issue TEXT)')
+            db.execute('CREATE TABLE IF NOT EXISTS trxchart_order_diagnostics('
+                       'request_id TEXT PRIMARY KEY, reason_code TEXT NOT NULL)')
 
     def recent(self, journal):
         with self.store.lock, self.store.connect() as db:
-            rows = db.execute('SELECT o.request_id,o.at,o.direction,o.amount,o.outcome,r.provider_id,r.issue '
+            rows = db.execute('SELECT o.request_id,o.at,o.direction,o.amount,o.outcome,r.provider_id,r.issue,o.http_status,d.reason_code '
                               'FROM trxchart_orders o LEFT JOIN trxchart_order_receipts r USING(request_id) '
+                              'LEFT JOIN trxchart_order_diagnostics d USING(request_id) '
                               'ORDER BY o.at DESC,o.request_id DESC LIMIT 20').fetchall()
         result = []
-        for request_id, at, side, amount, outcome, provider_id, issue in rows:
+        for request_id, at, side, amount, outcome, provider_id, issue, http_status, reason in rows:
+            reason_code, message = diagnosis(outcome, http_status, reason)
             order = {'id': request_id, 'at': datetime.fromtimestamp(at, timezone.utc).isoformat(),
                      'side': side, 'stake': amount, 'outcome': outcome,
-                     'provider_id': provider_id, 'issue': issue, 'state': -1, 'pnl': None}
+                     'provider_id': provider_id, 'issue': issue, 'state': -1, 'pnl': None,
+                     'http_status': http_status, 'reason_code': reason_code, 'message': message}
             matched, source = result_for(order, journal['rows'])
             order['result_source'] = source
             if matched:
@@ -124,26 +130,31 @@ class OrderService:
         return {**cfg, **usage}
 
     def _existing(self, db, request_id, direction, amount):
-        row = db.execute('SELECT direction,amount,outcome,http_status FROM trxchart_orders WHERE request_id=?', (request_id,)).fetchone()
+        row = db.execute('SELECT direction,amount,outcome,http_status,reason_code FROM trxchart_orders '
+                         'LEFT JOIN trxchart_order_diagnostics USING(request_id) WHERE request_id=?', (request_id,)).fetchone()
         if not row:
             return None
         if row[:2] != (direction, amount):
             raise OrderError('This request ID already belongs to a different order.', 409)
         outcome = 'unknown' if row[2] == 'pending' else row[2]
-        return self._result(request_id, outcome, row[3], replayed=True)
+        return self._result(request_id, outcome, row[3], replayed=True, reason=row[4])
 
     @staticmethod
-    def _result(request_id, outcome, status, replayed=False):
+    def _result(request_id, outcome, status, replayed=False, reason=None):
         message = {'accepted': 'TRXChart confirmed the REAL order. Check REAL history for its result.',
                    'rejected': 'TRXChart rejected the order. Check the connection and REAL history.',
                    'unknown': UNKNOWN_MESSAGE}[outcome]
+        reason_code, rejected_message = diagnosis(outcome, status, reason)
         return {'ok': outcome == 'accepted', 'outcome': outcome, 'http_status': status,
-                'request_id': request_id, 'replayed': replayed, 'message': message, 'mode': 'real'}
+                'reason_code': reason_code,
+                'request_id': request_id, 'replayed': replayed, 'message': rejected_message or message, 'mode': 'real'}
 
     @staticmethod
-    def _audit(db, request_id, direction, amount, outcome, status, at):
+    def _audit(db, request_id, direction, amount, outcome, status, at, reason=None):
         detail = {'request_id': request_id, 'mode': 'real', 'direction': direction,
                   'amount': amount, 'outcome': outcome, 'http_status': status}
+        if reason:
+            detail['reason_code'] = diagnosis(outcome, status, reason)[0]
         db.execute('INSERT INTO events(at,kind,detail) VALUES(?,?,?)',
                    (datetime.fromtimestamp(at, timezone.utc).isoformat(timespec='seconds'),
                     'trxchart_order', json.dumps(detail)))
@@ -210,7 +221,9 @@ class OrderService:
                                (request_id, day, at, direction, amount, 'pending', None))
                     self._audit(db, request_id, direction, amount, 'pending', None, at)
                 client.trxchart_order_receipt = {}
+                client.trxchart_order_reason = None
                 outcome, status = self._send(client, token, direction, amount)
+                reason = getattr(client, 'trxchart_order_reason', None)
                 received = getattr(client, 'trxchart_order_receipt', {})
                 update_session = getattr(self.sync, 'order_sent', None)
                 if update_session is not None:
@@ -225,12 +238,16 @@ class OrderService:
                 if received:
                     db.execute('INSERT OR REPLACE INTO trxchart_order_receipts VALUES(?,?,?)',
                                (request_id, received.get('provider_id'), received.get('issue')))
+                if outcome == 'rejected':
+                    reason = diagnosis(outcome, status, reason)[0]
+                    db.execute('INSERT OR REPLACE INTO trxchart_order_diagnostics VALUES(?,?)', (request_id, reason))
                 db.execute('DELETE FROM trxchart_order_receipts WHERE request_id NOT IN (SELECT request_id FROM trxchart_orders)')
-                self._audit(db, request_id, direction, amount, outcome, status, self._time()[1])
+                db.execute('DELETE FROM trxchart_order_diagnostics WHERE request_id NOT IN (SELECT request_id FROM trxchart_orders)')
+                self._audit(db, request_id, direction, amount, outcome, status, self._time()[1], reason)
             wake = getattr(self.sync, 'wake', None)
             if wake is not None:
                 wake.set()  # Refresh provider balance/history without ever retrying the order.
-            return {**self._result(request_id, outcome, status), **self.status()}
+            return {**self._result(request_id, outcome, status, reason=reason), **self.status()}
         finally:
             self.sync.operation.release()
             self.lock.release()
@@ -238,30 +255,38 @@ class OrderService:
     @staticmethod
     def _send(client, token, direction, amount):
         status = None
+        rejected = False
         try:
             # No retries, redirects, alternate endpoints, or provider text in the UI.
             with client.post(ORIGIN + ENDPOINT, json={'direction': direction, 'amount': amount},
                              headers={'X-API-Token': token}, timeout=(3, 8),
                              allow_redirects=False, stream=True) as response:
                 status = response.status_code
-                if 400 <= status < 500 and status != 408 or 300 <= status < 400:
-                    return 'rejected', status
-                if status != 200:
+                # A redirect may follow a committed order. Without an explicit
+                # receipt its outcome stays uncertain; never follow or retry it.
+                rejected = 400 <= status < 500 and status != 408
+                if rejected:
+                    client.trxchart_order_reason = reason_for(status)
+                if status != 200 and not rejected:
                     return 'unknown', status
                 chunks, size, started = [], 0, time.monotonic()
                 for chunk in response.iter_content(8192):
                     size += len(chunk)
                     if size > MAX_RESPONSE_BYTES or time.monotonic() - started > 12:
-                        return 'unknown', status
+                        return ('rejected' if rejected else 'unknown'), status
                     chunks.append(chunk)
                 data = json.loads(b''.join(chunks).decode('utf-8'))
+                if rejected:
+                    client.trxchart_order_reason = reason_for(status, data)
+                    return 'rejected', status
                 if not isinstance(data, dict) or type(data.get('success')) is not bool:
                     return 'unknown', status
                 if data['success'] is False:
+                    client.trxchart_order_reason = reason_for(status, data)
                     return 'rejected', status
                 if data.get('error'):
                     return 'unknown', status
                 client.trxchart_order_receipt = receipt(data)
                 return 'accepted', status
         except (requests.RequestException, ValueError, UnicodeError):
-            return 'unknown', status
+            return ('rejected' if rejected else 'unknown'), status
