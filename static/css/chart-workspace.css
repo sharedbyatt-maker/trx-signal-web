@@ -40,8 +40,8 @@
  #chart-card .draw-row button,#chart-card .draw-row select,#chart-card .draw-row .dt-swatch{min-height:44px;min-width:44px}
  #chart-card .draw-drawer{bottom:70px;max-height:calc(100% - 114px)}
  #chart-card .draw-hint{max-width:calc(100% - 20px)}
- #chart-card #draw-v2-panel{top:auto!important;bottom:70px;max-height:55%;overflow:auto}
- #chart-card #draw-v2-panel button,#chart-card #draw-v2-panel select{min-height:44px!important;min-width:44px}
+ #chart-card #draw-v2-panel{top:36px;bottom:auto;flex-wrap:nowrap!important;max-width:calc(100% - 16px);box-sizing:border-box;overflow-x:auto}
+ #chart-card #draw-v2-panel button,#chart-card #draw-v2-panel select{flex-shrink:0;min-height:44px!important;min-width:44px}
  #chart-card #fib-v2-panel button,#chart-card #fib-v2-panel select,#chart-card #fib-v2-panel input:not([type=checkbox]):not([type=range]){min-height:44px!important;min-width:44px}
  .candle-inspector{position:fixed;z-index:80;left:8px;right:8px;bottom:8px;margin:0;max-height:52dvh;overflow:auto;box-shadow:0 5px 30px #000b}
  .inspector-heading button{min-height:44px}#inspector-values{grid-template-columns:repeat(2,minmax(0,1fr))}

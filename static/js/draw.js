@@ -601,7 +601,9 @@ window.TRXDraw = (() => {
     fibPanelEl.style.top=top+"px";
     fibPanelEl.style.minWidth="0";
     fibPanelEl.style.boxSizing="border-box";
-    const bottom=window.matchMedia("(max-width:600px)").matches&&!$("draw-tools")?.classList.contains("collapsed")?64:8;
+    const palette=$("draw-tools");
+    const bottom=window.matchMedia("(max-width:600px)").matches&&palette&&!palette.classList.contains("collapsed")
+      ? Math.max(8,wrapEl.getBoundingClientRect().bottom-palette.getBoundingClientRect().top+8):8;
     fibPanelEl.style.maxHeight=Math.max(32,wrapEl.clientHeight-top-bottom)+"px";
     fibPanelEl.style.overflowY="auto";
   }
