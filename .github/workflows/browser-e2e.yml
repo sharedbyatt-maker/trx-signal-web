@@ -63,6 +63,8 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Verify browser history sync
         run: npx playwright test e2e/trxchart-sync.spec.js e2e/trxchart-account.spec.js
+      - name: Verify user chart workspace
+        run: npx playwright test e2e/chart-workspace.spec.js
       - name: Verify browser order rejection diagnostics
         run: npx playwright test e2e/trade-rejection.spec.js
       - name: Run browser E2E suite

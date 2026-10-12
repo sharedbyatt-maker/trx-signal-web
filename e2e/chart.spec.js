@@ -50,6 +50,7 @@ test('chart supports HLC stochastic', async ({ page }) => {
 
 test('history range presets expose the full-history navigation controls', async ({ page }) => {
   await waitForChart(page);
+  await page.locator('#chart-more-toggle').click();
   await expect(page.locator('#chart-meta')).not.toHaveText('loading…');
   for (const d of ['3', '1', '10', '30']) {
     await page.locator('#history-range-select').selectOption(d);

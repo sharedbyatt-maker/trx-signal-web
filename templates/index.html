@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=67">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/polish.css') }}?v=1">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/terminal-theme.css') }}?v=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chart-workspace.css') }}?v=1">
 </head>
 <body data-admin-timeframe="{{ defaults.timeframe }}" data-admin-alerts="{{ '1' if defaults.alerts else '0' }}" data-admin-signals="{{ '1' if defaults.indicators.sig|default(false) else '0' }}">
 <header>
@@ -61,13 +62,32 @@
   <!-- ================= CHART — PRIMARY ================= -->
   <section class="card chart-card" id="chart-card">
     <div class="card-title-row">
-      <div class="chart-toolbar">
-        <span class="tb-group-label">TF</span>
-        <button class="tf-btn{% if defaults.timeframe == 1 %} active{% endif %}" data-g="1">1m</button>
-        <button class="tf-btn{% if defaults.timeframe == 5 %} active{% endif %}" data-g="5">5m</button>
-        <button class="tf-btn{% if defaults.timeframe == 15 %} active{% endif %}" data-g="15">15m</button>
-        <button class="tf-btn{% if defaults.timeframe == 60 %} active{% endif %}" data-g="60">1h</button>
-        <span class="tb-sep"></span>
+      <div class="chart-toolbar chart-primary" aria-label="Chart controls">
+        <div class="chart-timeframes" role="group" aria-label="Timeframe">
+          <button class="tf-btn{% if defaults.timeframe == 1 %} active{% endif %}" data-g="1">1m</button>
+          <button class="tf-btn{% if defaults.timeframe == 5 %} active{% endif %}" data-g="5">5m</button>
+          <button class="tf-btn{% if defaults.timeframe == 15 %} active{% endif %}" data-g="15">15m</button>
+          <button class="tf-btn{% if defaults.timeframe == 60 %} active{% endif %}" data-g="60">1h</button>
+        </div>
+        <button class="tf-btn chart-live" id="chart-live" aria-label="Back to Live" title="Return to latest candles">Live ↗</button>
+        <div class="chart-zoom" role="group" aria-label="Chart zoom">
+          <button class="tf-btn" id="zoom-in-btn" aria-label="Zoom in">＋</button>
+          <button class="tf-btn" id="zoom-out-btn" aria-label="Zoom out">−</button>
+        </div>
+        <button class="tf-btn" id="ind-toggle-btn" aria-controls="ind-bar" aria-expanded="false">Indicators</button>
+        <button class="tf-btn" id="dt-toggle-btn" aria-label="Drawing tools" aria-controls="draw-tools" aria-expanded="false">Draw</button>
+        <button class="tf-btn" id="chart-inspect" aria-pressed="false" aria-controls="candle-inspector">Inspect</button>
+        <button class="tf-btn" id="chart-refresh" aria-label="Refresh chart" title="Refresh data and keep your chart view">↻</button>
+        <button class="tf-btn" id="chart-more-toggle" aria-expanded="false" aria-controls="chart-more">More ⋯</button>
+      </div>
+    </div>
+    <div class="chart-utility">
+      <span id="chart-view-status" role="status">Live view</span>
+      <label class="chart-follow-label"><input type="checkbox" id="chart-follow" checked> Auto-follow</label>
+      <button class="tf-btn" id="chart-magnet" aria-pressed="true" title="Snap drawing points to candle values">Magnet ON</button>
+      <span id="chart-refresh-status" role="status"></span>
+    </div>
+    <section id="chart-more" class="chart-more" hidden aria-label="More chart controls">
         <label class="range-select-wrap" for="history-range-select">
           <span class="tb-group-label">RANGE</span>
           <select id="history-range-select" class="range-select" title="Chart history range">
@@ -77,13 +97,9 @@
             <option value="30"{% if defaults.range == 30 %} selected{% endif %}>30D</option>
           </select>
         </label>
-        <span id="chart-meta" hidden aria-hidden="true"></span>
-        <button class="tf-btn fit" id="fit-btn" title="Chart အားလုံး ကျယ်ကျယ် မြင်ရန်">FIT</button>
-        <button class="tf-btn" id="zoom-in-btn" title="Zoom In (+)">＋</button>
-        <button class="tf-btn" id="zoom-out-btn" title="Zoom Out (−)">−</button>
-        <button class="tf-btn fit" id="zoom-reset-btn" title="Zoom Reset">⤢</button>
-        <button class="tf-btn fs-btn" id="fs-btn" title="Fullscreen (chart ကို တစ်မျက်နှာလုံး)">⛶</button>
-        <span class="tb-sep"></span>
+      <button class="tf-btn fit" id="fit-btn" title="Show all loaded candles">Fit History</button>
+      <button class="tf-btn fit" id="zoom-reset-btn" title="Restore a readable recent candle view">Reset View</button>
+      <button class="tf-btn fs-btn" id="fs-btn" aria-label="Chart fullscreen">Fullscreen ⛶</button>
         <button class="tf-btn sr-find" id="sr-find-btn" title="Auto Support/Resistance ပြန်ရှာ">
           <svg viewBox="0 0 24 24" class="btn-ico"><circle cx="10.5" cy="10.5" r="6"/><line x1="15" y1="15" x2="20" y2="20"/></svg>
           S/R
@@ -92,10 +108,10 @@
           <svg viewBox="0 0 24 24" class="btn-ico"><path d="M12 4l5 8h-3v7h-4v-7H7z" fill="currentColor" stroke="none"/></svg>
           SIG
         </button>
-        <button class="tf-btn" id="dt-toggle-btn" aria-label="Drawing tools" aria-controls="draw-tools" aria-expanded="false" title="Drawing tools ဖွင့်/ပိတ်">🎨</button>
-        <button class="tf-btn" id="ind-toggle-btn" title="Indicators ဖွင့်/ပိတ်">⚙️</button>
-      </div>
-    </div>
+
+      <span id="chart-meta" hidden aria-hidden="true"></span>
+      <small>Fit shows all loaded candles. Reset restores the recent view.</small>
+    </section>
 
     <div class="ind-bar collapsed" id="ind-bar">
       <span class="tb-group-label">INDICATORS</span>
@@ -168,6 +184,11 @@
         <span class="lg-chg" id="lg-chg"></span>
       </div>
     </div>
+    <section id="candle-inspector" class="candle-inspector" hidden aria-label="Candle details">
+      <div class="inspector-heading"><strong>Candle Inspector</strong><button type="button" id="inspector-close" aria-label="Close candle inspector">Close</button></div>
+      <p id="inspector-hint">Tap a candle to pin its details. Drag to move the chart.</p>
+      <dl id="inspector-values"></dl>
+    </section>
     <div id="rsi-pane">
       <div id="rsi-chart"></div>
       <div class="tv-rsi-legend mono">
@@ -362,10 +383,10 @@
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/transport.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=60"></script>
-<script src="{{ url_for('static', filename='js/draw.js') }}?v=48"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=61"></script>
+<script src="{{ url_for('static', filename='js/draw.js') }}?v=49"></script>
 <script src="{{ url_for('static', filename='js/market-context.js') }}?v=5"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=57"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=58"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=4"></script>
 <script src="{{ url_for('static', filename='js/focus-mode.js') }}?v=7"></script>
 <script src="{{ url_for('static', filename='js/l1-capital.js') }}?v=7"></script>
