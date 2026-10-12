@@ -98,6 +98,11 @@
           </select>
         </label>
       <button class="tf-btn fit" id="fit-btn" title="Show all loaded candles">Fit History</button>
+      <label for="chart-future-space">Future space
+        <select id="chart-future-space" aria-label="Future drawing space">
+          <option value="4">4 bars</option><option value="20">20 bars</option><option value="50" selected>50 bars</option><option value="100">100 bars</option><option value="200">200 bars</option>
+        </select>
+      </label>
       <button class="tf-btn fit" id="zoom-reset-btn" title="Restore a readable recent candle view">Reset View</button>
       <button class="tf-btn fs-btn" id="fs-btn" aria-label="Chart fullscreen">Fullscreen ⛶</button>
         <button class="tf-btn sr-find" id="sr-find-btn" title="Auto Support/Resistance ပြန်ရှာ">
@@ -383,8 +388,8 @@
 
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
 <script src="{{ url_for('static', filename='js/transport.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/chart.js') }}?v=61"></script>
-<script src="{{ url_for('static', filename='js/draw.js') }}?v=49"></script>
+<script src="{{ url_for('static', filename='js/chart.js') }}?v=62"></script>
+<script src="{{ url_for('static', filename='js/draw.js') }}?v=50"></script>
 <script src="{{ url_for('static', filename='js/market-context.js') }}?v=5"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}?v=58"></script>
 <script src="{{ url_for('static', filename='js/daily12.js') }}?v=4"></script>

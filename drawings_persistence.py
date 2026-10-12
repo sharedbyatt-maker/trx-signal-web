@@ -79,7 +79,13 @@ def _sanitize_drawings(value):
                     raise ValueError("invalid future offset")
                 if offset < 0 or offset > _MAX_FUTURE_OFFSET:
                     raise ValueError("invalid future offset")
-            pts.append({"p": float(pt["p"]), "t": t, "lb": lb, "anchorLb": anchor_lb, "offset": offset})
+            point = {"p": float(pt["p"]), "t": t, "lb": lb, "anchorLb": anchor_lb, "offset": offset}
+            future_time = pt.get("futureTime")
+            if future_time is not None:
+                if isinstance(future_time, bool) or not _finite(future_time) or float(future_time) != int(float(future_time)) or not 1 <= int(float(future_time)) <= 100_000_000:
+                    raise ValueError("invalid future time")
+                point["futureTime"] = int(float(future_time))
+            pts.append(point)
 
         color = str(row.get("color") or "#2962ff")
         if not _HEX.match(color):

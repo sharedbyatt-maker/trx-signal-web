@@ -93,6 +93,8 @@ window.TRXChart = (() => {
   const $ = (id) => document.getElementById(id);
   let followLive = true, viewChanging = false, updatingSeries = false;
   let pendingViewRange = null;
+  let futureSpace = 50;
+  try{const saved=Number(localStorage.getItem('trx_chart_future_space_v1'));if([4,20,50,100,200].includes(saved))futureSpace=saved;}catch(_e){}
   let navigating = false, navigationUntil = 0;
   let inspecting = false, inspectorIssue = null;
   function viewStatus() {
@@ -116,7 +118,7 @@ window.TRXChart = (() => {
     followLive=true;anchorRecent();viewStatus();
   }
   function followRange(range) {
-    const to=curBars.length+4,width=Math.max(16,range.to-range.from);
+    const to=curBars.length+futureSpace,width=Math.max(futureSpace+16,range.to-range.from);
     setViewRange({from:Math.max(0,to-width),to});
   }
   function cancelInspect(){inspecting=false;inspectorIssue=null;if($('candle-inspector'))$('candle-inspector').hidden=true;$('inspector-values')?.replaceChildren();$('chart-inspect')?.setAttribute('aria-pressed','false');}
@@ -1399,7 +1401,7 @@ window.TRXChart = (() => {
     charts.forEach((src) => {
       src.timeScale().subscribeVisibleLogicalRangeChange((r) => {
         if (!r || rangeLock) return;
-        if((navigating||performance.now()<navigationUntil)&&!viewChanging&&!updatingSeries&&!replay&&curBars.length&&r.to<curBars.length-1){followLive=false;viewStatus();}
+        if((navigating||performance.now()<navigationUntil)&&!viewChanging&&!updatingSeries&&!replay&&curBars.length&&Math.abs(r.to-(curBars.length+futureSpace))>1){followLive=false;viewStatus();}
         rangeLock = true;
         try { charts.forEach((c) => { if (c !== src) c.timeScale().setVisibleLogicalRange(r); }); }
         catch (e) { /* noop */ }
@@ -1497,6 +1499,8 @@ window.TRXChart = (() => {
 
   /* ================= toolbar ================= */
   function bindToolbar() {
+    const futureSelect=$('chart-future-space');
+    if(futureSelect){futureSelect.value=String(futureSpace);futureSelect.addEventListener('change',()=>{const value=Number(futureSelect.value);if(![4,20,50,100,200].includes(value))return;futureSpace=value;try{localStorage.setItem('trx_chart_future_space_v1',String(value));}catch(_e){}const r=currentViewRange();followLive=true;if(r)followRange(r);viewStatus();});}
     $('chart-live')?.addEventListener('click',backToLive);
     $('chart-follow')?.addEventListener('change',()=>{followLive=$('chart-follow').checked;if(followLive){const r=currentViewRange();if(r)followRange(r);}viewStatus();});
     $('chart-more-toggle')?.addEventListener('click',()=>{const panel=$('chart-more'),open=panel.hidden;panel.hidden=!open;$('chart-more-toggle').setAttribute('aria-expanded',String(open));});
@@ -1545,8 +1549,8 @@ window.TRXChart = (() => {
     const zoomStep = (mult) => {
       if(!chart)return;
       try{const r=currentViewRange();if(!r)return;
-        const mid=(r.from+r.to)/2,half=Math.max(8,((r.to-r.from)/2)*mult);
-        const to=followLive?curBars.length+4:mid+half;
+        const mid=(r.from+r.to)/2,half=Math.max(followLive?(futureSpace+16)/2:8,((r.to-r.from)/2)*mult);
+        const to=followLive?curBars.length+futureSpace:mid+half;
         setViewRange({from:followLive?to-2*half:mid-half,to});
       }catch(_e){}
     };
@@ -1592,7 +1596,7 @@ window.TRXChart = (() => {
     if (!n) return false;
     const wanted = Math.max(1, Math.ceil((Number(days) || 30) * 1440 / Math.max(1, group)));
     const from = Math.max(1, n - wanted + 1);
-    const range = { from, to: n + 4 };
+    const range = { from, to: n + futureSpace };
     setViewRange(range);
     return true;
   }
@@ -1604,7 +1608,8 @@ window.TRXChart = (() => {
     const n = curBars.length;
     if (!n) return;
     const visible = group === 1 ? 320 : group === 5 ? 288 : group === 15 ? 192 : 120;
-    const range = { from: Math.max(1, n - visible + 1), to: n + 4 };
+    const to=n+futureSpace;
+    const range = { from: Math.max(1, to - Math.max(visible+3,futureSpace+16)), to };
     setViewRange(range);
   }
 
@@ -1728,6 +1733,7 @@ window.TRXChart = (() => {
           chart, series: candleSeries,
           labels: curLabels, labelMap: curLabelMap,
           fulls: curFulls, bars: curBars, // drawing v2 OHLC magnet snap (display-only)
+          times: curTimes, group,
         });
       } catch (e) { /* noop */ }
     }
@@ -1931,6 +1937,7 @@ window.TRXChart = (() => {
         window.TRXDraw.onData({
           chart, series: candleSeries, labels: curLabels,
           labelMap: curLabelMap, fulls: curFulls, bars: curBars,
+          times: curTimes, group,
         });
       } catch (e) { /* drawing overlay can wait for full refresh */ }
     }
