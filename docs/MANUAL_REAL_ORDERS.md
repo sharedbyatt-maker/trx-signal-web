@@ -160,3 +160,5 @@ the account expired; HTTP 403 alone is permission refusal and does not assert
 expiry. Every financial POST still runs at most once per request ID. Reading an
 error body, opening history or refreshing never retries the order. No unverified
 provider payload change is made based on an HTTP status alone.
+Redirects after a financial POST remain uncertain because a redirect can follow
+a committed order; they are never followed or treated as proof of session expiry.

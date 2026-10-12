@@ -134,7 +134,7 @@ def test_exact_real_payload_and_durable_audit(service):
     (Response(body={'success': True, 'error': 'secret-value'}), 'unknown'),
     (Response(body={'success': False}), 'rejected'), (Response(body=[]), 'unknown'),
     (Response(500), 'unknown'), (Response(502), 'unknown'), (Response(408), 'unknown'),
-    (Response(201), 'unknown'), (Response(403), 'rejected'), (Response(302), 'rejected'),
+    (Response(201), 'unknown'), (Response(403), 'rejected'), (Response(302), 'unknown'),
     (Response(raw=b'not JSON'), 'unknown'), (Response(raw=b'\xff'), 'unknown'),
     (Response(raw=b'x' * (MAX_RESPONSE_BYTES + 1)), 'unknown'),
     (Response(raw=requests.Timeout()), 'unknown'), (requests.Timeout(), 'unknown'),

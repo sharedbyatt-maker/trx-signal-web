@@ -262,7 +262,9 @@ class OrderService:
                              headers={'X-API-Token': token}, timeout=(3, 8),
                              allow_redirects=False, stream=True) as response:
                 status = response.status_code
-                rejected = 400 <= status < 500 and status != 408 or 300 <= status < 400
+                # A redirect may follow a committed order. Without an explicit
+                # receipt its outcome stays uncertain; never follow or retry it.
+                rejected = 400 <= status < 500 and status != 408
                 if rejected:
                     client.trxchart_order_reason = reason_for(status)
                 if status != 200 and not rejected:

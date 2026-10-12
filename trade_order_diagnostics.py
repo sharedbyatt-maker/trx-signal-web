@@ -30,7 +30,7 @@ LOOKUP = {phrase: code for code, phrases in ALIASES.items() for phrase in (code,
 
 
 def reason_for(status, data=None):
-    if status == 401 or type(status) is int and 300 <= status < 400:
+    if status == 401:
         return 'session_expired'
     if status == 403:
         default = 'permission_denied'
