@@ -91,6 +91,48 @@ window.TRXChart = (() => {
   let liveInd = null;
 
   const $ = (id) => document.getElementById(id);
+  let followLive = true, viewChanging = false, updatingSeries = false;
+  let pendingViewRange = null;
+  let navigating = false, navigationUntil = 0;
+  let inspecting = false, inspectorIssue = null;
+  function viewStatus() {
+    const status = $('chart-view-status');
+    const text = replay ? 'Replay view' : followLive ? 'Live view' : 'History · follow paused';
+    if(status && status.textContent!==text)status.textContent=text;
+    status?.classList.toggle('history-view',!followLive||!!replay);
+    if($('chart-follow'))$('chart-follow').checked=followLive&&!replay;
+  }
+  function setViewRange(range) {
+    const requested={...range};pendingViewRange=requested;
+    const old=viewChanging;viewChanging=true;
+    try{[chart,rsiChart,macdChart,stochChart].filter(Boolean).forEach(c=>c.timeScale().setVisibleLogicalRange(range));}
+    finally{viewChanging=old;}
+    requestAnimationFrame(()=>{if(pendingViewRange===requested)pendingViewRange=null;});
+    scheduleDrawRedraw();viewStatus();
+  }
+  function currentViewRange(){return pendingViewRange||chart?.timeScale().getVisibleLogicalRange();}
+  function backToLive() {
+    if(replay)stopReplay();
+    followLive=true;anchorRecent();viewStatus();
+  }
+  function followRange(range) {
+    const to=curBars.length+4,width=Math.max(16,range.to-range.from);
+    setViewRange({from:Math.max(0,to-width),to});
+  }
+  function cancelInspect(){inspecting=false;inspectorIssue=null;if($('candle-inspector'))$('candle-inspector').hidden=true;$('inspector-values')?.replaceChildren();$('chart-inspect')?.setAttribute('aria-pressed','false');}
+  function inspectCandle(time) {
+    const slot=Number(time),bar=curBars[slot-1];
+    if(!inspecting||!bar)return;
+    const rows=contextRows.filter(r=>curLabelMap.get(String(r.issue))===slot);
+    const latest=rows.at(-1);if(!latest)return;
+    inspectorIssue=String(rows[0].issue);
+    const values=[['Timeframe',group<60?group+'m':'1h'],['Candle',group>1&&slot===curBars.length?'FORMING':'CLOSED'],['First issue',String(rows[0].issue)],['Latest issue',String(latest.issue)],['Time',localTimeLabel(curTimes[slot-1],true)],['Rounds',String(rows.length)],['Latest round',latest.type+' · digit '+latest.number],['Δ steps',(bar.c-bar.o>=0?'+':'')+(bar.c-bar.o)],['O / H / L / C',[bar.o,bar.h,bar.l,bar.c].map(n=>n.toFixed(1)).join(' / ')],['RSI 14',curRsiValues[slot-1]?.toFixed(2)??'—'],['MACD',curMacdValues[slot-1]?.toFixed(3)??'—'],['Stochastic K',curStochValues[slot-1]?.toFixed(2)??'—']];
+    const host=$('inspector-values');if(!host)return;host.replaceChildren();
+    values.forEach(([label,value])=>{const item=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');item.className='inspector-item';dt.textContent=label;dd.textContent=value;item.append(dt,dd);host.append(item);});
+    $('inspector-hint').textContent='Pinned candle · BIG/SMALL walk values. Tap another candle to inspect.';
+    $('candle-inspector').hidden=false;
+  }
+  function updateInspector(){if(inspecting&&inspectorIssue){const slot=curLabelMap.get(inspectorIssue);if(slot)inspectCandle(slot);else $('inspector-hint').textContent='Selected candle is outside the loaded history.';}}
 
   // Presentation only: keep source-wall-clock aggregation and drawing anchors
   // intact, while rendering chart labels in the same timezone as the UI clock.
@@ -1344,9 +1386,20 @@ window.TRXChart = (() => {
   function syncRanges() {
     // N-way visible-range sync (main <-> rsi <-> macd <-> stoch), feedback-guarded
     const charts = [chart, rsiChart, macdChart, stochChart].filter(Boolean);
+    // Range notifications also arrive asynchronously after setData and resize.
+    // Only direct navigation should pause live following.
+    ['tv-chart','rsi-chart','macd-chart','stoch-chart'].forEach(id=>{
+      const pane=$(id);if(!pane)return;
+      pane.addEventListener('pointerdown',()=>{navigating=true;},{capture:true,passive:true});
+      pane.addEventListener('wheel',()=>{navigationUntil=performance.now()+300;},{capture:true,passive:true});
+    });
+    const endNavigation=()=>{if(navigating)navigationUntil=performance.now()+300;navigating=false;};
+    window.addEventListener('pointerup',endNavigation,{passive:true});
+    window.addEventListener('pointercancel',endNavigation,{passive:true});
     charts.forEach((src) => {
       src.timeScale().subscribeVisibleLogicalRangeChange((r) => {
         if (!r || rangeLock) return;
+        if((navigating||performance.now()<navigationUntil)&&!viewChanging&&!updatingSeries&&!replay&&curBars.length&&r.to<curBars.length-1){followLive=false;viewStatus();}
         rangeLock = true;
         try { charts.forEach((c) => { if (c !== src) c.timeScale().setVisibleLogicalRange(r); }); }
         catch (e) { /* noop */ }
@@ -1444,6 +1497,13 @@ window.TRXChart = (() => {
 
   /* ================= toolbar ================= */
   function bindToolbar() {
+    $('chart-live')?.addEventListener('click',backToLive);
+    $('chart-follow')?.addEventListener('change',()=>{followLive=$('chart-follow').checked;if(followLive){const r=currentViewRange();if(r)followRange(r);}viewStatus();});
+    $('chart-more-toggle')?.addEventListener('click',()=>{const panel=$('chart-more'),open=panel.hidden;panel.hidden=!open;$('chart-more-toggle').setAttribute('aria-expanded',String(open));});
+    $('chart-inspect')?.addEventListener('click',()=>{if(inspecting){cancelInspect();return;}window.TRXDraw?.useCursor();inspecting=true;$('chart-inspect').setAttribute('aria-pressed','true');$('candle-inspector').hidden=false;$('inspector-hint').textContent='Tap a candle to pin its details. Drag to move the chart.';});
+    $('inspector-close')?.addEventListener('click',cancelInspect);
+    chart.subscribeClick(param=>{if(inspecting&&param.time!=null)inspectCandle(param.time);});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'){cancelInspect();if($('chart-more'))$('chart-more').hidden=true;$('chart-more-toggle')?.setAttribute('aria-expanded','false');}});
     document.querySelectorAll(".vm-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         document.querySelectorAll(".vm-btn").forEach((b) => b.classList.remove("active"));
@@ -1474,23 +1534,21 @@ window.TRXChart = (() => {
     }
     const fitBtn = $("fit-btn");
     if (fitBtn) fitBtn.addEventListener("click", () => {
+      followLive=false;pendingViewRange=null;viewChanging=true;
       [chart, rsiChart, macdChart, stochChart].forEach((c) => {
         if (c) c.timeScale().fitContent();
       });
+      viewChanging=false;viewStatus();
     });
     /* ---- zoom in / out / reset — visible logical range based, all panes synced ----
        (wheel/pinch zoom already works; these buttons do discrete steps) */
     const zoomStep = (mult) => {
-      [chart, rsiChart, macdChart, stochChart].forEach((c) => {
-        if (!c) return;
-        try {
-          const r = c.timeScale().getVisibleLogicalRange();
-          if (!r) return;
-          const mid = (r.from + r.to) / 2;
-          const half = Math.max(8, ((r.to - r.from) / 2) * mult);
-          c.timeScale().setVisibleLogicalRange({ from: mid - half, to: mid + half });
-        } catch (e) { /* noop */ }
-      });
+      if(!chart)return;
+      try{const r=currentViewRange();if(!r)return;
+        const mid=(r.from+r.to)/2,half=Math.max(8,((r.to-r.from)/2)*mult);
+        const to=followLive?curBars.length+4:mid+half;
+        setViewRange({from:followLive?to-2*half:mid-half,to});
+      }catch(_e){}
     };
     const zinBtn = $("zoom-in-btn");
     const zoutBtn = $("zoom-out-btn");
@@ -1498,9 +1556,7 @@ window.TRXChart = (() => {
     if (zinBtn) zinBtn.addEventListener("click", () => zoomStep(0.75));
     if (zoutBtn) zoutBtn.addEventListener("click", () => zoomStep(1.25));
     if (zresetBtn) zresetBtn.addEventListener("click", () => {
-      [chart, rsiChart, macdChart, stochChart].forEach((c) => {
-        if (c) c.timeScale().fitContent();
-      });
+      backToLive();
     });
     const bindOpt = (id, key, after) => {
       const el = $(id);
@@ -1525,20 +1581,19 @@ window.TRXChart = (() => {
   }
 
   function refit() {
+    followLive=true;viewStatus();cancelInspect();
     fittedOnce = false;
     srRescanNeeded = true;   // re-cluster S/R for the new timeframe
   }
 
   function setHistoryRange(days = 30) {
+    followLive=false;viewStatus();
     const n = curBars.length;
     if (!n) return false;
     const wanted = Math.max(1, Math.ceil((Number(days) || 30) * 1440 / Math.max(1, group)));
     const from = Math.max(1, n - wanted + 1);
     const range = { from, to: n + 4 };
-    [chart, rsiChart, macdChart, stochChart].forEach((c) => {
-      if (!c) return;
-      try { c.timeScale().setVisibleLogicalRange(range); } catch (e) { /* noop */ }
-    });
+    setViewRange(range);
     return true;
   }
 
@@ -1550,10 +1605,7 @@ window.TRXChart = (() => {
     if (!n) return;
     const visible = group === 1 ? 320 : group === 5 ? 288 : group === 15 ? 192 : 120;
     const range = { from: Math.max(1, n - visible + 1), to: n + 4 };
-    [chart, rsiChart, macdChart, stochChart].forEach((c) => {
-      if (!c) return;
-      try { c.timeScale().setVisibleLogicalRange(range); } catch (e) { /* noop */ }
-    });
+    setViewRange(range);
   }
 
   /* ================= main update ================= */
@@ -1567,7 +1619,8 @@ window.TRXChart = (() => {
     }
     return true;
   }
-  function update(s, force) {
+  function update(s,force){const old=updatingSeries;updatingSeries=true;try{return updateInternal(s,force);}finally{updatingSeries=old;}}
+  function updateInternal(s, force) {
     const wrap = $("tv-chart");
     if (!wrap) return;
     if (!chart) init(wrap);
@@ -1596,8 +1649,10 @@ window.TRXChart = (() => {
 
     // capture current view so setData() cannot scroll/zoom the chart
     const prevRange = (() => {
-      try { return chart.timeScale().getVisibleLogicalRange(); } catch (e) { return null; }
+      try { return currentViewRange(); } catch (e) { return null; }
     })();
+    const anchorSlot=prevRange?Math.max(0,Math.min(curFulls.length-1,Math.floor(prevRange.from))):0;
+    const viewAnchor=curFulls[anchorSlot];
 
     const { bars, labels, labelMap, times, fulls, counts } = buildBars(hist);
     curBars = bars.map((b) => ({ time: b.time, o: b.open, h: b.high, l: b.low, c: b.close }));
@@ -1729,13 +1784,14 @@ window.TRXChart = (() => {
     // ---- view anchoring ----
     if (curBars.length > 5) {
       const bigJump = curBars.length - lastLen > 500;
-      if (!fittedOnce || bigJump) {
+      if (!fittedOnce || (bigJump&&followLive)) {
         anchorRecent();
         fittedOnce = true;
       } else if (prevRange) {
         // restore exactly where the user was (prevents jump on every refresh)
         try {
-          chart.timeScale().setVisibleLogicalRange(prevRange);
+          if(followLive&&!replay)followRange(prevRange);
+          else{const mapped=curLabelMap.get(viewAnchor),shift=mapped?mapped-1-anchorSlot:0;setViewRange({from:prevRange.from+shift,to:prevRange.to+shift});}
         } catch (e) { /* noop */ }
       }
     }
@@ -1760,7 +1816,7 @@ window.TRXChart = (() => {
         ? (/▲/.test(tags[tags.length - 1] || "") ? " green" : " red")
         : "");
     }
-    notifyStudy();
+    updateInspector();viewStatus();notifyStudy();
   }
 
   function drawSrLevels(levels) {
@@ -1796,13 +1852,15 @@ window.TRXChart = (() => {
   /* ---- ultra-fast 1m candle + indicator append ----
      /api/latest updates the fresh candle plus EMA/RSI/MACD/Stoch immediately.
      The normal /api/state refresh remains the authoritative full reconciliation. */
-  function appendLatest(row) {
+  function appendLatest(row){const old=updatingSeries;updatingSeries=true;try{return appendLatestInternal(row);}finally{updatingSeries=old;}}
+  function appendLatestInternal(row) {
     if (!chart || !row || !row.issue || !curBars.length) return false;
     if (replay) {
       if(!contextRows.some(r=>String(r.issue)===String(row.issue))){contextRows.push(row);contextRevision++;if(lastState)lastState={...lastState,history:contextRows.slice()};}
       notifyStudy();return true;
     }
     const issue = String(row.issue);
+    const liveRange=currentViewRange();
     if (curLabelMap instanceof Map && curLabelMap.has(issue)) return true;
 
     const dir = row.type === "BIG" ? 1 : -1;
@@ -1865,6 +1923,8 @@ window.TRXChart = (() => {
       try { refreshHigherTfLiveIndicators(time); } catch (e) { /* full state refresh will reconcile */ }
     }
     updateLegend(curBars[curBars.length - 1]);
+    if(followLive&&liveRange)followRange(liveRange);
+    updateInspector();
 
     if (window.TRXDraw && window.TRXDraw.onData) {
       try {
@@ -1983,6 +2043,7 @@ window.TRXChart = (() => {
   document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseReplay();});
 
   return {
+    backToLive,cancelInspect,isInspecting:()=>inspecting,
     getContext, getComparisons, studyInfo, startReplay, seekReplay, stepReplay, playReplay, pauseReplay, stopReplay,
     update, appendLatest, autoSR, toggleSignals, setHistoryRange,
     _view: () => {

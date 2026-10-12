@@ -410,6 +410,7 @@ window.TRXDraw = (() => {
     }
   }
   function setTool(next) {
+    if(next!=="cursor")window.TRXChart?.cancelInspect();
     if (placing && tool === next) next = "cursor";
     placing = null; placeStage = 0; drag = null; tool = next;
     if (next !== "cursor") selectedId = null;
@@ -600,7 +601,9 @@ window.TRXDraw = (() => {
     fibPanelEl.style.top=top+"px";
     fibPanelEl.style.minWidth="0";
     fibPanelEl.style.boxSizing="border-box";
-    const bottom=window.matchMedia("(max-width:600px)").matches&&!$("draw-tools")?.classList.contains("collapsed")?64:8;
+    const palette=$("draw-tools");
+    const bottom=window.matchMedia("(max-width:600px)").matches&&palette&&!palette.classList.contains("collapsed")
+      ? Math.max(8,wrapEl.getBoundingClientRect().bottom-palette.getBoundingClientRect().top+8):8;
     fibPanelEl.style.maxHeight=Math.max(32,wrapEl.clientHeight-top-bottom)+"px";
     fibPanelEl.style.overflowY="auto";
   }
@@ -613,9 +616,12 @@ window.TRXDraw = (() => {
     const left=panelButton("← EXT","dt-v2-left","Extend left"), right=panelButton("EXT →","dt-v2-right","Extend right"), lock=panelButton("🔒","dt-v2-lock","Lock / unlock"), hide=panelButton("👁−","dt-v2-hide","Hide selected"), dup=panelButton("⧉","dt-v2-dup","Duplicate selected"), fib=panelButton("FIB ⚙","dt-v2-fib","Fibonacci v2 settings"), show=panelButton("SHOW HIDDEN","dt-v2-show","Show all hidden drawings"), mag=panelButton("MAGNET","dt-v2-mag","Snap endpoints to candle OHLC");
     panelEl.append(width,style,left,right,lock,hide,dup,fib,show,mag); wrapEl.appendChild(panelEl);
     width.addEventListener("change",()=>setSelectedStyle("width",width.value)); style.addEventListener("change",()=>setSelectedStyle("style",style.value));
-    left.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendLeft",!d.extendLeft);}); right.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendRight",!d.extendRight);}); lock.addEventListener("click",toggleLock); hide.addEventListener("click",toggleHide); dup.addEventListener("click",duplicateSelected); fib.addEventListener("click",()=>{const d=selected();if(d&&d.type==="fib"){updateFibPanel();fibPanelEl.style.display="block";}}); show.addEventListener("click",showAll); mag.addEventListener("click",()=>{magnet=!magnet;savePrefs();updatePanel();});
+    left.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendLeft",!d.extendLeft);}); right.addEventListener("click",()=>{const d=selected();if(d)setSelectedStyle("extendRight",!d.extendRight);}); lock.addEventListener("click",toggleLock); hide.addEventListener("click",toggleHide); dup.addEventListener("click",duplicateSelected); fib.addEventListener("click",()=>{const d=selected();if(d&&d.type==="fib"){updateFibPanel();fibPanelEl.style.display="block";}}); show.addEventListener("click",showAll); mag.addEventListener("click",toggleMagnet);
   }
+  function toggleMagnet(){magnet=!magnet;savePrefs();updatePanel();}
+  function useCursor(){if(drag?.origData){const d=selected();if(d)d.points=clone(drag.origData);}placing=null;drag=null;selectedId=null;setTool('cursor');updatePanel();redraw();}
   function updatePanel(){
+    const globalMag=$("chart-magnet");if(globalMag){globalMag.textContent="Magnet "+(magnet?"ON":"OFF");globalMag.setAttribute("aria-pressed",String(magnet));}
     if(!panelEl)return; const d=selected(), hidden=drawings.some(x=>x.hidden); panelEl.style.display=(d||hidden)?"flex":"none";
     const q=(id)=>document.getElementById(id), active=(el,on)=>{if(!el)return;el.style.background=on?"#2962ff":"#1e222d";el.style.color=on?"#fff":"#d1d4dc";};
     const w=q("dt-v2-width"),s=q("dt-v2-style"); if(w)w.disabled=!d;if(s)s.disabled=!d;if(d&&w)w.value=String(d.width||2);if(d&&s)s.value=d.style||"solid";
@@ -653,7 +659,7 @@ window.TRXDraw = (() => {
     toggle.addEventListener('click',()=>{const open=options.hidden;closeOptions();if(open){options.hidden=false;toggle.setAttribute('aria-expanded','true');managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';}});
     $('dt-options-close').addEventListener('click',closeOptions);
     document.addEventListener('keydown',ev=>{if(ev.key==='Escape'){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');}});
-    $('dt-toggle-btn').addEventListener('click',()=>{if(host.classList.contains('collapsed')){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';setTool('cursor');}});
+    $('dt-toggle-btn').addEventListener('click',()=>{window.TRXChart?.cancelInspect();if(host.classList.contains('collapsed')){closeOptions();managerEl.hidden=true;list.setAttribute('aria-expanded','false');if(fibPanelEl)fibPanelEl.style.display='none';setTool('cursor');}});
     managerEl=document.createElement('section');managerEl.id='drawing-manager';managerEl.className='draw-drawer';managerEl.hidden=true;managerEl.setAttribute('aria-label','Drawing list and presets');wrapEl.append(managerEl);
     list.addEventListener('click',()=>{managerEl.hidden=!managerEl.hidden;list.setAttribute('aria-expanded',String(!managerEl.hidden));if(!managerEl.hidden){closeOptions();if(fibPanelEl)fibPanelEl.style.display='none';updateManager();}});
     list.setAttribute('aria-expanded','false');
@@ -718,12 +724,12 @@ window.TRXDraw = (() => {
   function bindEvents(){
     const control=ev=>!!ev.target.closest?.('#draw-v2-panel,#fib-v2-panel,#drawing-manager,#drawing-options,#draw-tools,button,input,select,textarea,a');
     const clearMove=()=>{if(moveFrame)cancelAnimationFrame(moveFrame);moveFrame=0;pendingMove=null;};
-    wrapEl.addEventListener("pointerdown",ev=>{if(ev.button!==0||control(ev))return;const p=localXY(ev);if(tool!=="cursor"||handleHit(p.x,p.y)||hitTest(p.x,p.y)){try{wrapEl.setPointerCapture(ev.pointerId);}catch(_e){} ev.stopPropagation();}onDown(p.x,p.y,ev);},true);
+    wrapEl.addEventListener("pointerdown",ev=>{if(ev.button!==0||control(ev)||window.TRXChart?.isInspecting())return;const p=localXY(ev);if(tool!=="cursor"||handleHit(p.x,p.y)||hitTest(p.x,p.y)){try{wrapEl.setPointerCapture(ev.pointerId);}catch(_e){} ev.stopPropagation();}onDown(p.x,p.y,ev);},true);
     // Coalesce high-frequency mouse/stylus events to one drawing update per
     // animation frame. This removes redundant coordinate conversion + full
     // overlay redraws while preserving the latest pointer position.
     wrapEl.addEventListener("pointermove",ev=>{
-      if(control(ev)&&!drag)return;
+      if((control(ev)||window.TRXChart?.isInspecting())&&!drag)return;
       pendingMove=localXY(ev);
       if(moveFrame)return;
       moveFrame=requestAnimationFrame(()=>{
@@ -732,11 +738,12 @@ window.TRXDraw = (() => {
         if(p)onMove(p.x,p.y);
       });
     }, {passive:true});
-    const finish=(ev)=>{if(control(ev)&&!drag)return;clearMove();const p=localXY(ev);if(tool==="cursor"&&drag){ev.stopPropagation();onMove(p.x,p.y);}onUp(p.x,p.y);redraw();try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}};
+    const finish=(ev)=>{if((control(ev)||window.TRXChart?.isInspecting())&&!drag)return;clearMove();const p=localXY(ev);if(tool==="cursor"&&drag){ev.stopPropagation();onMove(p.x,p.y);}onUp(p.x,p.y);redraw();try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}};
     wrapEl.addEventListener("pointerup",finish,true);wrapEl.addEventListener("pointercancel",ev=>{clearMove();if(drag){const d=selected();if(d&&drag.origData)d.points=drag.origData;}drag=null;downXY=null;placing=null;placeStage=0;setTool("cursor");try{if(wrapEl.hasPointerCapture(ev.pointerId))wrapEl.releasePointerCapture(ev.pointerId);}catch(_e){}redraw();},true);
     wrapEl.addEventListener("pointerleave",()=>{if(!drag){clearMove();hover=null;redraw();}});wrapEl.addEventListener("contextmenu",ev=>{if(tool!=="cursor"){ev.preventDefault();setTool("cursor");}});
     document.querySelectorAll(".dt-btn[data-tool]").forEach(btn=>btn.addEventListener("click",()=>setTool(btn.dataset.tool)));
     document.querySelectorAll(".dt-swatch").forEach(sw=>sw.addEventListener("click",()=>{color=sw.dataset.color;document.querySelectorAll(".dt-swatch").forEach(s=>s.classList.toggle("active",s.dataset.color===color));const d=selected();if(d){d.color=color;save();redraw();}if(placing)placing.color=color;}));
+    $("chart-magnet")?.addEventListener("click",toggleMagnet);
     const bind=(id,fn)=>{const el=$(id);if(el)el.addEventListener("click",fn);};bind("dt-undo",undo);bind("dt-redo",redo);bind("dt-clear",clearAll);bind("dt-del",deleteSelected);
     document.addEventListener("keydown",ev=>{if(/input|textarea|select/i.test((document.activeElement||{}).tagName||""))return;if((ev.key==="Delete"||ev.key==="Backspace")&&selectedId&&!drag){ev.preventDefault();deleteSelected();}if(ev.key==="Escape")setTool("cursor");if((ev.key==="z"||ev.key==="Z")&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();ev.shiftKey?redo():undo();}if(ev.key.toLowerCase()==="y"&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();redo();}const hotkeys={t:"trend",r:"ray",h:"hline",v:"vline",b:"rect",f:"fib"};const k=ev.key.toLowerCase();if(hotkeys[k]&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey)setTool(hotkeys[k]);});
     new ResizeObserver(()=>{resize();layoutFibPanel();}).observe(wrapEl);
@@ -750,8 +757,8 @@ window.TRXDraw = (() => {
   }
   function init(){
     if(canvas)return;wrapEl=$("tv-chart");if(!wrapEl)return;loadPrefs();canvas=document.createElement("canvas");canvas.className="draw-overlay";wrapEl.appendChild(canvas);ctx=canvas.getContext("2d");
-    hintEl=document.createElement("div");hintEl.className="draw-hint";hintEl.textContent=HINTS.cursor;wrapEl.appendChild(hintEl);buildPanel();buildFibPanel();buildPersistenceToolbar();buildManager();bindEvents();resize();
+    hintEl=document.createElement("div");hintEl.className="draw-hint";hintEl.textContent=HINTS.cursor;wrapEl.appendChild(hintEl);buildPanel();buildFibPanel();buildPersistenceToolbar();buildManager();bindEvents();updatePanel();resize();
   }
   document.addEventListener("DOMContentLoaded",init);if(document.readyState!=="loading")init();
-  return {onData,redraw,undo,redo,beginPractice,endPractice,clearAll,pullServer,pushServer,exportDrawings,_dbg:()=>({tool,apiReady:!!api,count:drawings.length,practice,historyAt,historyLength:history.length,fibMode,selectedId,dragging:!!drag,placing:!!placing,magnet,serverRevision,serverConflict,selected:selected()?{type:selected().type,locked:selected().locked,hidden:selected().hidden,width:selected().width,style:selected().style,extendLeft:selected().extendLeft,extendRight:selected().extendRight}:null,hidden:drawings.filter(d=>d.hidden).length})};
+  return {useCursor,onData,redraw,undo,redo,beginPractice,endPractice,clearAll,pullServer,pushServer,exportDrawings,_dbg:()=>({tool,apiReady:!!api,count:drawings.length,practice,historyAt,historyLength:history.length,fibMode,selectedId,dragging:!!drag,placing:!!placing,magnet,serverRevision,serverConflict,selected:selected()?{type:selected().type,locked:selected().locked,hidden:selected().hidden,width:selected().width,style:selected().style,extendLeft:selected().extendLeft,extendRight:selected().extendRight}:null,hidden:drawings.filter(d=>d.hidden).length})};
 })();

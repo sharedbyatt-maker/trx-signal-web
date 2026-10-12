@@ -1,0 +1,49 @@
+/* User chart controls only; no dashboard or shared-header overrides. */
+#chart-card .chart-primary{display:flex;align-items:center;gap:7px;flex-wrap:wrap;width:100%}
+.chart-timeframes,.chart-zoom{display:flex;gap:4px;align-items:center}
+#chart-card .chart-primary .tf-btn{min-height:40px;min-width:40px;padding:6px 10px;font-size:12px}
+#chart-card .chart-live{background:#173e38;color:#a1ecd7;border-color:#3a806d}
+.chart-utility{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 12px 8px;font-size:12px;color:#bed0dc}
+.chart-follow-label{display:flex;align-items:center;gap:7px;min-height:40px;cursor:pointer}
+.chart-follow-label input{width:18px;height:18px;accent-color:#84dbc2}
+#chart-view-status{font-weight:700;color:#84dbc2}
+#chart-view-status.history-view{color:#edc487}
+#chart-magnet{min-height:40px;padding:6px 10px}
+#chart-magnet[aria-pressed=true],#chart-inspect[aria-pressed=true]{background:#204c62;color:#cff4ff;border-color:#548fac}
+#chart-refresh-status{flex:1;min-width:0;min-height:1.3em;overflow-wrap:anywhere}
+#chart-refresh.is-refreshing{animation:chart-refresh-pulse 1s ease-in-out infinite}
+@keyframes chart-refresh-pulse{50%{opacity:.45}}
+.chart-more{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin:0 12px 10px;background:#122633;border:1px solid #304956;border-radius:8px}
+.chart-more[hidden],.candle-inspector[hidden]{display:none!important}
+.chart-more .tf-btn,.chart-more select{min-height:40px;padding:6px 10px}
+.chart-more small{flex-basis:100%;color:#abc1cd;line-height:1.5}
+.candle-inspector{margin:10px 12px;padding:12px;background:#122633;border:1px solid #4b7488;border-radius:9px;color:#d9eaf0}
+.inspector-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.inspector-heading button{min-height:40px;padding:6px 12px;background:#1d3545;border:1px solid #506978;border-radius:6px;color:#e3f1f6;cursor:pointer}
+.candle-inspector p{margin:6px 0 10px;color:#afc9d6;font-size:12px}
+#inspector-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:0}
+.inspector-item{min-width:0;background:#0c1c26;padding:8px;border-radius:6px}
+.inspector-item dt{color:#9eb8c8;font-size:11px;margin-bottom:4px}
+.inspector-item dd{margin:0;font-size:12px;font-weight:600;overflow-wrap:anywhere}
+#chart-card .tf-btn:focus-visible,.candle-inspector button:focus-visible{outline:2px solid #9ce3d0;outline-offset:2px}
+@media(max-width:600px){
+ #chart-card .chart-primary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;padding:0;overflow:visible}
+ .chart-timeframes{grid-column:span 4;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+ #chart-live{grid-column:span 2}.chart-zoom{grid-column:span 2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ #ind-toggle-btn,#dt-toggle-btn,#chart-inspect,#chart-refresh,#chart-more-toggle{grid-column:span 2}
+ #chart-card .chart-primary .tf-btn{min-width:0;width:100%;min-height:44px;padding:6px 3px}
+ .chart-utility{gap:6px 10px;margin:4px 8px 8px}.chart-follow-label,#chart-magnet{min-height:44px}
+ #chart-refresh-status{flex-basis:100%}
+ .chart-more{margin:0 8px 8px}.chart-more .tf-btn,.chart-more select{min-height:44px}
+ #chart-card .draw-tools .dt-btn{min-width:44px;width:44px;height:44px}
+ #chart-card .draw-tools{max-height:58px;width:calc(100% - 16px)}
+ #chart-card .draw-row button,#chart-card .draw-row select,#chart-card .draw-row .dt-swatch{min-height:44px;min-width:44px}
+ #chart-card .draw-drawer{bottom:70px;max-height:calc(100% - 114px)}
+ #chart-card .draw-hint{max-width:calc(100% - 20px)}
+ #chart-card #draw-v2-panel{top:36px;bottom:auto;flex-wrap:nowrap!important;max-width:calc(100% - 16px);box-sizing:border-box;overflow-x:auto}
+ #chart-card #draw-v2-panel button,#chart-card #draw-v2-panel select{flex-shrink:0;min-height:44px!important;min-width:44px}
+ #chart-card #fib-v2-panel button,#chart-card #fib-v2-panel select,#chart-card #fib-v2-panel input:not([type=checkbox]):not([type=range]){min-height:44px!important;min-width:44px}
+ .candle-inspector{position:fixed;z-index:80;left:8px;right:8px;bottom:8px;margin:0;max-height:52dvh;overflow:auto;box-shadow:0 5px 30px #000b}
+ .inspector-heading button{min-height:44px}#inspector-values{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(prefers-reduced-motion:reduce){#chart-refresh.is-refreshing{animation:none}}

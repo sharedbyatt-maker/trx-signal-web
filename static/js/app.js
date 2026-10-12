@@ -24,17 +24,17 @@ function mergeRows(a, b) {
 }
 
 let historyRequest = null;
-async function fetchFullHistory(force) {
+async function fetchFullHistory(force, strict = false) {
   if (historyRequest) {
     await historyRequest;
-    if (force) return fetchFullHistory(true);
+    if (force) return fetchFullHistory(true, strict);
     return;
   }
-  historyRequest = loadFullHistory(force);
+  historyRequest = loadFullHistory(force, strict);
   try { await historyRequest; }
   finally { historyRequest = null; }
 }
-async function loadFullHistory(force) {
+async function loadFullHistory(force, strict = false) {
   if (!force && Date.now() - lastHistFetch < HIST_REFETCH_MS) return;
   lastHistFetch = Date.now();
   const issueAtStart = fullRows.length ? fullRows[fullRows.length - 1].issue : "";
@@ -49,6 +49,7 @@ async function loadFullHistory(force) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     }, 12000);
+    if(strict && (!Array.isArray(data.history)||!data.history.length))throw new Error("No chart history available. Existing chart retained.");
     const inc = (data.history || []).map(([issue, number, btime]) => ({
       issue: String(issue),
       short_issue: String(issue).slice(-6),
@@ -88,6 +89,7 @@ async function loadFullHistory(force) {
   } catch (e) {
     /* keep old buffer on failure */
     lastHistFetch = 0;
+    if(strict)throw e;
   }
 }
 
@@ -456,7 +458,13 @@ let lastState = null;
 let lastStateReceived = 0;
 let lastKnownIssue = "";
 
-async function refresh() {
+let refreshRequest=null, manualChartRefreshing=false;
+async function refresh(){
+  if(manualChartRefreshing)return;
+  if(refreshRequest)return refreshRequest;
+  refreshRequest=loadState();try{return await refreshRequest;}finally{refreshRequest=null;}
+}
+async function loadState() {
   if (refreshing) return;          // guard: never overlap polls
   refreshing = true;
   try {
@@ -489,6 +497,23 @@ async function refresh() {
     refreshing = false;
   }
 }
+
+$('chart-refresh')?.addEventListener('click',async()=>{
+  if(manualChartRefreshing)return;
+  manualChartRefreshing=true;const button=$('chart-refresh'),status=$('chart-refresh-status');
+  button.disabled=true;button.setAttribute('aria-busy','true');button.classList.add('is-refreshing');status.textContent='Refreshing chart…';
+  try{
+    if(refreshRequest)await refreshRequest;
+    const results=await Promise.allSettled([
+      TRXNet.run(async signal=>{const r=await fetch('/api/state',{cache:'no-store',signal});if(!r.ok)throw new Error('State HTTP '+r.status);const s=await r.json();if(!s||!Array.isArray(s.history))throw new Error('Invalid chart state');return s;}),
+      fetchFullHistory(true,true)
+    ]);
+    const failed=results.find(r=>r.status==='rejected');if(failed)throw failed.reason;
+    const s=results[0].value;lastState=s;lastStateReceived=Date.now();render(s,mergeRows(fullRows,s.history));
+    status.textContent='Chart refreshed · '+new Date().toLocaleTimeString();
+  }catch(e){status.textContent='Refresh failed · '+(e?.message||'Data unavailable')+'. Your chart is retained.';}
+  finally{manualChartRefreshing=false;button.disabled=false;button.removeAttribute('aria-busy');button.classList.remove('is-refreshing');}
+});
 
 function sourceEpoch(value) {
   const raw = String(value || "").trim().replace(" ", "T");
@@ -605,6 +630,7 @@ if (indToggle) {
     const open = indBar && indBar.classList.contains("collapsed");
     if (indBar) indBar.classList.toggle("collapsed", !open);
     indToggle.classList.toggle("active", !!open);
+    indToggle.setAttribute("aria-expanded",String(!!open));
   });
 }
 const sigBtn = $("sig-btn");
