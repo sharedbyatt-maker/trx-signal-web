@@ -45,7 +45,7 @@ test('manual refresh shows progress, preserves historical zoom and drawings, and
 test('Magnet is available before drawing; inspection pins real candle data without creating drawings',async({page},info)=>{
   await ready(page);await expect(page.locator('#chart-magnet')).toBeVisible();
   await page.locator('#chart-magnet').click();await expect(page.locator('#chart-magnet')).toHaveAttribute('aria-pressed','false');
-  await page.reload();await expect.poll(()=>page.evaluate(()=>window.TRXDraw._dbg().apiReady)).toBe(true);await expect(page.locator('#chart-magnet')).toHaveText('Magnet OFF');
+  await page.reload();await expect.poll(()=>page.evaluate(()=>window.TRXDraw._dbg().apiReady)).toBe(true);await expect.poll(()=>page.evaluate(()=>window.TRXChart?._qa.displaySnapshot().bars.length||0)).toBeGreaterThan(100);await expect(page.locator('#chart-magnet')).toHaveText('Magnet OFF');
   await page.locator('#chart-inspect').click();const b=await page.locator('#tv-chart').boundingBox();
   if(info.project.name.includes('mobile'))await page.touchscreen.tap(b.x+b.width*.52,b.y+b.height*.45);else await page.mouse.click(b.x+b.width*.52,b.y+b.height*.45);
   await expect(page.locator('#inspector-values')).toContainText('Latest issue');await expect(page.locator('#inspector-values')).toContainText('RSI 14');await expect(page.locator('#inspector-values')).toContainText('digit');
