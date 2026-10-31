@@ -15,11 +15,11 @@ test('history navigation pauses follow; Live and Reset restore recent view while
   await page.mouse.move(box.x+box.width*.3,box.y+box.height*.45);await page.mouse.down();await page.mouse.move(box.x+box.width*.65,box.y+box.height*.45,{steps:12});await page.mouse.up();
   await expect(page.locator('#chart-follow')).not.toBeChecked();await expect(page.locator('#chart-view-status')).toContainText('History');
   const before=await view(page);
-  await page.evaluate(()=>{const info=window.TRXChart.studyInfo(),last=info.rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),short_issue:'new',number:8,type:'BIG',block_time:'2026-09-13 14:00:00'});});
+  await page.evaluate(()=>{const info=window.TRXChart.studyInfo(),last=info.rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),short_issue:'new',number:8,type:'BIG',block_time:new Date(Date.parse(String(last.block_time).replace(' ','T')+'Z')+60000).toISOString().slice(0,19).replace('T',' ')});});
   expect(width(await view(page))).toBeCloseTo(width(before),2);expect((await view(page)).from).toBeCloseTo(before.from,2);
   await page.getByRole('button',{name:'Back to Live',exact:true}).click();await expect(page.locator('#chart-follow')).toBeChecked();
   await expect.poll(async()=>width(await view(page))).toBeCloseTo(323,2);
-  const live=await view(page);await page.evaluate(()=>{const info=window.TRXChart.studyInfo(),last=info.rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),short_issue:'new2',number:3,type:'SMALL',block_time:'2026-09-13 14:01:00'});});
+  const live=await view(page);await page.evaluate(()=>{const info=window.TRXChart.studyInfo(),last=info.rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),short_issue:'new2',number:3,type:'SMALL',block_time:new Date(Date.parse(String(last.block_time).replace(' ','T')+'Z')+60000).toISOString().slice(0,19).replace('T',' ')});});
   await expect.poll(async()=>(await view(page)).to).toBeGreaterThan(live.to);expect(width(await view(page))).toBeCloseTo(width(live),2);
   await page.locator('#zoom-in-btn').click();await expect.poll(async()=>width(await view(page))).toBeCloseTo(242.25,2);
   await page.evaluate(()=>{window.TRXChart.backToLive();const last=window.TRXChart.studyInfo().rows.at(-1);window.TRXChart.appendLatest({...last,issue:String(BigInt(last.issue)+1n),number:8,type:'BIG'});});

@@ -53,7 +53,7 @@ async function importSnapshot(file){
  try{
   if(file.size>150000)throw Error("Snapshot is too large");
   const snap=JSON.parse(await file.text());
-  if(snap.schema!=="kronos-round-snapshot-v1"||snap.data_source!=="big-small-walk"||snap.model!=="Kronos-small")throw Error("Unsupported snapshot metadata");
+  if(snap.schema!=="kronos-round-snapshot-v1"||snap.data_source!=="big-small-walk"||!["Kronos-mini","Kronos-small"].includes(snap.model)||snap.source!=="official-kronos-inference-cpu"||snap.research_only!==true)throw Error("Unsupported snapshot metadata");
   if(![1,5,15,60].includes(snap.timeframe_minutes)||snap.timeframe_minutes!==tf)throw Error("Choose the snapshot timeframe first");
   if(!Array.isArray(snap.forecast_close)||snap.forecast_close.length===0||snap.forecast_close.length>120)throw Error("Invalid forecast length");
   if(!/^\d{4,}$/.test(String(snap.origin_issue||"")))throw Error("Missing origin issue");
@@ -64,12 +64,20 @@ async function importSnapshot(file){
   const first=bars[bars.length-1].close;
   const values=snap.forecast_close.map(Number);if(values.some(v=>!Number.isFinite(v)||Math.abs(v)>1000000))throw Error("Invalid predicted value");
   projected.setData([{time:bars.length,value:first},...values.map((v,i)=>({time:bars.length+i+1,value:v}))]);
-  $("horizon").textContent=values.length+" bars";$("forecastStatus").textContent="Imported · research";$("snapshotInfo").textContent="External verified snapshot · origin "+snap.origin_issue+" · "+snap.model;
+  $("horizon").textContent=values.length+" bars";$("forecastStatus").textContent="Imported · research";$("snapshotInfo").textContent="Unvalidated model output · origin "+snap.origin_issue+" · "+snap.model;
   $("comparison").textContent="Future outcomes not available yet; forecast path is an experimental synthetic-walk projection, not a BIG/SMALL win-rate claim.";
-  $("historyStatus").textContent="Forecast snapshot displayed · not a trading signal";
+  $("historyStatus").textContent="Kronos model forecast displayed · experimental only";
  }catch(err){$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
 }
 document.querySelectorAll("[data-tf]").forEach(button=>button.addEventListener("click",()=>{tf=Number(button.dataset.tf);document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",x===button));render();}));
 $("reload").addEventListener("click",load);$("snapshot").addEventListener("change",event=>importSnapshot(event.target.files?.[0]));
-initChart();load();
+async function autoSnapshot(){
+ try{
+  const res=await fetch("/static/data/kronos_latest.json",{cache:"no-store"});
+  if(!res.ok) return;
+  const data=await res.text();
+  await importSnapshot({size:data.length,text:async()=>data});
+ }catch(err){$("snapshotInfo").textContent="No usable current model snapshot: "+err.message;}
+}
+initChart();load().then(autoSnapshot);
 })();
