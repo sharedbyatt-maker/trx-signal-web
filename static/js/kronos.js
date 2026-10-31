@@ -8,8 +8,8 @@ function parseRound(r){
  const issue=String(r[0]??"");
  const number=Number(r[1]);
  const time=String(r[2]??"");
- if(!/^\\d{4,}$/.test(issue)||!Number.isInteger(number)||number<0||number>9)return null;
- const mt=/^(\\d{4})-(\\d{2})-(\\d{2})[ T](\\d{2}):(\\d{2})/.exec(time);
+ if(!/^\d{4,}$/.test(issue)||!Number.isInteger(number)||number<0||number>9)return null;
+ const mt=/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(time);
  if(!mt)return null;
  const dt=new Date(Date.UTC(+mt[1],+mt[2]-1,+mt[3],+mt[4],+mt[5]));
  if(!Number.isFinite(dt.getTime())||dt.getUTCFullYear()!==+mt[1]||dt.getUTCMonth()+1!==+mt[2]||dt.getUTCDate()!==+mt[3]||dt.getUTCHours()!==+mt[4]||dt.getUTCMinutes()!==+mt[5])return null;
@@ -56,7 +56,7 @@ async function importSnapshot(file){
   if(snap.schema!=="kronos-round-snapshot-v1"||snap.data_source!=="big-small-walk"||snap.model!=="Kronos-small")throw Error("Unsupported snapshot metadata");
   if(![1,5,15,60].includes(snap.timeframe_minutes)||snap.timeframe_minutes!==tf)throw Error("Choose the snapshot timeframe first");
   if(!Array.isArray(snap.forecast_close)||snap.forecast_close.length===0||snap.forecast_close.length>120)throw Error("Invalid forecast length");
-  if(!/^\\d{4,}$/.test(String(snap.origin_issue||"")))throw Error("Missing origin issue");
+  if(!/^\d{4,}$/.test(String(snap.origin_issue||"")))throw Error("Missing origin issue");
   const origin=rounds.findIndex(r=>r.issue===String(snap.origin_issue));if(origin===-1)throw Error("Origin issue not found in current history");
   const bars=makeBars();if(!bars.length)throw Error("History not available");
   // The snapshot must originate from the most recent round: never silently align stale paths to live bars.
