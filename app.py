@@ -549,6 +549,14 @@ core.run_backtest = run_backtest
 # Explicit aliases for imports/tests/users of this composition module.
 app = core.app
 STATE = core.STATE
+
+# Research-only view. Uses the existing read-only /api/history endpoint.
+# No changes to the production signal, account, or order paths.
+@app.get("/kronos")
+def kronos_research_chart():
+    from flask import render_template
+    return render_template("kronos.html")
+
 start_engine = core.start_engine
 
 # Phase 8: token-protected, additive server persistence for manual chart drawings.

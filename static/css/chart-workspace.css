@@ -33,7 +33,7 @@
  #chart-card .chart-primary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;padding:0;overflow:visible}
  .chart-timeframes{grid-column:span 4;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
  #chart-live{grid-column:span 2}.chart-zoom{grid-column:span 2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
- #ind-toggle-btn,#dt-toggle-btn,#chart-inspect,#chart-refresh,#chart-more-toggle{grid-column:span 2}
+ #ind-toggle-btn,#dt-toggle-btn,#chart-inspect,#chart-refresh,#chart-more-toggle,.kronos-link{grid-column:span 2}
  #chart-card .chart-primary .tf-btn{min-width:0;width:100%;min-height:44px;padding:6px 3px}
  .chart-utility{gap:6px 10px;margin:4px 8px 8px}.chart-follow-label,#chart-magnet{min-height:44px}
  #chart-refresh-status{flex-basis:100%}
