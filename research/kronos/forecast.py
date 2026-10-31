@@ -41,7 +41,7 @@ def walk_bars(rows, tf):
         if not 0 <= digit <= 9:
             continue
         parsed[issue] = (when, digit)
-    ordered = sorted(parsed.items(), key=lambda row: row[0])
+    ordered = sorted(parsed.items(), key=lambda row: row[0])[-10000:]  # match the public chart history window exactly
     if len(ordered) < 128:
         raise ValueError("At least 128 valid rounds required")
     level = 100.0
