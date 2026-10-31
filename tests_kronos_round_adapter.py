@@ -24,12 +24,12 @@ class RoundWalkTests(unittest.TestCase):
         self.assertEqual(bars[-1]["close"], 100)
 
     def test_bucket_dedup_and_unsorted_issues(self):
-        rows = self.samples(150)
+        rows = self.samples(400)
         rows.reverse()
         rows.append(rows[0])
         bars, issue = module.walk_bars(rows, 5)
-        self.assertEqual(len(bars), 30)
-        self.assertEqual(issue, "100149")
+        self.assertEqual(len(bars), 80)
+        self.assertEqual(issue, "100399")
         self.assertEqual(bars[0]["low"], 95)
 
     def test_truncates_to_frontend_10000_round_window(self):
