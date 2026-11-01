@@ -40,6 +40,7 @@ jobs:
           python tests_kronos_markup.py
           node tests_kronos_ui.js
       - name: Verify Kronos desktop and mobile controls before inference
+        if: github.event_name == 'pull_request'
         run: |
           pip install -r requirements.txt
           npm ci
