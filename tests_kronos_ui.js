@@ -13,9 +13,9 @@ async function boot(unavailable=false){
  const rows=Array.from({length:200},(_,i)=>[String(100000+i),i%10,new Date(start+i*60000+390*60000).toISOString().slice(0,19)]);
  const origin=180;
  const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:rows[origin][0],forecast_close:[900,901],forecast_delta:[1,2],generated_at_utc:new Date(start+origin*60000+1000).toISOString()};
- let projection=[];const historyUrls=[];
- const chart={addCandlestickSeries(){return{setData(){}};},addAreaSeries(){return{setData(x){projection=x;}};},applyOptions(){},timeScale(){return{fitContent(){}};}};
- const context={KronosResearch,setInterval(){},console,Date,Set,Map,Number,JSON,Math,Error,ResizeObserver:class{observe(){}},window:{LightweightCharts:true},LightweightCharts:{createChart(){return chart;},CrosshairMode:{Normal:0}},document:{getElementById:element,querySelectorAll(){return[];},createElement(){return{};}},fetch:async url=>{
+ let projection=[],view=null,chartOptions=null;const historyUrls=[];
+ const chart={addCandlestickSeries(){return{setData(){}};},addAreaSeries(){return{setData(x){projection=x;}};},applyOptions(){},timeScale(){return{fitContent(){},setVisibleLogicalRange(v){view=v;},getVisibleLogicalRange(){return view;}};}};
+ const context={KronosResearch,setInterval(){},console,Date,Set,Map,Number,JSON,Math,Error,ResizeObserver:class{observe(){}},window:{LightweightCharts:true},LightweightCharts:{createChart(_element,options){chartOptions=options;return chart;},CrosshairMode:{Normal:0}},document:{getElementById:element,querySelectorAll(){return[];},createElement(){return{};}},fetch:async url=>{
   if(url.startsWith('/api/history')){historyUrls.push(url);return{ok:true,json:async()=>historyUrls.length===1?({history:rows,last_time_utc:new Date(now-60000).toISOString()}):({history:[],incremental:true,last_time_utc:null})};}
   if(url.endsWith('index.json'))return{ok:!unavailable,status:404,json:async()=>({schema:'kronos-index-v1',forecasts:[{file:'forecasts/test.json',timeframe:1,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc}]})};
   if(url.endsWith('status.json'))return{ok:true,json:async()=>({status:'ready'})};
@@ -23,10 +23,13 @@ async function boot(unavailable=false){
  }};
  vm.runInNewContext(fs.readFileSync('static/js/kronos.js','utf8'),context);
  for(let i=0;i<12;i++)await new Promise(setImmediate);
- return{element,projection:()=>projection,historyUrls};
+ return{element,projection:()=>projection,historyUrls,view:()=>view,chartOptions:()=>chartOptions};
 }
 (async()=>{
  const app=await boot();
+ assert.equal(app.view().from,80);
+ assert.equal(app.view().to,216);
+ assert.equal(app.chartOptions().timeScale.tickMarkFormatter(1700000000,2),new Date((1700000000+390*60)*1000).toISOString().slice(5,10));
  assert.match(app.element('forecastStatus').textContent,/Historical/);
  assert.match(app.element('comparison').textContent,/Evaluated bars: 2/);
  assert.equal(app.projection().length,3);
