@@ -29,6 +29,10 @@ test('Kronos loads historical comparisons and working forecast controls',async({
  await page.locator('#reportWindow').selectOption('30');
  await expect(page.locator('#dailyRows tr')).toHaveCount(1);
  await expect(page.locator('#kronosChart canvas').first()).toBeVisible();
+ await page.locator('#kronosChart').scrollIntoViewIfNeeded();
+ await page.locator('#kronosChart').click({position:{x:100,y:100}});
+ await expect(page.locator('#inspector')).toContainText('Historical candle');
+ await expect(page.locator('#inspector')).toBeInViewport();
  await page.locator('#replay').click();
  await expect(page.locator('#comparison')).toContainText('Replay: only rounds');
  await page.locator('#replay').click();
