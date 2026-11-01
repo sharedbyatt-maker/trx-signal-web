@@ -112,3 +112,27 @@ proof of model provenance.
 Rollback: revert this isolated change using a normal revert PR, disable the new
 schedule, and retain the separate publication branch for audit. Do not alter
 production databases or trading settings. Nothing imports PyTorch into Flask.
+
+## Target inspection, summary and persisted reports
+
+Kronos-only crosshair/tap inspection displays source-local target time, projected
+close, completed actual close and absolute error. Already-started targets are
+explicitly excluded; forming/future targets are pending. Replay never exposes
+post-origin actual candle values in the inspector.
+
+Summary cards distinguish scored versus pending targets of the selected forecast,
+its generation age, and the approximate next hourly 5m run in Bangkok time.
+The time shown is a schedule, not a guaranteed completion countdown.
+
+The isolated inference job evaluates earlier immutable forecast snapshots before
+new inference. `evaluation_ledger.json` retains finalized target records without
+overwriting an existing ID; records expire from the active ledger after 30
+Bangkok calendar days (hard cap 20000). Original forecast files remain unchanged.
+Full source minute continuity from the origin through each target is required;
+incomplete/gapped actual paths are not scored. Inputs after the origin are never
+used to fit the majority baseline. Failed/missing snapshots do not become zero-error
+samples. The active public `reports.json` contains daily sums and sample counts,
+not the larger ledger; UI windows show today, 7 and 30 Bangkok calendar days.
+Reports update on the hourly job, while the selected live comparison can advance
+more frequently. Targets from overlapping forecasts remain correlated. Git history
+continues to preserve prior versions; active retention is not a Git-history cap.

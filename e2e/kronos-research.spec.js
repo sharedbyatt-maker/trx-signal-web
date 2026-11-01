@@ -9,6 +9,7 @@ async function openKronos(page,missing=false){
  await page.route('**/api/history?*',route=>route.fulfill({json:{history,last_time_utc:new Date(start+199*60000).toISOString()}}));
  await page.route('https://raw.githubusercontent.com/**',route=>{
   const url=route.request().url();
+  if(url.endsWith('reports.json'))return route.fulfill({json:{schema:'kronos-daily-reports-v1',calendar:'Asia/Bangkok',updated_at_utc:new Date().toISOString(),days:[{day_local:new Date(Date.now()+420*60000).toISOString().slice(0,10),timeframe:1,model:'Kronos-mini',targets:2,forecasts:['forecasts/test.json'],error:3,persistence:4,random:5,majority:6}]}});
   if(missing)return route.fulfill({status:404,body:'Not found'});
   if(url.endsWith('index.json'))return route.fulfill({json:{schema:'kronos-index-v1',forecasts:[{file:'forecasts/test.json',timeframe:1,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc}]}});
   return route.fulfill({json:url.endsWith('status.json')?{status:'ready'}:snapshot});
@@ -23,6 +24,10 @@ test('Kronos loads historical comparisons and working forecast controls',async({
  await expect(page.locator('#forecastStatus')).toContainText('Historical');
  await expect(page.locator('#comparison')).toContainText('Evaluated bars: 2');
  await expect(page.locator('#archiveMetrics')).toContainText('evaluated target bars 2');
+ await expect(page.locator('#scoredTargets')).toHaveText('2');
+ await expect(page.locator('#dailySummary')).toContainText('2 scored targets');
+ await page.locator('#reportWindow').selectOption('30');
+ await expect(page.locator('#dailyRows tr')).toHaveCount(1);
  await expect(page.locator('#kronosChart canvas').first()).toBeVisible();
  await page.locator('#replay').click();
  await expect(page.locator('#comparison')).toContainText('Replay: only rounds');

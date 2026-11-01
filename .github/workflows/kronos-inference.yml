@@ -36,6 +36,7 @@ jobs:
         run: |
           python tests_kronos_round_adapter.py
           python tests_kronos_automation.py
+          python tests_kronos_reports.py
           node tests_kronos_ui.js
       - uses: actions/cache@v4
         with:
@@ -79,7 +80,7 @@ jobs:
             git fetch origin kronos-forecasts
             git reset --soft FETCH_HEAD
           fi
-          git add index.json status.json forecasts/ 2>/dev/null || git add status.json
+          git add index.json status.json forecasts/ reports.json evaluation_ledger.json 2>/dev/null || git add status.json
           git diff --cached --quiet && exit 0
           git commit -m 'Publish immutable Kronos research forecast/status'
           git push origin HEAD:refs/heads/kronos-forecasts

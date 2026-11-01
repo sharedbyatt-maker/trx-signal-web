@@ -14,16 +14,18 @@ async function boot(unavailable=false){
  const origin=180;
  const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:rows[origin][0],forecast_close:[900,901],forecast_delta:[1,2],generated_at_utc:new Date(start+origin*60000+1000).toISOString()};
  let projection=[],view=null,chartOptions=null;const historyUrls=[];
- const chart={addCandlestickSeries(){return{setData(){}};},addAreaSeries(){return{setData(x){projection=x;}};},applyOptions(){},timeScale(){return{fitContent(){},setVisibleLogicalRange(v){view=v;},getVisibleLogicalRange(){return view;}};}};
+ const chart={addCandlestickSeries(){return{setData(){}};},addAreaSeries(){return{setData(x){projection=x;}};},subscribeCrosshairMove(fn){this.inspect=fn;},subscribeClick(fn){this.tap=fn;},applyOptions(){},timeScale(){return{fitContent(){},setVisibleLogicalRange(v){view=v;},getVisibleLogicalRange(){return view;}};}};
  const context={KronosResearch,setInterval(){},console,Date,Set,Map,Number,JSON,Math,Error,ResizeObserver:class{observe(){}},window:{LightweightCharts:true},LightweightCharts:{createChart(_element,options){chartOptions=options;return chart;},CrosshairMode:{Normal:0}},document:{getElementById:element,querySelectorAll(){return[];},createElement(){return{};}},fetch:async url=>{
   if(url.startsWith('/api/history')){historyUrls.push(url);return{ok:true,json:async()=>historyUrls.length===1?({history:rows,last_time_utc:new Date(now-60000).toISOString()}):({history:[],incremental:true,last_time_utc:null})};}
   if(url.endsWith('index.json'))return{ok:!unavailable,status:404,json:async()=>({schema:'kronos-index-v1',forecasts:[{file:'forecasts/test.json',timeframe:1,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc}]})};
   if(url.endsWith('status.json'))return{ok:true,json:async()=>({status:'ready'})};
   return{ok:true,text:async()=>JSON.stringify(snapshot)};
  }};
+ vm.runInNewContext(fs.readFileSync('static/js/kronos-dashboard.js','utf8'),context);
+ context.KronosDashboard=context.window.KronosDashboard;
  vm.runInNewContext(fs.readFileSync('static/js/kronos.js','utf8'),context);
  for(let i=0;i<12;i++)await new Promise(setImmediate);
- return{element,projection:()=>projection,historyUrls,view:()=>view,chartOptions:()=>chartOptions};
+ return{element,projection:()=>projection,historyUrls,chart,view:()=>view,chartOptions:()=>chartOptions};
 }
 (async()=>{
  const app=await boot();
@@ -33,6 +35,12 @@ async function boot(unavailable=false){
  assert.match(app.element('forecastStatus').textContent,/Historical/);
  assert.match(app.element('comparison').textContent,/Evaluated bars: 2/);
  assert.equal(app.projection().length,3);
+ assert.equal(app.element('scoredTargets').textContent,'2');
+ assert.equal(app.element('pendingTargets').textContent,'0');
+ app.chart.tap({time:app.projection()[1].time});
+ assert.match(app.element('inspector').textContent,/forecast .*actual .*error/);
+ app.chart.inspect({time:app.projection()[0].time-60});
+ assert.match(app.element('inspector').textContent,/Historical candle/);
  assert.ok(app.projection()[0].time>1700000000,'chart uses real UTC timestamps, not 1970 ordinal indices');
  assert.equal(app.projection()[1].time-app.projection()[0].time,60);
  assert.equal(app.projection()[1].value-app.projection()[0].value,1,'uses deltas, not old absolute base');
