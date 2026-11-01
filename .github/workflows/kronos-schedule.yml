@@ -1,0 +1,16 @@
+name: Kronos automatic updates
+on:
+  schedule:
+    # Explicit minutes register this dedicated timer independently of PR/CI.
+    - cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/kronos-schedule.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    # The called workflow owns the publication concurrency lock. Defining the
+    # same lock here would block/cancel the caller and its reusable job.
+    uses: ./.github/workflows/kronos-inference.yml
