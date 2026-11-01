@@ -3,6 +3,7 @@ import importlib.util
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("round_forecast", Path(__file__).parent / "research" / "kronos" / "forecast.py")
 module = importlib.util.module_from_spec(spec)
@@ -10,6 +11,32 @@ spec.loader.exec_module(module)
 
 
 class RoundWalkTests(unittest.TestCase):
+    def prediction(self, **changes):
+        class Column(list):
+            def tolist(self): return list(self)
+        values={'open':[100.,101.],'high':[103.,104.], 'low':[99.,100.], 'close':[101.,102.]}
+        values.update(changes)
+        return {key:Column(value) for key,value in values.items()}
+
+    def test_extracts_all_four_genuine_model_columns(self):
+        values=module.extract_ohlc(self.prediction(),2)
+        self.assertEqual(values,[{'open':100.,'high':103.,'low':99.,'close':101.},
+                                 {'open':101.,'high':104.,'low':100.,'close':102.}])
+
+    def test_model_wicks_are_not_repaired_or_derived_from_closes(self):
+        values=module.extract_ohlc(self.prediction(high=[90.,91.]),2)
+        self.assertEqual([v['high'] for v in values],[90.,91.])
+
+    def test_rejects_nonfinite_or_incomplete_ohlc_output(self):
+        for change in ({'low':[float('nan'),1.]},{'open':[1.]}, {'high':[float('inf'),2.]}):
+            with self.subTest(change=change),self.assertRaisesRegex(ValueError,'OHLC'):
+                module.extract_ohlc(self.prediction(**change),2)
+
+    def test_existing_backtest_close_api_remains_compatible(self):
+        values=module.extract_ohlc(self.prediction(),2)
+        with patch.object(module,'predict_ohlc',return_value=(values,256)):
+            self.assertEqual(module.predict_bars(None,[],1),([101.,102.],256))
+
     def samples(self, count=150):
         origin = datetime(2026, 1, 1, 0, 0)
         return [[str(100000 + n), n % 10, (origin + timedelta(minutes=n)).strftime("%Y-%m-%d %H:%M:%S")] for n in range(count)]

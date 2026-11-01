@@ -103,7 +103,17 @@ def load_predictor(args):
     return predictor
 
 
-def predict_bars(predictor, bars, timeframe, horizon=12, lookback=256):
+def extract_ohlc(prediction, horizon):
+    """Keep the model's four outputs verbatim; never invent/repair wicks."""
+    columns = {key: [float(value) for value in prediction[key].tolist()]
+               for key in ('open', 'high', 'low', 'close')}
+    if any(len(values) != horizon or not all(math.isfinite(v) for v in values)
+           for values in columns.values()):
+        raise ValueError('Kronos produced invalid OHLC values')
+    return [{key: values[i] for key, values in columns.items()} for i in range(horizon)]
+
+
+def predict_ohlc(predictor, bars, timeframe, horizon=12, lookback=256):
     import numpy as np
     import pandas as pd
     import torch
@@ -117,10 +127,13 @@ def predict_bars(predictor, bars, timeframe, horizon=12, lookback=256):
     prediction = predictor.predict(df=df, x_timestamp=x_timestamp, y_timestamp=y_timestamp,
                                    pred_len=horizon, T=1.0, top_p=0.9, sample_count=1,
                                    verbose=False)
-    closes = [float(v) for v in prediction["close"].tolist()]
-    if len(closes) != horizon or not all(math.isfinite(v) for v in closes):
-        raise ValueError("Kronos produced invalid close values")
-    return closes, lookback
+    return extract_ohlc(prediction, horizon), lookback
+
+
+def predict_bars(predictor, bars, timeframe, horizon=12, lookback=256):
+    # Preserve the existing close-only backtest API and its metrics.
+    ohlc, lookback = predict_ohlc(predictor, bars, timeframe, horizon, lookback)
+    return [bar['close'] for bar in ohlc], lookback
 
 
 def generate(args):
@@ -129,7 +142,8 @@ def generate(args):
     raw = json.loads(Path(args.history_file).read_text())["history"] if args.history_file else get_history(args.history_url)
     bars, origin_issue = walk_bars(raw, args.timeframe, require_contiguous=True, lookback=args.lookback)
     predictor = load_predictor(args)
-    closes, lookback = predict_bars(predictor, bars, args.timeframe, args.horizon, args.lookback)
+    ohlc, lookback = predict_ohlc(predictor, bars, args.timeframe, args.horizon, args.lookback)
+    closes = [bar['close'] for bar in ohlc]
     model_slug = "Kronos-mini" if args.model == "mini" else "Kronos-small"
     # Preserve the input anchor: viewer windows move, so absolute levels cannot be reused.
     origin_time = bars[-1]["time"].isoformat()
@@ -138,6 +152,7 @@ def generate(args):
         "schema": "kronos-round-snapshot-v1", "data_source": "big-small-walk",
         "model": model_slug, "timeframe_minutes": args.timeframe, "origin_issue": origin_issue,
         "forecast_close": [round(v, 4) for v in closes],
+        "forecast_ohlc": [{key: round(value, 4) for key, value in bar.items()} for bar in ohlc],
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "seed": 0, "torch_version": torch.__version__,
         "model_revision": args.model_revision, "tokenizer_revision": args.tokenizer_revision,
@@ -152,6 +167,9 @@ def generate(args):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
     print(f"Real model inference saved to {target}; origin issue {origin_issue}.")
+    valid = sum(bar['high'] >= max(bar['open'], bar['close']) and
+                bar['low'] <= min(bar['open'], bar['close']) for bar in snapshot['forecast_ohlc'])
+    print(f"Genuine OHLC candle geometry: {valid}/{len(ohlc)} valid; raw model values retained unchanged.")
     print("This is experimental model output, NOT validated predictive performance.")
 
 

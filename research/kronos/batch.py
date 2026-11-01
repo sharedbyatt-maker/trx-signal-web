@@ -4,7 +4,7 @@ import json
 import subprocess
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 from forecast import get_history
@@ -17,6 +17,20 @@ def due(timestamp, now):
         return (now-utc(timestamp)).total_seconds() >= 55*60
     except (ValueError, TypeError):
         return True
+
+
+def needs_candle_snapshot(root, entry):
+    """One fresh 5m run upgrades a legacy close-only publication, without edits."""
+    if not entry or not entry.get('file'):
+        return False
+    path=PurePosixPath(entry['file'])
+    if path.parent != PurePosixPath('forecasts') or path.suffix != '.json':
+        return False
+    try:
+        snapshot=json.loads((root/entry['file']).read_text())
+        return not isinstance(snapshot.get('forecast_ohlc'),list) or not snapshot['forecast_ohlc']
+    except (OSError,ValueError,TypeError):
+        return False
 
 
 def run(args):
@@ -39,7 +53,7 @@ def run(args):
             path=root/f'status-{tf}m.json'
             if path.exists():statuses[str(tf)]=json.loads(path.read_text())
         recent=next((entry for entry in manifest['forecasts'] if entry['timeframe']==5),None)
-        if not recent or due(recent['generated_at_utc'],now):
+        if not recent or due(recent['generated_at_utc'],now) or needs_candle_snapshot(root,recent):
             attempt(5)
         # Retrospective samples refresh hourly per timeframe, rather than on
         # every five-minute publication. Existing 5m output keeps its identity.
