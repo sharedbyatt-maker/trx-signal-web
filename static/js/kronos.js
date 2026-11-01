@@ -188,8 +188,9 @@ async function importSnapshot(file,dry=false,version=requestVersion){
   const projection=KronosResearch.forecastCandles(snap,points,originAnchor);
   const showCandles=predictionStyle==='candles'&&projection.candles.length>0;
   projected.setData(forecastVisible&&!showCandles?points:[]);
-  projectedCandles.setData(forecastVisible&&showCandles?projection.candles:[]);
+  projectedCandles.setData(forecastVisible&&showCandles?projection.series:[]);
   $('predictionStyleStatus').textContent=!forecastVisible?'Prediction ကို ဖုံးထားသည်။':showCandles?'ခရမ်းရောင် ဘောင်ပါတဲ့ candles = model ခန့်မှန်းထားသော OHLC · အစိမ်း/အနီ = တကယ်ထွက်လာသော rounds။':predictionStyle==='line'?'Line = candle တစ်တိုင်စီ၏ ခန့်မှန်းထားသော ပိတ်တန်ဖိုး (Close)။':projection.reason==='legacy'?'ဒီ forecast အဟောင်းမှာ Close ပဲရှိလို့ line အဖြစ် ပြထားပါသည်။ Candle အတွက် OHLC ပါသော forecast အသစ် လိုအပ်သည်။':'Model OHLC က candle စည်းမျဉ်းနှင့် မကိုက်ညီလို့ Close line ကိုသာ ပြထားပါသည်။ အမြီး/ကိုယ်ထည်ကို ပြန်ဖန်တီးမထားပါ။';
+  if(forecastVisible&&showCandles&&projection.reason==='partial')$('predictionStyleStatus').textContent+=` OHLC ကိုက်ညီသော ${projection.candles.length}/${values.length} တိုင်ကို ပြထားပါသည်။ မကိုက်ညီသော ${projection.missing} တိုင်ကို ချန်ထားပါသည်။ Close အားလုံးကို Line ရွေးပြီး ကြည့်နိုင်ပါသည်။`;
   activeSnapshot=snap;
   inspectData={predicted:new Map(points.slice(1).map(p=>[p.time,p.value])),candles:new Map(projection.candles.map(p=>[p.time,p])),actual:new Map((replayMode?makeBars(rounds.slice(0,origin+1)):bars).map(b=>[b.time,b])),generation,scorable,latest:bars[bars.length-1].time};
   KronosDashboard.summary(replayMode?'—':evaluated,replayMode?'—':explanations.filter(row=>row.status==='pending').length,snap.generated_at_utc,publicationTimes.get(tf)||null);

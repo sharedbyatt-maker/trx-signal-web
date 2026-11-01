@@ -44,8 +44,11 @@ async function candleRegressions(){
  const rebased=KronosResearch.forecastCandles(snapshot,points,400);
  assert.deepEqual(rebased.candles[0],{time:70,open:400,high:403,low:399,close:401});
  assert.equal(JSON.stringify(snapshot),frozen,'rebase never changes the stored model output');
- assert.equal(KronosResearch.forecastCandles({...snapshot,forecast_ohlc:[{...ohlc[0],high:99},ohlc[1]]},points,400).reason,'invalid');
- assert.equal(KronosResearch.forecastCandles({...snapshot,forecast_close:[999,102]},points,400).reason,'invalid');
+ const partial=KronosResearch.forecastCandles({...snapshot,forecast_ohlc:[{...ohlc[0],high:99},ohlc[1]]},points,400);
+ assert.equal(partial.reason,'partial');assert.equal(partial.candles.length,1);
+ assert.deepEqual(partial.series[0],{time:70},'invalid model candle is whitespace, never a repaired OHLC bar');
+ assert.deepEqual(partial.series[1],{time:130,open:401,high:404,low:400,close:402});
+ assert.equal(KronosResearch.forecastCandles({...snapshot,forecast_close:[999,102]},points,400).reason,'partial');
  assert.equal(KronosResearch.forecastCandles({...snapshot,forecast_ohlc:undefined},points,400).reason,'legacy');
  async function upload(value){const text=JSON.stringify(value);await app.element('snapshot').events.change({target:{files:[{size:text.length,text:async()=>text}]}});await settle();}
  await upload(snapshot);
@@ -71,6 +74,14 @@ async function candleRegressions(){
  app.element('forecastToggle').events.click();await settle();
  assert.equal(app.predictionCandles().length,2);
  await upload({...snapshot,forecast_ohlc:[{...ohlc[0],high:99},ohlc[1]]});
+ assert.equal(app.predictionCandles().filter(bar=>bar.open!==undefined).length,1);
+ assert.equal(app.predictionCandles()[0].time,app.predictionCandles()[1].time-60);
+ assert.equal(app.projection().length,0);
+ assert.match(app.element('predictionStyleStatus').textContent,/1\/2/);
+ app.element('predictionStyle').events.change({target:{value:'line'}});await settle();
+ assert.equal(app.projection().length,3,'all close predictions remain available when an OHLC candle is omitted');
+ app.element('predictionStyle').events.change({target:{value:'candles'}});await settle();
+ await upload({...snapshot,forecast_ohlc:[{...ohlc[0],high:99},{...ohlc[1],high:100}]});
  assert.equal(app.predictionCandles().length,0);assert.equal(app.projection().length,3);
  assert.match(app.element('predictionStyleStatus').textContent,/စည်းမျဉ်းနှင့် မကိုက်ညီ/);
  await upload(app.snapshot);
