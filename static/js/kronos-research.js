@@ -21,6 +21,23 @@ function publicationSchedule(tf,generated,now=Date.now()){
  const expected=(Math.floor((earliest-120000)/300000)+1)*300000+120000;
  return {expected,overdue:now>expected+120000};
 }
-const api={randomAbsoluteError,publicationSchedule};
+function forecastCandles(snapshot,points,anchor){
+ if(snapshot.forecast_ohlc===undefined)return {candles:[],reason:'legacy'};
+ const rows=snapshot.forecast_ohlc;
+ const keys=['open','high','low','close'];
+ if(!Array.isArray(rows)||rows.length!==points.length-1||!Number.isFinite(snapshot.origin_close)||!Array.isArray(snapshot.forecast_close)||snapshot.forecast_close.length!==rows.length)return {candles:[],reason:'invalid'};
+ const candles=[];
+ for(let i=0;i<rows.length;i++){
+  const row=rows[i];
+  if(!row||!keys.every(k=>typeof row[k]==='number'&&Number.isFinite(row[k])&&Math.abs(row[k])<=1000000)||row.high<Math.max(row.open,row.close)||row.low>Math.min(row.open,row.close)||row.high<row.low)return {candles:[],reason:'invalid'};
+  if(!Number.isFinite(snapshot.forecast_close[i])||Math.abs(row.close-snapshot.forecast_close[i])>0.00011)return {candles:[],reason:'invalid'};
+  const bar={time:points[i+1].time};
+  for(const key of keys)bar[key]=anchor+row[key]-snapshot.origin_close;
+  if(!keys.every(k=>Number.isFinite(bar[k])&&Math.abs(bar[k])<=1000000)||Math.abs(bar.close-points[i+1].value)>0.00011)return {candles:[],reason:'invalid'};
+  candles.push(bar);
+ }
+ return {candles,reason:null};
+}
+const api={randomAbsoluteError,publicationSchedule,forecastCandles};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.KronosResearch=api;
 })(typeof window!=='undefined'?window:this);

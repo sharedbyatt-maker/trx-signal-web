@@ -16,7 +16,8 @@ async function boot(unavailable=false,gap=false,mode="history"){
  const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:rows[origin][0],forecast_close:[900,901],forecast_delta:[1,2],generated_at_utc:new Date(start+(mode==="excluded"?190:origin)*60000+1000).toISOString()};
  let projection=[],view=null,chartOptions=null;const historyUrls=[];const fetchControl={override:null};
  const buttons=[1,5,15,60].map(tf=>{const node=element("tf-"+tf);node.dataset={tf:String(tf)};return node;});
- const chart={addCandlestickSeries(){return{setData(){}};},addAreaSeries(){return{setData(x){projection=x;}};},subscribeCrosshairMove(fn){this.inspect=fn;},subscribeClick(fn){this.tap=fn;},applyOptions(){},timeScale(){return{fitContent(){},setVisibleLogicalRange(v){view=v;},getVisibleLogicalRange(){return view;}};}};
+ const candleSeries=[];
+ const chart={addCandlestickSeries(options){const series={data:[],options};candleSeries.push(series);return{setData(x){series.data=x;}};},addAreaSeries(){return{setData(x){projection=x;}};},subscribeCrosshairMove(fn){this.inspect=fn;},subscribeClick(fn){this.tap=fn;},applyOptions(){},timeScale(){return{fitContent(){},setVisibleLogicalRange(v){view=v;},getVisibleLogicalRange(){return view;}};}};
  const context={KronosResearch,setInterval(){},console,Date,Set,Map,Number,JSON,Math,Error,ResizeObserver:class{observe(){}},window:{LightweightCharts:true,KronosResearch},LightweightCharts:{createChart(_element,options){chartOptions=options;return chart;},CrosshairMode:{Normal:0}},document:{getElementById:element,querySelectorAll(){return buttons;},createElement(){return element('created-'+nodes.size);}},fetch:async url=>{
   if(fetchControl.override){const response=fetchControl.override(url);if(response!==undefined)return response;}
   if(url.startsWith('/api/history')){historyUrls.push(url);return{ok:true,json:async()=>historyUrls.length===1?({history:rows,last_time_utc:new Date(now-60000).toISOString()}):({history:[],incremental:true,last_time_utc:null})};}
@@ -31,9 +32,51 @@ async function boot(unavailable=false,gap=false,mode="history"){
  context.KronosExplain=context.window.KronosExplain;
  vm.runInNewContext(fs.readFileSync('static/js/kronos.js','utf8'),context);
  for(let i=0;i<12;i++)await new Promise(setImmediate);
- return{snapshot,rows,buttons,fetchControl,explain:context.KronosExplain,element,projection:()=>projection,historyUrls,chart,view:()=>view,chartOptions:()=>chartOptions};
+ return{snapshot,rows,buttons,fetchControl,explain:context.KronosExplain,element,projection:()=>projection,predictionCandles:()=>candleSeries[1].data,historyCandles:()=>candleSeries[0].data,historyUrls,chart,view:()=>view,chartOptions:()=>chartOptions};
 }
 async function settle(){for(let i=0;i<15;i++)await new Promise(setImmediate);}
+async function candleRegressions(){
+ const app=await boot();
+ const ohlc=[{open:100,high:103,low:99,close:101},{open:101,high:104,low:100,close:102}];
+ const snapshot={...app.snapshot,origin_close:100,forecast_close:[101,102],forecast_ohlc:ohlc};
+ const frozen=JSON.stringify(snapshot);
+ const points=[{time:10,value:400},{time:70,value:401},{time:130,value:402}];
+ const rebased=KronosResearch.forecastCandles(snapshot,points,400);
+ assert.deepEqual(rebased.candles[0],{time:70,open:400,high:403,low:399,close:401});
+ assert.equal(JSON.stringify(snapshot),frozen,'rebase never changes the stored model output');
+ assert.equal(KronosResearch.forecastCandles({...snapshot,forecast_ohlc:[{...ohlc[0],high:99},ohlc[1]]},points,400).reason,'invalid');
+ assert.equal(KronosResearch.forecastCandles({...snapshot,forecast_close:[999,102]},points,400).reason,'invalid');
+ assert.equal(KronosResearch.forecastCandles({...snapshot,forecast_ohlc:undefined},points,400).reason,'legacy');
+ async function upload(value){const text=JSON.stringify(value);await app.element('snapshot').events.change({target:{files:[{size:text.length,text:async()=>text}]}});await settle();}
+ await upload(snapshot);
+ assert.equal(app.predictionCandles().length,2);
+ assert.equal(app.projection().length,0,'candles and close line do not draw simultaneously');
+ const anchor=app.historyCandles()[180].close;
+ assert.equal(app.predictionCandles()[0].high,anchor+3);
+ assert.match(app.element('predictionStyleStatus').textContent,/ခရမ်းရောင်/);
+ const metrics=app.element('comparison').textContent;
+ app.element('predictionStyle').events.change({target:{value:'line'}});await settle();
+ assert.equal(app.predictionCandles().length,0);assert.equal(app.projection().length,3);
+ assert.equal(app.element('comparison').textContent,metrics,'display style does not change close metrics');
+ app.element('predictionStyle').events.change({target:{value:'candles'}});await settle();
+ app.element('replay').events.click();await settle();
+ assert.equal(app.predictionCandles().length,2);
+ assert.equal(app.historyCandles().length,181,'replay still hides all later actual candles');
+ app.chart.tap({time:app.predictionCandles()[0].time});
+ assert.match(app.element('inspector').textContent,/model O .* H .* L .* C .*hidden in replay/);
+ await app.element('reload').events.click();await settle();
+ assert.equal(app.predictionCandles().length,2,'imported candle forecast survives refresh');
+ app.element('forecastToggle').events.click();await settle();
+ assert.equal(app.predictionCandles().length,0);assert.equal(app.projection().length,0);
+ app.element('forecastToggle').events.click();await settle();
+ assert.equal(app.predictionCandles().length,2);
+ await upload({...snapshot,forecast_ohlc:[{...ohlc[0],high:99},ohlc[1]]});
+ assert.equal(app.predictionCandles().length,0);assert.equal(app.projection().length,3);
+ assert.match(app.element('predictionStyleStatus').textContent,/စည်းမျဉ်းနှင့် မကိုက်ညီ/);
+ await upload(app.snapshot);
+ assert.equal(app.predictionCandles().length,0);assert.equal(app.projection().length,3);
+ assert.match(app.element('predictionStyleStatus').textContent,/အဟောင်းမှာ Close ပဲရှိ/);
+}
 async function regressions(app){
  const {expected}=KronosResearch.publicationSchedule(1,'2026-11-01T10:56:23Z',Date.parse('2026-11-01T11:20:00Z'));
  assert.equal(new Date(expected).toISOString(),'2026-11-01T10:57:00.000Z');
@@ -139,5 +182,6 @@ async function regressions(app){
  assert.equal(missing.element('easyRows').children.length,0);
 
  await regressions(app);
+ await candleRegressions();
  console.log('Kronos UI: historical evaluation, rebasing, toggle and unavailable states passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

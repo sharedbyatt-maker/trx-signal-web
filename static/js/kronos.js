@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity, firstPublication=true, replayMode=false, lastSourceUtc=null;
+let rounds=[], tf=1, chart, candle, projected, projectedCandles, resizeObserver, activeSnapshot=null, forecastVisible=true, predictionStyle='candles', sourceAgeMinutes=Infinity, firstPublication=true, replayMode=false, lastSourceUtc=null;
 const PUBLICATION="https://raw.githubusercontent.com/sharedbyatt-maker/trx-signal-web/kronos-forecasts/";
 const MAX_ROUNDS=10000;
 let inspectData=null,refreshing=false;
@@ -26,7 +26,8 @@ async function snapshotFile(path){
  return {size:0,text:async()=>text};
 }
 function clearForecast(message){
- activeSnapshot=null;inspectData=null;projected?.setData([]);
+ activeSnapshot=null;inspectData=null;projected?.setData([]);projectedCandles?.setData([]);
+ $('predictionStyleStatus').textContent='စစ်ဆေးပြီးသော prediction မရှိသေးပါ။';
  $('replay').disabled=true;$('replay').textContent='Replay origin';
  $('horizon').textContent='—';$('comparison').textContent=message;
  for(const id of ['scoredTargets','pendingTargets','forecastAge','nextForecast'])$(id).textContent='—';
@@ -41,7 +42,9 @@ function inspectTarget(event){
  const eligible=event.time*1000>inspectData.generation;
  const complete=actual&&event.time<inspectData.latest;
  const visible=complete&&!replayMode&&inspectData.scorable.has(event.time);
- $("inspector").textContent=label+" · forecast "+predicted.toFixed(3)+" · actual "+(visible?actual.close.toFixed(3):replayMode?"hidden in replay":complete?"unavailable: source gap or excluded target":"pending")+" · error "+(visible&&eligible?Math.abs(predicted-actual.close).toFixed(3):"not scored")+(!eligible?" · excluded: target started before generation":"")+" · walk steps";
+ const ohlc=inspectData.candles.get(event.time);
+ const targetEnd=new Date((event.time+tf*60+420*60)*1000).toISOString().slice(11,16);
+ $("inspector").textContent=label+'–'+targetEnd+" · forecast close "+predicted.toFixed(3)+(ohlc?' · model O '+ohlc.open.toFixed(3)+' H '+ohlc.high.toFixed(3)+' L '+ohlc.low.toFixed(3)+' C '+ohlc.close.toFixed(3):'')+" · actual "+(visible?actual.close.toFixed(3):replayMode?"hidden in replay":complete?"unavailable: source gap or excluded target":"pending")+" · error "+(visible&&eligible?Math.abs(predicted-actual.close).toFixed(3):"not scored")+(!eligible?" · excluded: target started before generation":"")+" · walk steps";
 }
 function parseRound(r){
  if(!Array.isArray(r)||r.length<3)return null;
@@ -76,6 +79,7 @@ function initChart(){
  chart=LightweightCharts.createChart($("kronosChart"),{width:$("kronosChart").clientWidth,height:$("kronosChart").clientHeight,layout:{background:{type:"solid",color:"#0c1c2c"},textColor:"#a7bbcd"},grid:{vertLines:{color:"#172c3e"},horzLines:{color:"#172c3e"}},rightPriceScale:{borderColor:"#304a61"},timeScale:{borderColor:"#304a61",rightOffset:12,fixLeftEdge:true,timeVisible:true,secondsVisible:false,tickMarkFormatter:(time,type)=>{const iso=new Date((time+420*60)*1000).toISOString();return type===0?iso.slice(0,4):type===1?iso.slice(0,7):type===2?iso.slice(5,10):iso.slice(11,16);}},localization:{timeFormatter:time=>new Date((time+420*60)*1000).toISOString().slice(0,16).replace("T"," ")+" Bangkok (UTC+07:00)"},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}});
  candle=chart.addCandlestickSeries({upColor:"#04b99c",downColor:"#ee5162",wickUpColor:"#04b99c",wickDownColor:"#ee5162",borderVisible:false,priceFormat:{type:"price",precision:1,minMove:1}});
  projected=chart.addAreaSeries({lineColor:"#ae86fa",topColor:"rgba(174,134,250,0.3)",bottomColor:"rgba(174,134,250,0.03)",lineWidth:3,lineStyle:2,lastValueVisible:false,priceLineVisible:false});
+ projectedCandles=chart.addCandlestickSeries({upColor:'rgba(174,134,250,0.06)',downColor:'rgba(174,134,250,0.06)',borderVisible:true,borderUpColor:'#c8a8ff',borderDownColor:'#c8a8ff',wickUpColor:'#ae86fa',wickDownColor:'#ae86fa',lastValueVisible:false,priceLineVisible:false,priceFormat:{type:'price',precision:4,minMove:0.0001}});
  chart.subscribeCrosshairMove(inspectTarget);chart.subscribeClick(inspectTarget);
  resizeObserver=new ResizeObserver(()=>chart.applyOptions({width:$("kronosChart").clientWidth,height:$("kronosChart").clientHeight}));resizeObserver.observe($("kronosChart"));
 }
@@ -89,7 +93,7 @@ function render(){
  KronosDashboard.renderReport(tf);
  $("replay").disabled=true;
  const replayOrigin=replayMode&&activeSnapshot?rounds.findIndex(r=>r.issue===String(activeSnapshot.origin_issue)):-1;
- const bars=makeBars(replayMode?(replayOrigin>=0?rounds.slice(0,replayOrigin+1):[]):rounds);candle.setData(bars);projected.setData([]);$("horizon").textContent="—";$("forecastStatus").textContent="Not loaded";$("snapshotInfo").textContent="No snapshot imported";$("comparison").textContent="No validated forecast loaded. Research snapshots can be compared only after their target rounds have occurred.";chart.timeScale().setVisibleLogicalRange({from:Math.max(0,bars.length-120),to:bars.length+16});
+ const bars=makeBars(replayMode?(replayOrigin>=0?rounds.slice(0,replayOrigin+1):[]):rounds);candle.setData(bars);projected.setData([]);projectedCandles.setData([]);$("horizon").textContent="—";$("forecastStatus").textContent="Not loaded";$("snapshotInfo").textContent="No snapshot imported";$("comparison").textContent="No validated forecast loaded. Research snapshots can be compared only after their target rounds have occurred.";chart.timeScale().setVisibleLogicalRange({from:Math.max(0,bars.length-120),to:bars.length+16});
  $("issue").textContent=rounds.length?rounds[rounds.length-1].issue:"—";$("count").textContent=String(rounds.length);
 }
 async function load(){
@@ -181,9 +185,13 @@ async function importSnapshot(file,dry=false,version=requestVersion){
    }else if(bucket<bars[bars.length-1].bucket){explanation.status='unavailable';}
   }
   if(dry)return {evaluated,error,persistence,randomError,majorityError,excluded,horizon:values.length};
-  projected.setData(forecastVisible?points:[]);
+  const projection=KronosResearch.forecastCandles(snap,points,originAnchor);
+  const showCandles=predictionStyle==='candles'&&projection.candles.length>0;
+  projected.setData(forecastVisible&&!showCandles?points:[]);
+  projectedCandles.setData(forecastVisible&&showCandles?projection.candles:[]);
+  $('predictionStyleStatus').textContent=!forecastVisible?'Prediction ကို ဖုံးထားသည်။':showCandles?'ခရမ်းရောင် ဘောင်ပါတဲ့ candles = model ခန့်မှန်းထားသော OHLC · အစိမ်း/အနီ = တကယ်ထွက်လာသော rounds။':predictionStyle==='line'?'Line = candle တစ်တိုင်စီ၏ ခန့်မှန်းထားသော ပိတ်တန်ဖိုး (Close)။':projection.reason==='legacy'?'ဒီ forecast အဟောင်းမှာ Close ပဲရှိလို့ line အဖြစ် ပြထားပါသည်။ Candle အတွက် OHLC ပါသော forecast အသစ် လိုအပ်သည်။':'Model OHLC က candle စည်းမျဉ်းနှင့် မကိုက်ညီလို့ Close line ကိုသာ ပြထားပါသည်။ အမြီး/ကိုယ်ထည်ကို ပြန်ဖန်တီးမထားပါ။';
   activeSnapshot=snap;
-  inspectData={predicted:new Map(points.slice(1).map(p=>[p.time,p.value])),actual:new Map((replayMode?makeBars(rounds.slice(0,origin+1)):bars).map(b=>[b.time,b])),generation,scorable,latest:bars[bars.length-1].time};
+  inspectData={predicted:new Map(points.slice(1).map(p=>[p.time,p.value])),candles:new Map(projection.candles.map(p=>[p.time,p])),actual:new Map((replayMode?makeBars(rounds.slice(0,origin+1)):bars).map(b=>[b.time,b])),generation,scorable,latest:bars[bars.length-1].time};
   KronosDashboard.summary(replayMode?'—':evaluated,replayMode?'—':explanations.filter(row=>row.status==='pending').length,snap.generated_at_utc,publicationTimes.get(tf)||null);
   $("replay").disabled=false;
   candle.setData(replayMode?makeBars(rounds.slice(0,origin+1)):bars);
@@ -213,7 +221,8 @@ async function refresh(){
 }
 $("reload").addEventListener("click",refresh);
 $("replay").addEventListener("click",()=>{if(!activeSnapshot)return;replayMode=!replayMode;importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
-$("forecastToggle").addEventListener("click",()=>{forecastVisible=!forecastVisible;$("forecastToggle").textContent="Forecast "+(forecastVisible?"ON":"OFF");if(!forecastVisible)projected.setData([]);else if(activeSnapshot)importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
+$("forecastToggle").addEventListener("click",()=>{forecastVisible=!forecastVisible;$("forecastToggle").textContent="Forecast "+(forecastVisible?"ON":"OFF");if(!forecastVisible){projected.setData([]);projectedCandles.setData([]);$('predictionStyleStatus').textContent='Prediction ကို ဖုံးထားသည်။';}else if(activeSnapshot)importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
+$('predictionStyle').addEventListener('change',event=>{predictionStyle=event.target.value==='line'?'line':'candles';if(activeSnapshot)importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
 $("forecastHistory").addEventListener("change",event=>{const path=event.target.value;if(!/^forecasts\/[a-zA-Z0-9-]+\.json$/.test(path))return;selections.set(tf,{path});replayMode=false;autoSnapshot();});
 $("latestForecast").addEventListener('click',()=>{selections.delete(tf);replayMode=false;autoSnapshot();});
 $("snapshot").addEventListener("change",async event=>{

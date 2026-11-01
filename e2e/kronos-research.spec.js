@@ -7,6 +7,10 @@ async function openKronos(page,missing=false,badBacktest=false,bothTimeframes=fa
  const history=Array.from({length:200},(_,i)=>[String(100000+i),i%10,new Date(start+i*60000+390*60000).toISOString().slice(0,19)]);
  const origin=variant==="pending"?199:180;
  const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:history[origin][0],forecast_close:[900,901],forecast_delta:variant==="exact"?[-1,-2]:[1,2],generated_at_utc:new Date(start+(variant==="excluded"?190:origin)*60000+1000).toISOString()};
+ if(variant==='candles'||variant==='invalid-candles'){
+  snapshot.origin_close=100;snapshot.forecast_close=[101,102];
+  snapshot.forecast_ohlc=[{open:100,high:variant==='candles'?103:99,low:99,close:101},{open:101,high:104,low:100,close:102}];
+ }
  const older={...snapshot,origin_issue:history[170][0],generated_at_utc:new Date(start+170*60000+1000).toISOString()};
  if(variant==='gap')history.splice(181,1);
  await page.route('**/api/history?*',route=>route.fulfill({json:{history,last_time_utc:new Date(start+199*60000).toISOString()}}));
@@ -177,4 +181,45 @@ test('Kronos separates source gaps from outcomes that are still pending',async({
  await expect(page.locator('#easyCount')).toContainText('data မပြည့် 2 ခု');
  await expect(page.locator('#pendingTargets')).toHaveText('0');
  await expect(page.locator('#scoredTargets')).toHaveText('0');
+});
+
+test('Kronos shows model OHLC candles and preserves line, replay and visibility controls',async({page},testInfo)=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await openKronos(page,false,false,false,'candles');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('ခရမ်းရောင်');
+ await expect(page.getByLabel('Prediction display',{exact:true})).toHaveValue('candles');
+ await expect(page.locator('#scoredTargets')).toHaveText('2');
+ const comparison=await page.locator('#comparison').textContent();
+ await page.getByLabel('Prediction display',{exact:true}).selectOption('line');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('Line =');
+ await expect(page.locator('#comparison')).toHaveText(comparison);
+ await page.getByLabel('Prediction display',{exact:true}).selectOption('candles');
+ await page.locator('#replay').click();
+ await page.locator('#reload').click();
+ await expect(page.locator('#easyActual')).toContainText('ဖုံးထား');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('ခရမ်းရောင်');
+ await page.locator('#forecastToggle').click();
+ await expect(page.locator('#predictionStyleStatus')).toContainText('ဖုံးထားသည်');
+ await page.locator('#forecastToggle').click();
+ await expect(page.locator('#predictionStyleStatus')).toContainText('ခရမ်းရောင်');
+ await page.locator('#kronosChart').scrollIntoViewIfNeeded();
+ await page.locator('#kronosChart').screenshot({path:testInfo.outputPath('kronos-prediction-candles.png')});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
+ expect(errors).toEqual([]);
+});
+
+test('Kronos uses the close line when raw model OHLC has invalid candle geometry',async({page})=>{
+ await openKronos(page,false,false,false,'invalid-candles');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('စည်းမျဉ်းနှင့် မကိုက်ညီ');
+ await expect(page.locator('#comparison')).toContainText('Evaluated bars: 2');
+ await expect(page.locator('#forecastStatus')).not.toHaveText('Rejected');
+});
+
+test('Kronos keeps legacy close-only snapshots visible without inventing candles',async({page})=>{
+ await openKronos(page);
+ await expect(page.locator('#predictionStyleStatus')).toContainText('အဟောင်းမှာ Close ပဲရှိ');
+ await page.getByLabel('Prediction display',{exact:true}).selectOption('line');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('Line =');
+ await page.getByLabel('Prediction display',{exact:true}).selectOption('candles');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('အဟောင်းမှာ Close ပဲရှိ');
 });

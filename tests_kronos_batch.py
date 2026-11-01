@@ -14,6 +14,25 @@ import pipeline
 
 
 class Timeframes(unittest.TestCase):
+    def test_legacy_five_minute_forecast_gets_a_new_ohlc_snapshot_without_editing_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);now=datetime.now(timezone.utc).isoformat()
+            legacy='{"forecast_close":[101,102]}'
+            pipeline.write_json(root/'index.json',{'forecasts':[{'timeframe':5,'file':'forecasts/old-5.json','generated_at_utc':now}]})
+            (root/'forecasts').mkdir();(root/'forecasts/old-5.json').write_text(legacy)
+            for file in ('backtest.json','backtest-1m.json'):
+                pipeline.write_json(root/file,{'generated_at_utc':now})
+            args=SimpleNamespace(output=folder,history_url='https://example.test',kronos_dir='/unused')
+            def publish(args,*,history_rows):
+                pipeline.write_json(root/f'status-{args.timeframe}m.json',{'status':'ready','timeframe':args.timeframe})
+            with patch.object(batch,'get_history',return_value=[]),patch.object(batch,'publish',side_effect=publish) as model:
+                batch.run(args)
+            self.assertEqual([call.args[0].timeframe for call in model.call_args_list],[5,1])
+            self.assertEqual((root/'forecasts/old-5.json').read_text(),legacy)
+            pipeline.write_json(root/'forecasts/with-ohlc.json',{'forecast_ohlc':[{'open':100,'high':102,'low':99,'close':101}]})
+            self.assertFalse(batch.needs_candle_snapshot(root,{'file':'forecasts/with-ohlc.json'}))
+            self.assertFalse(batch.needs_candle_snapshot(root,{'file':'../outside.json'}))
+
     def test_five_minute_output_preserved_when_only_one_minute_is_due(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);now=datetime.now(timezone.utc).isoformat()
