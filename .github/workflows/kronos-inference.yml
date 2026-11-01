@@ -1,17 +1,16 @@
 name: Kronos isolated research inference
 on:
   workflow_dispatch:
+  workflow_call:
   pull_request:
-    paths: ["research/kronos/**", "static/js/kronos*.js", "templates/kronos.html", "tests_kronos*", ".github/workflows/kronos-inference.yml"]
+    paths: ["research/kronos/**", "static/js/kronos*.js", "templates/kronos.html", "tests_kronos*", ".github/workflows/kronos-inference.yml", ".github/workflows/kronos-schedule.yml"]
   push:
     branches: [main]
     paths: ["research/kronos/**", ".github/workflows/kronos-inference.yml"]
-  schedule:
-    - cron: '2-57/5 * * * *'
 permissions:
   contents: read
 concurrency:
-  group: kronos-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
+  group: kronos-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || 'publication' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   inference:
