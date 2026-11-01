@@ -18,8 +18,9 @@ async function boot(unavailable=false,gap=false){
  const chart={addCandlestickSeries(){return{setData(){}};},addAreaSeries(){return{setData(x){projection=x;}};},subscribeCrosshairMove(fn){this.inspect=fn;},subscribeClick(fn){this.tap=fn;},applyOptions(){},timeScale(){return{fitContent(){},setVisibleLogicalRange(v){view=v;},getVisibleLogicalRange(){return view;}};}};
  const context={KronosResearch,setInterval(){},console,Date,Set,Map,Number,JSON,Math,Error,ResizeObserver:class{observe(){}},window:{LightweightCharts:true},LightweightCharts:{createChart(_element,options){chartOptions=options;return chart;},CrosshairMode:{Normal:0}},document:{getElementById:element,querySelectorAll(){return[];},createElement(){return{};}},fetch:async url=>{
   if(url.startsWith('/api/history')){historyUrls.push(url);return{ok:true,json:async()=>historyUrls.length===1?({history:rows,last_time_utc:new Date(now-60000).toISOString()}):({history:[],incremental:true,last_time_utc:null})};}
+  url=url.split('?')[0];
   if(url.endsWith('index.json'))return{ok:!unavailable,status:404,json:async()=>({schema:'kronos-index-v1',forecasts:[{file:'forecasts/test.json',timeframe:1,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc}]})};
-  if(url.endsWith('status.json'))return{ok:true,json:async()=>({status:'ready'})};
+  if(/status-(1|5)m\.json$/.test(url))return{ok:true,json:async()=>({status:'ready'})};
   return{ok:true,text:async()=>JSON.stringify(snapshot)};
  }};
  vm.runInNewContext(fs.readFileSync('static/js/kronos-dashboard.js','utf8'),context);

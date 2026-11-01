@@ -51,6 +51,15 @@ class Reports(unittest.TestCase):
             self.assertEqual(ledger['points'],points)
             self.assertEqual(summary['days'][0]['horizons'][0]['horizon'],1)
             self.assertEqual(summary['days'][0]['horizons'][0]['error'],2)
+    def test_one_minute_retention_cannot_evict_five_minute_measurements(self):
+        when=self.now.isoformat()
+        points=[{'id':f'forecasts/f{i//12}.json:{i%12}','forecast':f'forecasts/f{i//12}.json','target_end_utc':when,'timeframe':1,'model':'Kronos-mini','error':1,'persistence':2,'random':3,'majority':4} for i in range(20001)]
+        old={'id':'forecasts/old5.json:0','forecast':'forecasts/old5.json','target_end_utc':when,'timeframe':5,'model':'Kronos-mini','error':9,'persistence':10,'random':11,'majority':12}
+        with tempfile.TemporaryDirectory() as directory:
+            ledger,summary=reports.build(Path(directory),{'forecasts':[]},[],{'points':[old]+points},self.now)
+        self.assertEqual(sum(p['timeframe']==1 for p in ledger['points']),20000)
+        self.assertEqual([p for p in ledger['points'] if p['timeframe']==5],[old])
+        self.assertEqual(next(day for day in summary['days'] if day['timeframe']==5)['error'],9)
     def test_origin_after_generation_is_rejected(self):
         self.snapshot['generated_at_utc']=self.start.isoformat()
         with self.assertRaises(ValueError):reports.evaluate(self.snapshot,self.rows,'a',self.now)
