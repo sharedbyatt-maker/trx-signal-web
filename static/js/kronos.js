@@ -17,6 +17,7 @@ function parseRound(r){
  if(!Number.isFinite(dt.getTime())||dt.getUTCFullYear()!==+mt[1]||dt.getUTCMonth()+1!==+mt[2]||dt.getUTCDate()!==+mt[3]||dt.getUTCHours()!==+mt[4]||dt.getUTCMinutes()!==+mt[5])return null;
  if(!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/.test(time))return null;
  const explicit=/(Z|[+-]\d{2}:\d{2})$/.test(time);
+ if(!Number.isFinite(Date.parse(time.replace(" ","T")+(explicit?"":"Z"))))return null;
  const minute=explicit?Math.floor((Date.parse(time)+390*60000)/60000):Math.floor(dt.getTime()/60000);
  if(!Number.isFinite(minute))return null;
  return {issue,number,time,minute};
@@ -63,7 +64,7 @@ async function load(){
   render();
  }catch(err){$("historyStatus").textContent="History unavailable: "+err.message;rounds=[];render();}
 }
-async function importSnapshot(file){
+async function importSnapshot(file,dry=false){
  if(!file)return;
  try{
   if(file.size>150000)throw Error("Snapshot is too large");
@@ -118,6 +119,7 @@ async function importSnapshot(file){
     if(delta[i]!==0&&observedDelta!==0){directions++;correctDirections+=Math.sign(delta[i])===Math.sign(observedDelta)?1:0;}
    }
   }
+  if(dry)return {evaluated,error,persistence,randomError,majorityError,excluded,horizon:values.length};
   projected.setData(forecastVisible?points:[]);
   activeSnapshot=snap;
   $("replay").disabled=false;
@@ -131,7 +133,7 @@ async function importSnapshot(file){
   $("comparison").textContent=evaluated?"Evaluated bars: "+evaluated+" · close MAE: "+(error/evaluated).toFixed(3)+" steps · persistence MAE: "+(persistence/evaluated).toFixed(3)+" steps · expected random MAE: "+(randomError/evaluated).toFixed(3)+" · past-majority MAE: "+(majorityError/evaluated).toFixed(3)+" · origin-to-target direction: "+(directions?correctDirections+"/"+directions:"no non-tied samples")+" · excluded already-started bars: "+excluded+". Continuous projection; no round win-rate claim.":"Pending: no fully completed, post-publication target bars available. Excluded already-started bars: "+excluded+". No measured accuracy yet.";
 
   if(replayMode)$("comparison").textContent="Replay: only rounds known at the original forecast origin are visible. Select Show actual for the subsequent comparison.";
- }catch(err){activeSnapshot=null;$("replay").disabled=true;projected?.setData([]);$("forecastStatus").textContent="Rejected";$("snapshotInfo").textContent=err.message;$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
+ }catch(err){if(dry)throw err;activeSnapshot=null;$("replay").disabled=true;projected?.setData([]);$("forecastStatus").textContent="Rejected";$("snapshotInfo").textContent=err.message;$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
 }
 document.querySelectorAll("[data-tf]").forEach(button=>button.addEventListener("click",()=>{firstPublication=false;tf=Number(button.dataset.tf);document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",x===button));render();autoSnapshot();}));
 async function refresh(){
@@ -143,6 +145,23 @@ $("reload").addEventListener("click",refresh);
 $("replay").addEventListener("click",()=>{if(!activeSnapshot)return;replayMode=!replayMode;importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
 $("forecastToggle").addEventListener("click",()=>{forecastVisible=!forecastVisible;$("forecastToggle").textContent="Forecast "+(forecastVisible?"ON":"OFF");if(!forecastVisible)projected.setData([]);else if(activeSnapshot)importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
 $("forecastHistory").addEventListener("change",async event=>{const path=event.target.value;if(!/^forecasts\/[a-zA-Z0-9-]+\.json$/.test(path))return;try{const r=await fetch(PUBLICATION+path,{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);await importSnapshot({size:0,text:()=>r.text()});}catch(e){$("snapshotInfo").textContent=e.message;}});$("snapshot").addEventListener("change",event=>importSnapshot(event.target.files?.[0]));
+async function archiveMetrics(entries){
+ const timeframe=tf;
+ let forecasts=0,completed=0,pending=0,unavailable=0,n=0,error=0,persistence=0,random=0,majority=0;
+ for(const entry of entries.slice(0,24)){
+  if(tf!==timeframe)return;
+  try{
+   const response=await fetch(PUBLICATION+entry.file,{cache:"no-store"});
+   if(!response.ok)throw Error("Archive download unavailable");
+   const report=await importSnapshot({size:0,text:()=>response.text()},true);
+   forecasts++;n+=report.evaluated;error+=report.error;persistence+=report.persistence;
+   random+=report.randomError;majority+=report.majorityError;
+   if(report.evaluated+report.excluded===report.horizon)completed++;else pending++;
+  }catch(_error){unavailable++;}
+ }
+ if(tf!==timeframe)return;
+ $("archiveMetrics").textContent="Archive sample: "+forecasts+" forecasts · completed "+completed+" · pending "+pending+" · unavailable "+unavailable+" · evaluated target bars "+n+(n?" · model MAE "+(error/n).toFixed(3)+" · persistence "+(persistence/n).toFixed(3)+" · expected random "+(random/n).toFixed(3)+" · past-majority "+(majority/n).toFixed(3):" · awaiting future outcomes")+". Latest 24 snapshots for this timeframe; overlapping targets are correlated, not independent trials.";
+}
 async function autoSnapshot(){
  activeSnapshot=null;
  try{
@@ -166,8 +185,9 @@ async function autoSnapshot(){
   const res=await fetch(PUBLICATION+entries[0].file,{cache:"no-store"});
   if(!res.ok)throw Error("Forecast download HTTP "+res.status);
   await importSnapshot({size:0,text:()=>res.text()});
+  archiveMetrics(entries);
   try{const status=await fetch(PUBLICATION+"status.json",{cache:"no-store"});if(status.ok){const info=await status.json();if(info.status==="failed")$("snapshotInfo").textContent+=" · Last inference failed: "+info.reason;}}catch(_err){/* last successful snapshot remains available */}
- }catch(err){$("forecastStatus").textContent="Unavailable";$("snapshotInfo").textContent=err.message;}
+ }catch(err){$("forecastStatus").textContent="Unavailable";$("snapshotInfo").textContent=err.message;$("archiveMetrics").textContent="No validated archive available.";}
 }
 
 initChart();load().then(autoSnapshot);

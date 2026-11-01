@@ -22,6 +22,7 @@ test('Kronos loads historical comparisons and working forecast controls',async({
  await openKronos(page);
  await expect(page.locator('#forecastStatus')).toContainText('Historical');
  await expect(page.locator('#comparison')).toContainText('Evaluated bars: 2');
+ await expect(page.locator('#archiveMetrics')).toContainText('evaluated target bars 2');
  await expect(page.locator('#kronosChart canvas').first()).toBeVisible();
  await page.locator('#replay').click();
  await expect(page.locator('#comparison')).toContainText('Replay: only rounds');

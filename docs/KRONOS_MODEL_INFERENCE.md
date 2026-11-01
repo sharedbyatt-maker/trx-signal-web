@@ -77,8 +77,9 @@ The selected snapshot also reports an exact expected random-walk MAE and a
 majority-direction baseline fitted only to its pre-origin rounds. Origin-to-target
 direction counts exclude ties; these are not next-round classification accuracy.
 Replay hides actual candles after the original origin. Purple area fill marks
-the projection. Aggregate walk-forward reporting across all snapshots remains
-unimplemented. No measured predictive
+the projection. Archive metrics aggregate up to 24 snapshots for the selected timeframe,
+with completed/pending counts and baseline MAEs. Targets can overlap; these
+are correlated observations, not independent accuracy trials. No measured predictive
 advantage is claimed. Public JSON metadata is an audit trail, not a cryptographic
 proof of model provenance.
 
