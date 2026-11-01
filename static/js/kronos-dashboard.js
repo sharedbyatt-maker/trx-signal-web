@@ -39,7 +39,7 @@ function renderReport(tf){
  $('dailyRows').replaceChildren();
  $('horizonRows').replaceChildren();$('baselineVerdict').textContent='Measured horizon comparisons unavailable.';
  $('reportUpdated').textContent='';
- if(!report){$('dailySummary').textContent='Performance report unavailable; waiting for the next successful publication.';return;}
+ if(!report){$('reportSimple').textContent='Report မရသေးပါ။ Forecast ရလဒ်အသစ်တွေ publish ပြီးမှ ပြနိုင်ပါမယ်။';$('dailySummary').textContent='Performance report unavailable; waiting for the next successful publication.';return;}
  const entries=report.days.filter(x=>x.timeframe===tf&&x.day_local>=cutoff&&x.day_local<=today);
  const totals={targets:0,error:0,persistence:0,random:0,majority:0};const forecasts=new Set();
  for(const entry of entries){
@@ -52,6 +52,7 @@ function renderReport(tf){
   $('dailyRows').append(row);
  }
  $('dailySummary').textContent=totals.targets?`${forecasts.size} forecasts · ${totals.targets} scored targets · model MAE ${(totals.error/totals.targets).toFixed(3)} · persistence ${(totals.persistence/totals.targets).toFixed(3)} · expected random ${(totals.random/totals.targets).toFixed(3)} · past-majority ${(totals.majority/totals.targets).toFixed(3)}.`:'No completed targets in this window yet.';
+ $('reportSimple').textContent=totals.targets?`${tf}m · ရွေးထားသော ${days} ရက်အတွင်း forecast ${forecasts.size} ခုရဲ့ target ${totals.targets} ခုကို စစ်ထားပါတယ်။ ပျမ်းမျှ ${(totals.error/totals.targets).toFixed(3)} steps လွဲပါတယ်။ မပြောင်းဘူးလို့ယူဆတဲ့ နည်းက ${(totals.persistence/totals.targets).toFixed(3)} steps လွဲပါတယ်။ `+(totals.error<totals.persistence?'ဒီ sample မှာ Kronos ရဲ့ ပျမ်းမျှလွဲချက် ပိုနည်းပါတယ်။':totals.error>totals.persistence?'ဒီ sample မှာ ရိုးရိုးမပြောင်းဘူးလို့ယူဆတဲ့နည်းထက် Kronos ပိုလွဲပါတယ်။':'ဒီ sample မှာ ပျမ်းမျှလွဲချက် တူနေပါတယ်။')+' ဒါက အနိုင်ရာခိုင်နှုန်း မဟုတ်ပါ။':`${tf}m · ဒီကာလအတွက် publish လုပ်ပြီးသော report ထဲမှာ စစ်ပြီး target မရှိသေးပါ။ အပေါ်က ရလဒ်သည် လတ်တလော round data နဲ့ တွက်ထားလို့ ပိုသစ်နိုင်ပါတယ်။`;
  for(const horizon of [1,3,6,12]){
   const selected=entries.flatMap(x=>x.horizons||[]).filter(x=>x.horizon===horizon);
   const aggregate={targets:0,error:0,persistence:0,random:0,majority:0};
@@ -65,6 +66,7 @@ function renderReport(tf){
   $('baselineVerdict').textContent=(early?'Data မလုံလောက်သေးပါ။ Early sample: ':'Descriptive comparison only: ')+`${forecasts.size} forecasts across ${measuredDays} Bangkok days. Baseline MAE minus model MAE: ${gaps}. Positive = model lower error; negative = baseline lower error. `+(early?'At least 30 forecasts and 3 days are required to leave the early-sample label; this is a display rule, not statistical proof. ':'Overlapping targets remain correlated; these differences do not establish predictive value.');
  }
  const age=Math.max(0,Math.floor((Date.now()-Date.parse(report.updated_at_utc))/60000));
+ if(age>15)$('reportSimple').textContent+=' Report update နောက်ကျနေပါတယ်။ နောက်ဆုံးအောင်မြင်ခဲ့သော စာရင်းကိုသာ ပြထားပါတယ်။';
  $('reportUpdated').textContent='Bangkok calendar · last measured '+report.updated_at_utc+' · '+age+' min ago · five-minute publication schedule, may be delayed · overlapping targets are correlated.'+(age>15?' Report delayed; this is the last successful measurement.':'');
 }
 async function loadReport(base,tf){
