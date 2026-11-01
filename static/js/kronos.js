@@ -54,9 +54,10 @@ function initChart(){
 }
 function render(){
  if(!candle)return;
+ KronosExplain.reset(tf);
  inspectData=null;
  $("inspector").textContent="Forecast ကို mouse နဲ့ထောက်ပါ၊ ဖုန်းမှာ ထိကြည့်ပါ။";
- for(const id of ["scoredTargets","pendingTargets","forecastAge"])$(id).textContent="—";
+ for(const id of ["scoredTargets","pendingTargets","forecastAge","nextForecast"])$(id).textContent="—";
  KronosDashboard.renderReport(tf);
  $("replay").disabled=true;
  const bars=makeBars();candle.setData(bars);projected.setData([]);$("horizon").textContent="—";$("forecastStatus").textContent="Not loaded";$("snapshotInfo").textContent="No snapshot imported";$("comparison").textContent="No validated forecast loaded. Research snapshots can be compared only after their target rounds have occurred.";chart.timeScale().setVisibleLogicalRange({from:Math.max(0,bars.length-120),to:bars.length+16});
@@ -122,7 +123,7 @@ async function importSnapshot(file,dry=false){
   const majority=Math.sign(training.reduce((sum,r)=>sum+(r.number>=5?1:-1),0));
   const contiguous=[];let expectedMinute=rounds[origin].minute+1;
   for(const row of rounds.slice(origin+1)){if(row.minute!==expectedMinute)break;contiguous.push(row);expectedMinute++;}
-  const scorable=new Set();
+  const scorable=new Set(),explanations=[];
   for(let i=0;i<delta.length;i++){
    const bucket=originBucket+i+1;
    const actual=bars.find(b=>b.bucket===bucket);
@@ -131,18 +132,21 @@ async function importSnapshot(file,dry=false){
    // API local calendar is Asia/Yangon (UTC+06:30). Exclude bars already
    // started before publication and the currently incomplete source bar.
    const startUtc=(bucket*tf-390)*60000;
-   if(startUtc<=generation){excluded++;continue;}
+   const explanation={horizon:i+1,startMs:startUtc,endMs:startUtc+tf*60000,prediction:delta[i],actual:null,status:'pending'};
+   explanations.push(explanation);
+   if(startUtc<=generation){explanation.status='excluded';excluded++;continue;}
    const targetRows=contiguous.filter(r=>r.minute<(bucket+1)*tf);
    if(actual&&bucket<bars[bars.length-1].bucket&&targetRows.length&&targetRows[targetRows.length-1].minute===(bucket+1)*tf-1){
     scorable.add(time);
     evaluated++;error+=Math.abs(originAnchor+delta[i]-actual.close);
     const observedDelta=actual.close-originAnchor;
+    explanation.status='completed';explanation.actual=observedDelta;
     persistence+=Math.abs(observedDelta);
     const n=rounds.slice(origin+1).filter(r=>Math.floor(r.minute/tf)<=bucket).length;
     randomError+=KronosResearch.randomAbsoluteError(n,observedDelta);
     majorityError+=Math.abs(majority*n-observedDelta);
     if(delta[i]!==0&&observedDelta!==0){directions++;correctDirections+=Math.sign(delta[i])===Math.sign(observedDelta)?1:0;}
-   }
+   }else if(bucket<bars[bars.length-1].bucket){explanation.status='unavailable';}
   }
   if(dry)return {evaluated,error,persistence,randomError,majorityError,excluded,horizon:values.length};
   projected.setData(forecastVisible?points:[]);
@@ -156,11 +160,12 @@ async function importSnapshot(file,dry=false){
   const historical=origin!==rounds.length-1;
   $("horizon").textContent=values.length+" bars";
   $("forecastStatus").textContent=!Number.isFinite(sourceAgeMinutes)||sourceAgeMinutes>5||sourceAgeMinutes< -1?"Feed stale / unknown":bars[bars.length-1].bucket>originBucket+values.length?"Historical · horizon ended":ageMinutes>tf*values.length?"Stale · not latest":historical?"Active · older origin":"Current · research";
+  KronosExplain.render({tf,generated:snap.generated_at_utc,status:$("forecastStatus").textContent,rows:explanations,replay:replayMode});
   $("snapshotInfo").textContent=snap.model+"@"+(snap.model_revision||"unknown").slice(0,8)+" · origin "+snap.origin_issue+" · generated "+new Date(generation).toISOString()+" · "+Math.round(ageMinutes)+" min ago · "+tf+"m";
   $("comparison").textContent=evaluated?"Evaluated bars: "+evaluated+" · close MAE: "+(error/evaluated).toFixed(3)+" steps · persistence MAE: "+(persistence/evaluated).toFixed(3)+" steps · expected random MAE: "+(randomError/evaluated).toFixed(3)+" · past-majority MAE: "+(majorityError/evaluated).toFixed(3)+" · origin-to-target direction: "+(directions?correctDirections+"/"+directions:"no non-tied samples")+" · excluded already-started bars: "+excluded+". Continuous projection; no round win-rate claim.":"Pending: no fully completed, post-publication target bars available. Excluded already-started bars: "+excluded+". No measured accuracy yet.";
 
   if(replayMode)$("comparison").textContent="Replay: only rounds known at the original forecast origin are visible. Select Show actual for the subsequent comparison.";
- }catch(err){if(dry)throw err;inspectData=null;$("inspector").textContent="No valid forecast loaded.";activeSnapshot=null;$("replay").disabled=true;projected?.setData([]);$("forecastStatus").textContent="Rejected";$("snapshotInfo").textContent=err.message;$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
+ }catch(err){if(dry)throw err;KronosExplain.reset(tf,'ဒီ forecast ကို စစ်မရသေးပါ။ မူလ round data သို့မဟုတ် forecast ဖိုင် မကိုက်ညီပါ။');inspectData=null;$("inspector").textContent="No valid forecast loaded.";activeSnapshot=null;$("replay").disabled=true;projected?.setData([]);$("forecastStatus").textContent="Rejected";$("snapshotInfo").textContent=err.message;$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
 }
 document.querySelectorAll("[data-tf]").forEach(button=>button.addEventListener("click",()=>{firstPublication=false;tf=Number(button.dataset.tf);document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",x===button));render();autoSnapshot();}));
 async function refresh(){
@@ -219,7 +224,7 @@ async function autoSnapshot(){
   KronosDashboard.loadReport(PUBLICATION,tf);
   KronosDashboard.loadBacktest(PUBLICATION,tf);
   try{const status=await fetch(KronosDashboard.publicationURL(PUBLICATION,"status-"+tf+"m.json"),{cache:"no-store"});if(status.ok){const info=await status.json();if(info.status==="failed")$("snapshotInfo").textContent+=" · Last inference failed: "+info.reason;}}catch(_err){/* last successful snapshot remains available */}
- }catch(err){$("forecastStatus").textContent="Unavailable";$("snapshotInfo").textContent=err.message;$("archiveMetrics").textContent="No validated archive available.";}
+ }catch(err){KronosExplain.reset(tf,'ဒီ timeframe အတွက် forecast မရသေးပါ။ ရလဒ်ကို မဆုံးဖြတ်နိုင်သေးပါ။');$("forecastStatus").textContent="Unavailable";$("snapshotInfo").textContent=err.message;$("archiveMetrics").textContent="No validated archive available.";}
 }
 
 $("reportWindow").addEventListener("change",()=>KronosDashboard.renderReport(tf));

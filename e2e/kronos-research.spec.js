@@ -2,15 +2,16 @@ const {test,expect}=require('@playwright/test');
 const fs=require('fs');
 const path=require('path');
 // Synthetic fixtures test UI behavior only; never published as model output.
-async function openKronos(page,missing=false,badBacktest=false,bothTimeframes=false){
+async function openKronos(page,missing=false,badBacktest=false,bothTimeframes=false,variant="history"){
  const start=Math.floor(Date.now()/60000)*60000-200*60000;
  const history=Array.from({length:200},(_,i)=>[String(100000+i),i%10,new Date(start+i*60000+390*60000).toISOString().slice(0,19)]);
- const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:history[180][0],forecast_close:[900,901],forecast_delta:[1,2],generated_at_utc:new Date(start+180*60000+1000).toISOString()};
+ const origin=variant==="pending"?199:180;
+ const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:history[origin][0],forecast_close:[900,901],forecast_delta:variant==="exact"?[-1,-2]:[1,2],generated_at_utc:new Date(start+(variant==="excluded"?190:origin)*60000+1000).toISOString()};
  await page.route('**/api/history?*',route=>route.fulfill({json:{history,last_time_utc:new Date(start+199*60000).toISOString()}}));
  await page.route('https://raw.githubusercontent.com/**',route=>{
   const url=new URL(route.request().url()).pathname;
   const day={day_local:new Date(Date.now()+420*60000).toISOString().slice(0,10),timeframe:1,model:'Kronos-mini',targets:2,forecasts:['forecasts/test.json'],error:3,persistence:4,random:5,majority:6,horizons:[{horizon:1,targets:1,error:1,persistence:2,random:3,majority:4}]};
-  if(url.endsWith('reports.json'))return route.fulfill({json:{schema:'kronos-daily-reports-v1',calendar:'Asia/Bangkok',updated_at_utc:new Date().toISOString(),days:bothTimeframes?[day,{...day,timeframe:5,error:10,horizons:[{horizon:1,targets:1,error:5,persistence:6,random:7,majority:8}]}]:[day]}});
+  if(url.endsWith('reports.json'))return route.fulfill({json:{schema:'kronos-daily-reports-v1',calendar:'Asia/Bangkok',updated_at_utc:new Date().toISOString(),days:variant==="pending"||variant==="excluded"?[]:bothTimeframes?[day,{...day,timeframe:5,error:10,horizons:[{horizon:1,targets:1,error:5,persistence:6,random:7,majority:8}]}]:[day]}});
   if(url.endsWith('backtest-1m.json')||(bothTimeframes&&url.endsWith('backtest.json'))){
    const tf=url.endsWith('backtest-1m.json')?1:5;
    return route.fulfill({json:{schema:'kronos-walk-forward-v1',retrospective_only:!badBacktest,timeframe:tf,model:'Kronos-mini',lookback_bars:256,generated_at_utc:new Date().toISOString(),origins:[{input_end_utc:new Date(start).toISOString(),last_target_end_utc:new Date(start+12*60000).toISOString()}],horizons:[1,3,6,12].map(horizon=>({horizon,targets:1,error:tf,persistence:2,random:3,majority:4}))}});
@@ -30,6 +31,11 @@ test('Kronos loads historical comparisons and working forecast controls',async({
  await expect(page.locator('#comparison')).toContainText('Evaluated bars: 2');
  await expect(page.locator('#archiveMetrics')).toContainText('evaluated target bars 2');
  await expect(page.locator('#scoredTargets')).toHaveText('2');
+ await expect(page.locator('#easyTitle')).toContainText('1m');
+ await expect(page.locator('#easyActual')).toContainText('↓ ကျ 2');
+ await expect(page.locator('#easyVerdict')).toContainText('ဦးတည်ချက် မကိုက်');
+ await page.locator('.easy-list summary').click();
+ await expect(page.locator('#easyRows li')).toHaveCount(2);
  await expect(page.locator('#dailySummary')).toContainText('2 scored targets');
  await expect(page.locator('#horizonRows tr')).toHaveCount(4);
  await expect(page.locator('#horizonRows tr').first()).toContainText('1.000');
@@ -46,6 +52,8 @@ test('Kronos loads historical comparisons and working forecast controls',async({
  await expect(page.locator('#inspector')).toBeInViewport();
  await page.locator('#replay').click();
  await expect(page.locator('#comparison')).toContainText('Replay: only rounds');
+ await expect(page.locator('#easyActual')).toContainText('ဖုံးထား');
+ await expect(page.locator('#easyRows')).not.toContainText('↓ ကျ 2');
  await page.locator('#replay').click();
  await expect(page.locator('#comparison')).toContainText('expected random MAE');
  await page.locator('#forecastToggle').click();
@@ -66,6 +74,8 @@ test('Kronos missing publication shows an honest unavailable state',async({page}
  await expect(page.locator('#count')).toHaveText('200');
  await expect(page.locator('#forecastStatus')).toHaveText('Unavailable');
  await expect(page.locator('#snapshotInfo')).toContainText('No published forecast manifest');
+ await expect(page.locator('#easyState')).toContainText('forecast မရသေး');
+ await expect(page.locator('#easyRows li')).toHaveCount(0);
 });
 
 test('Kronos rejects backtest data without explicit retrospective provenance',async({page})=>{
@@ -89,4 +99,21 @@ test('Kronos keeps 1m and 5m model results and reports separate',async({page})=>
  await expect(page.locator('#snapshotInfo')).toContainText('1m');
  await expect(page.locator('#dailySummary')).toContainText('model MAE 1.500');
  await expect(page.locator('#backtestRows tr').first()).toContainText('1.000');
+});
+
+for(const variant of ['pending','excluded','exact'])test('Kronos explains '+variant+' results without invented wins',async({page})=>{
+ await openKronos(page,false,false,false,variant);
+ await expect(page.locator('#easyTitle')).toContainText('1m');
+ if(variant==='pending'){
+  await expect(page.locator('#easyActual')).toContainText('စောင့်နေဆဲ');
+  await expect(page.locator('#easyVerdict')).toContainText('မစစ်ရသေး');
+  await expect(page.locator('#easyCount')).toContainText('စစ်ပြီး 0 ခု');
+ }else if(variant==='excluded'){
+  await expect(page.locator('#easyActual')).toContainText('ရလဒ်ထဲ မထည့်');
+  await expect(page.locator('#easyCount')).toContainText('မပါဝင် 2 ခု');
+ }else{
+  await expect(page.locator('#easyVerdict')).toContainText('အတိအကျကိုက်');
+  await expect(page.locator('#easyVerdict')).toContainText('0 steps');
+ }
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
 });
