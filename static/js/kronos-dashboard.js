@@ -1,7 +1,23 @@
 (function(root){
 'use strict';
-let report=null,currentTf=1,requestId=0;
+let report=null,backtest=null,currentTf=1,requestId=0;
 const $=id=>document.getElementById(id);
+const metricKeys=['error','persistence','random','majority'];
+function appendMetrics(body,label,targets,metrics){
+ const row=document.createElement('tr');
+ for(const value of [label,targets,...metricKeys.map(k=>targets?(metrics[k]/targets).toFixed(3):'—')]){
+  const cell=document.createElement('td');cell.textContent=String(value);row.append(cell);
+ }
+ body.append(row);
+}
+function renderBacktest(tf){
+ $('backtestRows').replaceChildren();$('backtestDetails').textContent='';
+ if(!backtest||backtest.timeframe!==tf){$('backtestSummary').textContent='No retrospective backtest available for this timeframe. Scheduled research currently covers 5m.';return;}
+ for(const entry of backtest.horizons)appendMetrics($('backtestRows'),entry.horizon,entry.targets,entry);
+ const origins=backtest.origins;
+ $('backtestSummary').textContent=`${origins.length} historical origins · ${backtest.lookback_bars} input bars each · retrospective only · sample too small to establish predictive value.`;
+ $('backtestDetails').textContent='Computed '+backtest.generated_at_utc+' · bounded to 8 origins per run · non-overlapping target windows. '+(origins.length?'Input cutoffs '+origins[0].input_end_utc+' to '+origins[origins.length-1].input_end_utc+'.':'Not enough complete source history yet.');
+}
 function summary(evaluated,pending,generated){
  $('scoredTargets').textContent=String(evaluated);
  $('pendingTargets').textContent=String(pending);
@@ -11,10 +27,13 @@ function summary(evaluated,pending,generated){
 }
 function renderReport(tf){
  currentTf=tf;
+ renderBacktest(tf);
  const days=Number($('reportWindow').value)||7;
  const today=new Date(Date.now()+420*60000).toISOString().slice(0,10);
  const cutoff=new Date(Date.now()+420*60000-(days-1)*86400000).toISOString().slice(0,10);
  $('dailyRows').replaceChildren();
+ $('horizonRows').replaceChildren();$('baselineVerdict').textContent='Measured horizon comparisons unavailable.';
+ $('reportUpdated').textContent='';
  if(!report){$('dailySummary').textContent='Performance report unavailable; waiting for the next successful publication.';return;}
  const entries=report.days.filter(x=>x.timeframe===tf&&x.day_local>=cutoff&&x.day_local<=today);
  const totals={targets:0,error:0,persistence:0,random:0,majority:0};const forecasts=new Set();
@@ -28,6 +47,18 @@ function renderReport(tf){
   $('dailyRows').append(row);
  }
  $('dailySummary').textContent=totals.targets?`${forecasts.size} forecasts · ${totals.targets} scored targets · model MAE ${(totals.error/totals.targets).toFixed(3)} · persistence ${(totals.persistence/totals.targets).toFixed(3)} · expected random ${(totals.random/totals.targets).toFixed(3)} · past-majority ${(totals.majority/totals.targets).toFixed(3)}.`:'No completed targets in this window yet.';
+ for(const horizon of [1,3,6,12]){
+  const selected=entries.flatMap(x=>x.horizons||[]).filter(x=>x.horizon===horizon);
+  const aggregate={targets:0,error:0,persistence:0,random:0,majority:0};
+  for(const point of selected)for(const key of Object.keys(aggregate))aggregate[key]+=point[key];
+  appendMetrics($('horizonRows'),horizon,aggregate.targets,aggregate);
+ }
+ if(totals.targets){
+  const measuredDays=new Set(entries.map(x=>x.day_local)).size;
+  const gaps=['persistence','random','majority'].map(k=>`${k} ${((totals[k]-totals.error)/totals.targets).toFixed(3)}`).join(' · ');
+  const early=forecasts.size<30||measuredDays<3;
+  $('baselineVerdict').textContent=(early?'Data မလုံလောက်သေးပါ။ Early sample: ':'Descriptive comparison only: ')+`${forecasts.size} forecasts across ${measuredDays} Bangkok days. Baseline MAE minus model MAE: ${gaps}. Positive = model lower error; negative = baseline lower error. `+(early?'At least 30 forecasts and 3 days are required to leave the early-sample label; this is a display rule, not statistical proof. ':'Overlapping targets remain correlated; these differences do not establish predictive value.');
+ }
  $('reportUpdated').textContent='Bangkok calendar · last measured '+report.updated_at_utc+' · hourly updates · overlapping targets are correlated.';
 }
 async function loadReport(base,tf){
@@ -39,11 +70,23 @@ async function loadReport(base,tf){
   if(data.calendar!=='Asia/Bangkok'||data.schema!=='kronos-daily-reports-v1'||!Array.isArray(data.days)||!Number.isFinite(Date.parse(data.updated_at_utc)))throw Error('Invalid report');
   for(const day of data.days){
    if(!/^\d{4}-\d{2}-\d{2}$/.test(day.day_local)||!Array.isArray(day.forecasts)||!Number.isInteger(day.targets)||day.targets<=0||!['error','persistence','random','majority'].every(k=>Number.isFinite(day[k])&&day[k]>=0))throw Error('Invalid daily metrics');
+   if(day.horizons!==undefined&&(!Array.isArray(day.horizons)||!day.horizons.every(x=>[1,3,6,12].includes(x.horizon)&&Number.isInteger(x.targets)&&x.targets>0&&metricKeys.every(k=>Number.isFinite(x[k])&&x[k]>=0))))throw Error('Invalid horizon metrics');
   }
   if(id!==requestId)return;
   report=data;
  }catch(_error){if(id!==requestId)return;report=null;}
  renderReport(currentTf);
 }
-root.KronosDashboard={summary,loadReport,renderReport};
+async function loadBacktest(base){
+ try{
+  const response=await fetch(base+'backtest.json',{cache:'no-store'});
+  if(!response.ok)throw Error('Unavailable');
+  const data=await response.json();
+  if(data.schema!=='kronos-walk-forward-v1'||data.retrospective_only!==true||!Number.isFinite(Date.parse(data.generated_at_utc))||!Array.isArray(data.origins)||data.origins.length>8||!Array.isArray(data.horizons)||data.horizons.length!==4||!data.horizons.every((x,i)=>x.horizon===[1,3,6,12][i]&&x.targets===data.origins.length&&metricKeys.every(k=>Number.isFinite(x[k])&&x[k]>=0)))throw Error('Invalid backtest');
+  if(!data.origins.every(x=>Number.isFinite(Date.parse(x.input_end_utc))&&Number.isFinite(Date.parse(x.last_target_end_utc))))throw Error('Invalid cutoffs');
+  backtest=data;
+ }catch(_error){backtest=null;}
+ renderBacktest(currentTf);
+}
+root.KronosDashboard={summary,loadReport,loadBacktest,renderReport};
 })(window);

@@ -1,4 +1,4 @@
-"""Causal, append-only target evaluations; public summaries retain 30 UTC days.
+"""Causal, append-only target evaluations; retain 30 Bangkok calendar days.
 
 No Flask imports or database writes. Original forecast files are never edited.
 """
@@ -32,7 +32,7 @@ def random_error(n, actual):
     return error / total
 
 
-def evaluate(snapshot, rows, file, now):
+def evaluate(snapshot, rows, file, now, *, retrospective_as_of=None):
     """Only fully observed, contiguous, post-generation target buckets qualify."""
     if snapshot.get('schema') != 'kronos-round-snapshot-v1' or snapshot.get('data_source') != 'big-small-walk' or snapshot.get('source') != 'official-kronos-inference-cpu':
         raise ValueError('Unsupported forecast provenance')
@@ -52,6 +52,12 @@ def evaluate(snapshot, rows, file, now):
         raise ValueError('Origin timestamp mismatch')
     if origin_time > generation:
         raise ValueError('Input origin is after publication')
+    # Only the isolated historical backtest supplies a simulated cutoff. Its
+    # results never enter the ledger of genuinely pre-published forecasts.
+    if retrospective_as_of is not None:
+        if not origin_time <= retrospective_as_of <= generation:
+            raise ValueError('Invalid retrospective cutoff')
+        generation = retrospective_as_of
     lookback = snapshot['lookback_bars'] * tf
     training = rows[max(0,origin-lookback+1):origin+1]
     majority = sum(1 if int(r[1])>=5 else -1 for r in training)
@@ -87,6 +93,7 @@ def evaluate(snapshot, rows, file, now):
         actual=observed[-1][1]
         n=len(observed)
         output.append({'id':f'{file}:{index}','forecast':file,'timeframe':tf,
+                       'horizon':index+1,
                        'target_end_utc':end.isoformat(),'model':snapshot['model'],
                        'error':abs(prediction-actual),'persistence':abs(actual),
                        'random':random_error(n,actual),'majority':abs(majority*n-actual)})
@@ -129,7 +136,15 @@ def build(root, manifest, raw_rows, previous, now=None):
         daily[(utc(point['target_end_utc']).astimezone(REPORT_TZ).date().isoformat(),point['timeframe'],point['model'])].append(point)
     days=[]
     for (day,tf,model), group in sorted(daily.items()):
+        horizons=[]
+        for horizon in (1,3,6,12):
+            selected=[p for p in group if int(p['id'].rsplit(':',1)[1])+1 == horizon]
+            if selected:
+                horizons.append({'horizon':horizon,'targets':len(selected),
+                                 'forecasts':sorted(set(p['forecast'] for p in selected)),
+                                 **{key:sum(p[key] for p in selected) for key in ('error','persistence','random','majority')}})
         days.append({'day_local':day,'timeframe':tf,'model':model,'targets':len(group),
+                     'horizons':horizons,
                      'forecasts':sorted(set(p['forecast'] for p in group)),
                      **{key:sum(p[key] for p in group) for key in ('error','persistence','random','majority')}})
     return {'schema':'kronos-evaluation-ledger-v1','points':retained}, {

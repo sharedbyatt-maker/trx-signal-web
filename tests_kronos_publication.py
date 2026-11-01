@@ -34,7 +34,7 @@ class Publication(unittest.TestCase):
             self.assertEqual(json.loads(git(root,'--git-dir='+str(remote),'show','kronos-forecasts:status.json'))['status'],'failed')
     def test_startup_retry_is_bounded_and_recovers(self):
         workflow=WORKFLOW.read_text()
-        block=workflow.split('      - name: Run genuine inference with feed freshness guard',1)[1].split('      - name: Publish results',1)[0]
+        block=workflow.split('      - name: Run genuine inference with feed freshness guard',1)[1].split('      - name:',1)[0]
         script=textwrap.dedent(block.split('        run: |',1)[1])
         prefix='n=0; python(){ n=$((n+1)); [ "$n" -ge 2 ]; }; sleep(){ :; };\n'
         subprocess.run(['bash','-e','-c',prefix+script],check=True,capture_output=True)

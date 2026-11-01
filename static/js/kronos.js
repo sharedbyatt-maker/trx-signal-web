@@ -214,6 +214,7 @@ async function autoSnapshot(){
   await importSnapshot({size:0,text:()=>res.text()});
   archiveMetrics(entries);
   KronosDashboard.loadReport(PUBLICATION,tf);
+  KronosDashboard.loadBacktest(PUBLICATION);
   try{const status=await fetch(PUBLICATION+"status.json",{cache:"no-store"});if(status.ok){const info=await status.json();if(info.status==="failed")$("snapshotInfo").textContent+=" · Last inference failed: "+info.reason;}}catch(_err){/* last successful snapshot remains available */}
  }catch(err){$("forecastStatus").textContent="Unavailable";$("snapshotInfo").textContent=err.message;$("archiveMetrics").textContent="No validated archive available.";}
 }

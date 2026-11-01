@@ -136,3 +136,14 @@ not the larger ledger; UI windows show today, 7 and 30 Bangkok calendar days.
 Reports update on the hourly job, while the selected live comparison can advance
 more frequently. Targets from overlapping forecasts remain correlated. Git history
 continues to preserve prior versions; active retention is not a Git-history cap.
+
+
+## Horizon reports and bounded historical walk-forward research
+
+The retained pre-published evaluation ledger now reports next 1/3/6/12 candles separately. Old ledger points retain their measured values; horizon groups are derived from the immutable forecast target index. Window comparisons show baseline MAE minus model MAE in walk steps. Positive differences mean lower observed model error. The early-sample label remains until 30 distinct forecasts and 3 Bangkok calendar days are available; this is a display rule, not a statistical significance threshold. Overlapping targets are correlated at every sample size.
+
+`research/kronos/backtest.py` freezes one history response, selects at most eight historical origins with non-overlapping 12-bar target windows, and gives the pinned genuine Kronos-mini model only 256 complete, contiguous OHLC bars ending at each cutoff. It uses the same predictor settings and preprocessing as live research, loading weights once per run. Source and target minute gaps exclude the origin. Metrics use the same persistence, exact expected random-walk absolute error, and pre-origin majority baselines. No model parameters or settings are selected from the results.
+
+`backtest.json` is explicitly retrospective: predictions are computed now from historical prefixes, not published before those historical outcomes. It never enters the live forecast manifest or evaluation ledger. Each result records input cutoffs, final target times, model revision, and computation time. The latest bounded sample replaces the previous retrospective summary; it is never pooled with live forecasts or previous runs. Zero complete origins is shown honestly as insufficient source history. Failed backtest runs preserve the prior successful file, whose computation time remains visible, and fail the workflow. No production application import, DB mutation, or order API is involved.
+
+Hourly publication runs the bounded backtest outside Render after genuine current inference. Publication stages the optional `backtest.json` alongside existing snapshots and reports without changing their original bytes. The backtest is currently 5m only. UI tables show sample counts and errors, not next-round win rates or promised predictive accuracy.
