@@ -37,7 +37,14 @@ jobs:
           python tests_kronos_round_adapter.py
           python tests_kronos_automation.py
           python tests_kronos_reports.py
+          python tests_kronos_markup.py
           node tests_kronos_ui.js
+      - name: Verify Kronos desktop and mobile controls before inference
+        run: |
+          pip install -r requirements.txt
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test e2e/kronos-research.spec.js
       - uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
