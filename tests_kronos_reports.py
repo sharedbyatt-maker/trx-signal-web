@@ -43,6 +43,14 @@ class Reports(unittest.TestCase):
             self.assertEqual(file.read_text(),original)
             old,_=reports.build(root,manifest,[],ledger,self.now+timedelta(days=31))
             self.assertEqual(old['points'],[])
+    def test_legacy_ledger_horizons_are_derived_without_rewriting_points(self):
+        with tempfile.TemporaryDirectory() as directory:
+            points=reports.evaluate(self.snapshot,self.rows,'forecasts/a.json',self.now)
+            for point in points:point.pop('horizon')
+            ledger,summary=reports.build(Path(directory),{'forecasts':[]},[],{'points':points},self.now)
+            self.assertEqual(ledger['points'],points)
+            self.assertEqual(summary['days'][0]['horizons'][0]['horizon'],1)
+            self.assertEqual(summary['days'][0]['horizons'][0]['error'],2)
     def test_origin_after_generation_is_rejected(self):
         self.snapshot['generated_at_utc']=self.start.isoformat()
         with self.assertRaises(ValueError):reports.evaluate(self.snapshot,self.rows,'a',self.now)

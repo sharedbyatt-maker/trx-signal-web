@@ -78,37 +78,52 @@ def walk_bars(rows, tf):
     return bars, ordered[-1][0]
 
 
-def generate(args):
+def load_predictor(args):
     # Heavy dependencies imported only for real inference, not validation.
     import numpy as np
     import pandas as pd
     import torch
-    torch.manual_seed(0)
-    np.random.seed(0)
     if args.kronos_dir:
         sys.path.insert(0, str(Path(args.kronos_dir).resolve()))
     from model import Kronos, KronosTokenizer, KronosPredictor
 
-    started = time.monotonic()
-    raw = json.loads(Path(args.history_file).read_text())["history"] if args.history_file else get_history(args.history_url)
-    bars, origin_issue = walk_bars(raw, args.timeframe)
     model_slug = "Kronos-mini" if args.model == "mini" else "Kronos-small"
     tokenizer_slug = "Kronos-Tokenizer-2k" if args.model == "mini" else "Kronos-Tokenizer-base"
     print(f"Loading genuine {model_slug} and tokenizer on CPU; first use downloads model weights.")
     tokenizer = KronosTokenizer.from_pretrained("NeoQuasar/" + tokenizer_slug, revision=args.tokenizer_revision)
     model = Kronos.from_pretrained("NeoQuasar/" + model_slug, revision=args.model_revision)
     predictor = KronosPredictor(model, tokenizer, device="cpu", max_context=512 if args.model == "small" else 2048)
-    lookback = min(args.lookback, len(bars))
+    return predictor
+
+
+def predict_bars(predictor, bars, timeframe, horizon=12, lookback=256):
+    import numpy as np
+    import pandas as pd
+    import torch
+    torch.manual_seed(0)
+    np.random.seed(0)
+    lookback = min(lookback, len(bars))
     selected = bars[-lookback:]
     df = pd.DataFrame([{k: b[k] for k in ("open", "high", "low", "close")} for b in selected])
     x_timestamp = pd.Series(pd.to_datetime([b["time"] for b in selected]))
-    y_timestamp = pd.Series(pd.to_datetime([bars[-1]["time"] + timedelta(minutes=args.timeframe * i) for i in range(1, args.horizon + 1)]))
+    y_timestamp = pd.Series(pd.to_datetime([bars[-1]["time"] + timedelta(minutes=timeframe * i) for i in range(1, horizon + 1)]))
     prediction = predictor.predict(df=df, x_timestamp=x_timestamp, y_timestamp=y_timestamp,
-                                   pred_len=args.horizon, T=1.0, top_p=0.9, sample_count=1,
+                                   pred_len=horizon, T=1.0, top_p=0.9, sample_count=1,
                                    verbose=False)
     closes = [float(v) for v in prediction["close"].tolist()]
-    if len(closes) != args.horizon or not all(math.isfinite(v) for v in closes):
+    if len(closes) != horizon or not all(math.isfinite(v) for v in closes):
         raise ValueError("Kronos produced invalid close values")
+    return closes, lookback
+
+
+def generate(args):
+    import torch
+    started = time.monotonic()
+    raw = json.loads(Path(args.history_file).read_text())["history"] if args.history_file else get_history(args.history_url)
+    bars, origin_issue = walk_bars(raw, args.timeframe)
+    predictor = load_predictor(args)
+    closes, lookback = predict_bars(predictor, bars, args.timeframe, args.horizon, args.lookback)
+    model_slug = "Kronos-mini" if args.model == "mini" else "Kronos-small"
     # Preserve the input anchor: viewer windows move, so absolute levels cannot be reused.
     origin_time = bars[-1]["time"].isoformat()
     input_hash = hashlib.sha256(json.dumps(raw, separators=(",", ":")).encode()).hexdigest()

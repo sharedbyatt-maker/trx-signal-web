@@ -2,7 +2,7 @@ name: Kronos isolated research inference
 on:
   workflow_dispatch:
   pull_request:
-    paths: ["research/kronos/**", "static/js/kronos.js", "templates/kronos.html", "tests_kronos*", ".github/workflows/kronos-inference.yml"]
+    paths: ["research/kronos/**", "static/js/kronos*.js", "templates/kronos.html", "tests_kronos*", ".github/workflows/kronos-inference.yml"]
   push:
     branches: [main]
     paths: ["research/kronos/**", ".github/workflows/kronos-inference.yml"]
@@ -39,6 +39,7 @@ jobs:
           python tests_kronos_reports.py
           python tests_kronos_markup.py
           python tests_kronos_publication.py
+          python tests_kronos_backtest.py
           node tests_kronos_ui.js
       - name: Verify Kronos desktop and mobile controls before inference
         if: github.event_name == 'pull_request'
@@ -80,6 +81,10 @@ jobs:
             if [ "$attempt" -lt 4 ]; then sleep 15; fi
           done
           exit 1
+      - name: Run bounded retrospective walk-forward evaluation
+        if: steps.model.outcome == 'success'
+        timeout-minutes: 10
+        run: python research/kronos/backtest.py --kronos-dir /tmp/Kronos --history-url 'https://trx-signal-web.onrender.com/api/history?days=30' --output /tmp/published/backtest.json
       - name: Publish results or failure status without deploying main
         if: always() && github.event_name != 'pull_request' && steps.model.outcome != 'skipped'
         env:
@@ -96,7 +101,7 @@ jobs:
             git fetch origin kronos-forecasts
             git reset --mixed FETCH_HEAD
           fi
-          for path in index.json status.json forecasts reports.json evaluation_ledger.json; do
+          for path in index.json status.json forecasts reports.json evaluation_ledger.json backtest.json; do
             if [ -e "$path" ] || git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
               git add -A -- "$path"
             fi
