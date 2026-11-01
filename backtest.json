@@ -1,0 +1,94 @@
+{
+  "schema": "kronos-walk-forward-v1",
+  "retrospective_only": true,
+  "generated_at_utc": "2026-11-01T05:06:58.804769+00:00",
+  "timeframe": 5,
+  "model": "Kronos-mini",
+  "origins": [
+    {
+      "origin_issue": "20261031103011230",
+      "input_end_utc": "2026-10-31T20:29:54+00:00",
+      "simulated_issue_utc": "2026-10-31T20:29:55+00:00",
+      "last_target_end_utc": "2026-10-31T21:30:00+00:00"
+    },
+    {
+      "origin_issue": "20261031103011295",
+      "input_end_utc": "2026-10-31T21:34:54+00:00",
+      "simulated_issue_utc": "2026-10-31T21:34:55+00:00",
+      "last_target_end_utc": "2026-10-31T22:35:00+00:00"
+    },
+    {
+      "origin_issue": "20261031103011360",
+      "input_end_utc": "2026-10-31T22:39:54+00:00",
+      "simulated_issue_utc": "2026-10-31T22:39:55+00:00",
+      "last_target_end_utc": "2026-10-31T23:40:00+00:00"
+    },
+    {
+      "origin_issue": "20261031103011425",
+      "input_end_utc": "2026-10-31T23:44:54+00:00",
+      "simulated_issue_utc": "2026-10-31T23:44:55+00:00",
+      "last_target_end_utc": "2026-11-01T00:45:00+00:00"
+    },
+    {
+      "origin_issue": "20261101103010050",
+      "input_end_utc": "2026-11-01T00:49:54+00:00",
+      "simulated_issue_utc": "2026-11-01T00:49:55+00:00",
+      "last_target_end_utc": "2026-11-01T01:50:00+00:00"
+    },
+    {
+      "origin_issue": "20261101103010115",
+      "input_end_utc": "2026-11-01T01:54:54+00:00",
+      "simulated_issue_utc": "2026-11-01T01:54:55+00:00",
+      "last_target_end_utc": "2026-11-01T02:55:00+00:00"
+    },
+    {
+      "origin_issue": "20261101103010180",
+      "input_end_utc": "2026-11-01T02:59:54+00:00",
+      "simulated_issue_utc": "2026-11-01T02:59:55+00:00",
+      "last_target_end_utc": "2026-11-01T04:00:00+00:00"
+    },
+    {
+      "origin_issue": "20261101103010245",
+      "input_end_utc": "2026-11-01T04:04:54+00:00",
+      "simulated_issue_utc": "2026-11-01T04:04:55+00:00",
+      "last_target_end_utc": "2026-11-01T05:05:00+00:00"
+    }
+  ],
+  "horizons": [
+    {
+      "horizon": 1,
+      "targets": 8,
+      "error": 20.7058,
+      "persistence": 12,
+      "random": 17.5,
+      "majority": 30
+    },
+    {
+      "horizon": 3,
+      "targets": 8,
+      "error": 16.3097,
+      "persistence": 22,
+      "random": 31.24633789062501,
+      "majority": 114
+    },
+    {
+      "horizon": 6,
+      "targets": 8,
+      "error": 29.450599999999998,
+      "persistence": 42,
+      "random": 52.84308990463614,
+      "majority": 222
+    },
+    {
+      "horizon": 12,
+      "targets": 8,
+      "error": 52.2224,
+      "persistence": 58,
+      "random": 71.49101008569066,
+      "majority": 466
+    }
+  ],
+  "lookback_bars": 256,
+  "model_revision": "f4e68697d9d5aed55cef5c96aabc3376bcad9f81",
+  "note": "Retrospective inference from frozen prefixes; not predictions published before outcomes. Non-overlapping target windows; small, dependent samples do not establish predictive value."
+}
