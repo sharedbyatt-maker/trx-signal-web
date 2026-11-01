@@ -130,7 +130,10 @@ def build(root, manifest, raw_rows, previous, now=None):
                     points.setdefault(point['id'],point)
         except (OSError,ValueError,KeyError,TypeError):
             unavailable+=1
-    retained=sorted(points.values(),key=lambda p:(p['target_end_utc'],p['id']))[-20000:]
+    by_tf=defaultdict(list)
+    for point in points.values():
+        by_tf[point['timeframe']].append(point)
+    retained=sorted((p for group in by_tf.values() for p in sorted(group,key=lambda p:(p['target_end_utc'],p['id']))[-20000:]),key=lambda p:(p['target_end_utc'],p['id']))
     daily=defaultdict(list)
     for point in retained:
         daily[(utc(point['target_end_utc']).astimezone(REPORT_TZ).date().isoformat(),point['timeframe'],point['model'])].append(point)

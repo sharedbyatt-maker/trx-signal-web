@@ -20,12 +20,12 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def run(args):
+def run(args, *, history_rows=None):
     root = Path(args.output)
     now = datetime.now(timezone.utc)
-    status = {'attempt_at_utc': now.isoformat(), 'status': 'failed'}
+    status = {'attempt_at_utc': now.isoformat(), 'status': 'failed', 'timeframe': args.timeframe}
     try:
-        rows = get_history(args.history_url)
+        rows = get_history(args.history_url) if history_rows is None else history_rows
         # Source timestamps are explicitly Asia/Yangon in the existing API.
         bars, origin_issue = walk_bars(rows, args.timeframe)
         latest = max(datetime.fromisoformat(str(r[2]).replace('Z', '+00:00')).replace(tzinfo=ZoneInfo('Asia/Yangon'))
@@ -63,8 +63,16 @@ def run(args):
         if target.exists():
             raise ValueError('Forecast identity already exists')
         write_json(target, snap)
-        manifest['forecasts'] = ([{'file': 'forecasts/' + name, 'timeframe': args.timeframe,
-                                  'origin_issue': snap['origin_issue'], 'generated_at_utc': snap['generated_at_utc']}] + manifest['forecasts'])[:720]
+        entries = [{'file': 'forecasts/' + name, 'timeframe': args.timeframe,
+                    'origin_issue': snap['origin_issue'], 'generated_at_utc': snap['generated_at_utc']}] + manifest['forecasts']
+        # Faster 1m publications must not evict the slower 5m archive.
+        counts = {}
+        manifest['forecasts'] = []
+        for entry in entries:
+            tf = entry['timeframe']
+            counts[tf] = counts.get(tf, 0) + 1
+            if counts[tf] <= 720:
+                manifest['forecasts'].append(entry)
         write_json(manifest_path, manifest)
         # Working-tree retention only. Git history preserves original forecast bytes.
         retained = {Path(item['file']).name for item in manifest['forecasts']}
@@ -79,6 +87,7 @@ def run(args):
         for name in ('input.json', 'candidate.json'):
             (root / name).unlink(missing_ok=True)
         write_json(root / 'status.json', status)
+        write_json(root / f'status-{args.timeframe}m.json', status)
 
 
 if __name__ == '__main__':

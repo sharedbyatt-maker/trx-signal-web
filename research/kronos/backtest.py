@@ -79,13 +79,14 @@ def main():
     parser.add_argument('--history-url',required=True)
     parser.add_argument('--kronos-dir',required=True)
     parser.add_argument('--output',required=True)
+    parser.add_argument('--timeframe',type=int,choices=[1,5],default=5)
     args=parser.parse_args()
     rows=get_history(args.history_url)  # one frozen feed read for all origins
     model_args=SimpleNamespace(kronos_dir=args.kronos_dir,model='mini',
         model_revision='f4e68697d9d5aed55cef5c96aabc3376bcad9f81',
         tokenizer_revision='26966d0035065a0cae0ebad7af8ece35bc1fb51c')
     predictor=load_predictor(model_args)
-    result=run(rows,lambda bars,tf:predict_bars(predictor,bars,tf,12,256)[0])
+    result=run(rows,lambda bars,tf:predict_bars(predictor,bars,tf,12,256)[0],timeframe=args.timeframe)
     from pipeline import write_json
     write_json(Path(args.output),result)
 

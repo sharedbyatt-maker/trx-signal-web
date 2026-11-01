@@ -4,7 +4,7 @@ const $ = id => document.getElementById(id);
 let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity, firstPublication=true, replayMode=false, lastSourceUtc=null;
 const PUBLICATION="https://raw.githubusercontent.com/sharedbyatt-maker/trx-signal-web/kronos-forecasts/";
 const MAX_ROUNDS=10000;
-let inspectData=null;
+let inspectData=null,refreshing=false;
 function inspectTarget(event){
  if(!event.time||!inspectData)return;
  const predicted=inspectData.predicted.get(event.time);
@@ -164,9 +164,12 @@ async function importSnapshot(file,dry=false){
 }
 document.querySelectorAll("[data-tf]").forEach(button=>button.addEventListener("click",()=>{firstPublication=false;tf=Number(button.dataset.tf);document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",x===button));render();autoSnapshot();}));
 async function refresh(){
+ if(refreshing)return;refreshing=true;
+ try{
  const view=chart?.timeScale().getVisibleLogicalRange?.();
  await load();await autoSnapshot();
  if(view)chart.timeScale().setVisibleLogicalRange(view);
+ }finally{refreshing=false;}
 }
 $("reload").addEventListener("click",refresh);
 $("replay").addEventListener("click",()=>{if(!activeSnapshot)return;replayMode=!replayMode;importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
@@ -192,7 +195,7 @@ async function archiveMetrics(entries){
 async function autoSnapshot(){
  activeSnapshot=null;
  try{
-  const response=await fetch(PUBLICATION+"index.json",{cache:"no-store"});
+  const response=await fetch(KronosDashboard.publicationURL(PUBLICATION,"index.json"),{cache:"no-store"});
   if(!response.ok)throw Error("No published forecast manifest (HTTP "+response.status+")");
   const manifest=await response.json();
   if(manifest.schema!=="kronos-index-v1"||!Array.isArray(manifest.forecasts))throw Error("Invalid manifest");
@@ -214,12 +217,12 @@ async function autoSnapshot(){
   await importSnapshot({size:0,text:()=>res.text()});
   archiveMetrics(entries);
   KronosDashboard.loadReport(PUBLICATION,tf);
-  KronosDashboard.loadBacktest(PUBLICATION);
-  try{const status=await fetch(PUBLICATION+"status.json",{cache:"no-store"});if(status.ok){const info=await status.json();if(info.status==="failed")$("snapshotInfo").textContent+=" · Last inference failed: "+info.reason;}}catch(_err){/* last successful snapshot remains available */}
+  KronosDashboard.loadBacktest(PUBLICATION,tf);
+  try{const status=await fetch(KronosDashboard.publicationURL(PUBLICATION,"status-"+tf+"m.json"),{cache:"no-store"});if(status.ok){const info=await status.json();if(info.status==="failed")$("snapshotInfo").textContent+=" · Last inference failed: "+info.reason;}}catch(_err){/* last successful snapshot remains available */}
  }catch(err){$("forecastStatus").textContent="Unavailable";$("snapshotInfo").textContent=err.message;$("archiveMetrics").textContent="No validated archive available.";}
 }
 
 $("reportWindow").addEventListener("change",()=>KronosDashboard.renderReport(tf));
 initChart();load().then(autoSnapshot);
-setInterval(refresh,120000);
+setInterval(refresh,30000);
 })();
