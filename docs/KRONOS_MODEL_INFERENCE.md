@@ -172,4 +172,6 @@ The initial combined CI/inference workflow was active and push/manual runs succe
 
 Caller contents-write permission matches the existing publisher's permission. No new credential, action-write permission, secret inheritance, external scheduler, paid resource or self-dispatch loop is introduced. Only the called workflow owns publication concurrency to avoid caller/callee deadlocks. PR calls continue to skip publication, and the scheduled/default-branch call publishes normally.
 
+Changes to either workflow validate the dedicated caller on PRs as well. Its actual reusable job runs the same focused browser tests and genuine inference while publication is skipped. PR concurrency includes the caller workflow name so these two validation entries cannot cancel each other; production calls still share the one `kronos-publication` lock.
+
 Verify recurrence using the dedicated entry's actual `event: schedule` runs and subsequent forecast generation timestamps. A successful push/manual run only validates execution, not the timer. GitHub can delay/drop scheduled events; if no timer-originated runs occur after registration, recurring operation remains unverified and must be reported as such. Do not describe this as a guaranteed five-minute or every-minute prediction service.

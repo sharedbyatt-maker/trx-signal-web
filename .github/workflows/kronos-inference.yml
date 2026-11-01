@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: kronos-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
+  group: kronos-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || 'publication' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   inference:
