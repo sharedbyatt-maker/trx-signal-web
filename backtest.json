@@ -1,16 +1,10 @@
 {
   "schema": "kronos-walk-forward-v1",
   "retrospective_only": true,
-  "generated_at_utc": "2026-11-01T07:23:03.060140+00:00",
+  "generated_at_utc": "2026-11-01T08:26:36.422817+00:00",
   "timeframe": 5,
   "model": "Kronos-mini",
   "origins": [
-    {
-      "origin_issue": "20261031103011365",
-      "input_end_utc": "2026-10-31T22:44:54+00:00",
-      "simulated_issue_utc": "2026-10-31T22:44:55+00:00",
-      "last_target_end_utc": "2026-10-31T23:45:00+00:00"
-    },
     {
       "origin_issue": "20261031103011430",
       "input_end_utc": "2026-10-31T23:49:54+00:00",
@@ -52,40 +46,46 @@
       "input_end_utc": "2026-11-01T06:19:54+00:00",
       "simulated_issue_utc": "2026-11-01T06:19:55+00:00",
       "last_target_end_utc": "2026-11-01T07:20:00+00:00"
+    },
+    {
+      "origin_issue": "20261101103010445",
+      "input_end_utc": "2026-11-01T07:24:54+00:00",
+      "simulated_issue_utc": "2026-11-01T07:24:55+00:00",
+      "last_target_end_utc": "2026-11-01T08:25:00+00:00"
     }
   ],
   "horizons": [
     {
       "horizon": 1,
       "targets": 8,
-      "error": 24.0778,
-      "persistence": 12,
-      "random": 17.5,
-      "majority": 40
+      "error": 22.049,
+      "persistence": 14,
+      "random": 18.75,
+      "majority": 36
     },
     {
       "horizon": 3,
       "targets": 8,
-      "error": 31.5521,
-      "persistence": 28,
-      "random": 35.80236816406251,
-      "majority": 112
+      "error": 32.832499999999996,
+      "persistence": 32,
+      "random": 37.984375000000014,
+      "majority": 106
     },
     {
       "horizon": 6,
       "targets": 8,
-      "error": 41.687,
-      "persistence": 54,
-      "random": 60.775030441582196,
-      "majority": 230
+      "error": 38.9402,
+      "persistence": 52,
+      "random": 59.17600728571415,
+      "majority": 232
     },
     {
       "horizon": 12,
       "targets": 8,
-      "error": 58.2534,
-      "persistence": 50,
-      "random": 68.21165826733872,
-      "majority": 478
+      "error": 55.7264,
+      "persistence": 52,
+      "random": 69.47907025393214,
+      "majority": 476
     }
   ],
   "lookback_bars": 256,
