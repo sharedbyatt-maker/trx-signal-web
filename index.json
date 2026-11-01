@@ -2,6 +2,12 @@
   "schema": "kronos-index-v1",
   "forecasts": [
     {
+      "file": "forecasts/20261101103010897-1-0302e334d4c21f63.json",
+      "timeframe": 1,
+      "origin_issue": "20261101103010897",
+      "generated_at_utc": "2026-11-01T14:57:30.787133+00:00"
+    },
+    {
       "file": "forecasts/20261101103010878-1-3f4fab6b3cad86f5.json",
       "timeframe": 1,
       "origin_issue": "20261101103010878",
