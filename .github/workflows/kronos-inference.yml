@@ -11,8 +11,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: kronos-publication
-  cancel-in-progress: false
+  group: kronos-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   inference:
     runs-on: ubuntu-latest
@@ -36,7 +36,16 @@ jobs:
         run: |
           python tests_kronos_round_adapter.py
           python tests_kronos_automation.py
+          python tests_kronos_reports.py
+          python tests_kronos_markup.py
           node tests_kronos_ui.js
+      - name: Verify Kronos desktop and mobile controls before inference
+        if: github.event_name == 'pull_request'
+        run: |
+          pip install -r requirements.txt
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test e2e/kronos-research.spec.js
       - uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
@@ -79,7 +88,7 @@ jobs:
             git fetch origin kronos-forecasts
             git reset --soft FETCH_HEAD
           fi
-          git add index.json status.json forecasts/ 2>/dev/null || git add status.json
+          git add index.json status.json forecasts/ reports.json evaluation_ledger.json 2>/dev/null || git add status.json
           git diff --cached --quiet && exit 0
           git commit -m 'Publish immutable Kronos research forecast/status'
           git push origin HEAD:refs/heads/kronos-forecasts

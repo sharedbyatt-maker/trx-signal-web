@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from forecast import get_history, walk_bars
+from reports import build as build_reports
 
 
 def write_json(path, value):
@@ -35,6 +36,12 @@ def run(args):
             raise ValueError('Source feed is stale or future-dated; no inference published')
         manifest_path = root / 'index.json'
         manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'schema': 'kronos-index-v1', 'forecasts': []}
+        # Evaluate previously published predictions before generating new ones.
+        ledger_path = root / 'evaluation_ledger.json'
+        previous = json.loads(ledger_path.read_text()) if ledger_path.exists() else {'points': []}
+        ledger, report = build_reports(root, manifest, rows, previous, now)
+        write_json(ledger_path, ledger)
+        write_json(root / 'reports.json', report)
         existing = next((item for item in manifest['forecasts'] if item['origin_issue'] == origin_issue and item['timeframe'] == args.timeframe), None)
         if existing:
             status.update(status='ready', latest_file=existing['file'], duplicate_skipped=True)
