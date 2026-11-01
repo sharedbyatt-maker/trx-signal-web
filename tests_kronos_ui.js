@@ -30,6 +30,8 @@ async function boot(unavailable=false){
  assert.match(app.element('forecastStatus').textContent,/Historical/);
  assert.match(app.element('comparison').textContent,/Evaluated bars: 2/);
  assert.equal(app.projection().length,3);
+ assert.ok(app.projection()[0].time>1700000000,'chart uses real UTC timestamps, not 1970 ordinal indices');
+ assert.equal(app.projection()[1].time-app.projection()[0].time,60);
  assert.equal(app.projection()[1].value-app.projection()[0].value,1,'uses deltas, not old absolute base');
  app.element('forecastToggle').events.click();
  assert.equal(app.projection().length,0);

@@ -27,14 +27,14 @@ function makeBars(source=rounds){
  for(const r of source){
   const key=Math.floor(r.minute/tf);
   const open=level;level+=r.number>=5?1:-1;
-  if(key!==lastKey){bars.push({bucket:key,time:bars.length+1,open,high:Math.max(open,level),low:Math.min(open,level),close:level});lastKey=key;}
+  if(key!==lastKey){bars.push({bucket:key,time:key*tf*60-390*60,open,high:Math.max(open,level),low:Math.min(open,level),close:level});lastKey=key;}
   else {const b=bars[bars.length-1];b.high=Math.max(b.high,level);b.low=Math.min(b.low,level);b.close=level;}
  }
  return bars;
 }
 function initChart(){
  if(!window.LightweightCharts){$("historyStatus").textContent="Chart library unavailable";return;}
- chart=LightweightCharts.createChart($("kronosChart"),{width:$("kronosChart").clientWidth,height:$("kronosChart").clientHeight,layout:{background:{type:"solid",color:"#0c1c2c"},textColor:"#a7bbcd"},grid:{vertLines:{color:"#172c3e"},horzLines:{color:"#172c3e"}},rightPriceScale:{borderColor:"#304a61"},timeScale:{borderColor:"#304a61",rightOffset:12,fixLeftEdge:true},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}});
+ chart=LightweightCharts.createChart($("kronosChart"),{width:$("kronosChart").clientWidth,height:$("kronosChart").clientHeight,layout:{background:{type:"solid",color:"#0c1c2c"},textColor:"#a7bbcd"},grid:{vertLines:{color:"#172c3e"},horzLines:{color:"#172c3e"}},rightPriceScale:{borderColor:"#304a61"},timeScale:{borderColor:"#304a61",rightOffset:12,fixLeftEdge:true,timeVisible:true,secondsVisible:false,tickMarkFormatter:time=>new Date((time+390*60)*1000).toISOString().slice(11,16)},localization:{timeFormatter:time=>new Date((time+390*60)*1000).toISOString().slice(0,16).replace("T"," ")+" UTC+06:30"},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}});
  candle=chart.addCandlestickSeries({upColor:"#04b99c",downColor:"#ee5162",wickUpColor:"#04b99c",wickDownColor:"#ee5162",borderVisible:false,priceFormat:{type:"price",precision:1,minMove:1}});
  projected=chart.addAreaSeries({lineColor:"#ae86fa",topColor:"rgba(174,134,250,0.3)",bottomColor:"rgba(174,134,250,0.03)",lineWidth:3,lineStyle:2,lastValueVisible:false,priceLineVisible:false});
  resizeObserver=new ResizeObserver(()=>chart.applyOptions({width:$("kronosChart").clientWidth,height:$("kronosChart").clientHeight}));resizeObserver.observe($("kronosChart"));
@@ -99,14 +99,14 @@ async function importSnapshot(file,dry=false){
   // A later round in the same origin bucket changes that candle close.
   const withinOrigin=rounds.slice(origin+1).filter(r=>Math.floor(r.minute/tf)===originBucket);
   const originAnchor=anchor-withinOrigin.reduce((n,r)=>n+(r.number>=5?1:-1),0);
-  const points=[{time:originBar+1,value:originAnchor}];
+  const points=[{time:bars[originBar].time,value:originAnchor}];
   let evaluated=0,error=0,persistence=0,excluded=0,randomError=0,majorityError=0,directions=0,correctDirections=0;
   const training=rounds.slice(Math.max(0,origin-(snap.lookback_bars||256)*tf+1),origin+1);
   const majority=Math.sign(training.reduce((sum,r)=>sum+(r.number>=5?1:-1),0));
   for(let i=0;i<delta.length;i++){
    const bucket=originBucket+i+1;
    const actual=bars.find(b=>b.bucket===bucket);
-   const time=actual?actual.time:bars.length+1+(bucket-bars[bars.length-1].bucket-1);
+   const time=actual?actual.time:bucket*tf*60-390*60;
    if(time>points[points.length-1].time)points.push({time,value:originAnchor+delta[i]});
    // API local calendar is Asia/Yangon (UTC+06:30). Exclude bars already
    // started before publication and the currently incomplete source bar.
