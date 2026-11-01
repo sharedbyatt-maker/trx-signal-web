@@ -30,8 +30,8 @@
 <aside class="panel sidebar"><h3>✧ Kronos Research Notes</h3><div class="note"><b>Data source</b><p>Uses the same existing BIG/SMALL round history as the main chart. No new market-price API.</p></div><div class="note"><b>Model integration</b><p>Real Kronos inference is not running on this web server. An isolated GitHub Actions workflow generates research snapshots outside the web server. Published snapshots load automatically; historical results are labelled separately. Scheduled runs may be delayed or unavailable.</p></div><div class="note"><b>Important limitation</b><p>Kronos is trained for financial OHLCV, not BIG/SMALL synthetic walks. Research results need honest walk-forward testing against simple baselines.</p></div><div class="note warn"><b>Not a trading signal</b><p>Never treat a projected round or backtest as a guaranteed outcome. Existing trade and admin logic remain unchanged.</p></div><div class="note"><b>Snapshot</b><p id="snapshotInfo">No snapshot imported</p></div></aside></div>
 </main>
 <script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}?v=41"></script>
-<script src="{{ url_for('static', filename='js/kronos-research.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/kronos-research.js') }}?v=4"></script>
 <script src="{{ url_for('static', filename='js/kronos-dashboard.js') }}?v=5"></script>
 <script src="{{ url_for('static', filename='js/kronos-explain.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='js/kronos.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/kronos.js') }}?v=9"></script>
 </body></html>

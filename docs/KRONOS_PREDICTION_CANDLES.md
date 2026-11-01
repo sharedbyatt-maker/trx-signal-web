@@ -22,10 +22,13 @@ finite bounds, horizon length, high/low ordering and consistency with the
 recorded close/delta values. It never derives wicks from closes, normalizes
 invalid high/low values, copies future actual candles or edits a forecast.
 
-Old snapshots without OHLC retain their close line with an explicit notice. If
-the genuine model emits OHLC values that cannot form valid candles, the raw
-values stay in the snapshot and the viewer falls back to the close line with
-an explanation. Display style does not change target eligibility or close MAE.
+Old snapshots without OHLC retain their close line with an explicit notice.
+Each genuine model candle is checked independently. Valid candles are drawn;
+an invalid target has a whitespace time slot, with a visible valid/total count
+and omission notice. Its raw values remain unchanged in the snapshot. All
+close predictions remain available using Line. If none of the OHLC candles
+are valid, the viewer falls back to the complete close line. Display style does
+not change target eligibility or close MAE.
 
 Forecast visibility, archived/imported snapshots, refresh, replay, unavailable
 states and timeframe request isolation apply to both projection series. There

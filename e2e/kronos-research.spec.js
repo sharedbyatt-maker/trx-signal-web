@@ -7,9 +7,9 @@ async function openKronos(page,missing=false,badBacktest=false,bothTimeframes=fa
  const history=Array.from({length:200},(_,i)=>[String(100000+i),i%10,new Date(start+i*60000+390*60000).toISOString().slice(0,19)]);
  const origin=variant==="pending"?199:180;
  const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:history[origin][0],forecast_close:[900,901],forecast_delta:variant==="exact"?[-1,-2]:[1,2],generated_at_utc:new Date(start+(variant==="excluded"?190:origin)*60000+1000).toISOString()};
- if(variant==='candles'||variant==='invalid-candles'){
+ if(['candles','partial-candles','invalid-candles'].includes(variant)){
   snapshot.origin_close=100;snapshot.forecast_close=[101,102];
-  snapshot.forecast_ohlc=[{open:100,high:variant==='candles'?103:99,low:99,close:101},{open:101,high:104,low:100,close:102}];
+  snapshot.forecast_ohlc=[{open:100,high:variant==='candles'?103:99,low:99,close:101},{open:101,high:variant==='invalid-candles'?100:104,low:100,close:102}];
  }
  const older={...snapshot,origin_issue:history[170][0],generated_at_utc:new Date(start+170*60000+1000).toISOString()};
  if(variant==='gap')history.splice(181,1);
@@ -222,4 +222,15 @@ test('Kronos keeps legacy close-only snapshots visible without inventing candles
  await expect(page.locator('#predictionStyleStatus')).toContainText('Line =');
  await page.getByLabel('Prediction display',{exact:true}).selectOption('candles');
  await expect(page.locator('#predictionStyleStatus')).toContainText('အဟောင်းမှာ Close ပဲရှိ');
+});
+
+test('Kronos displays valid model candles and explicitly omits an invalid candle',async({page})=>{
+ await openKronos(page,false,false,false,'partial-candles');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('1/2');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('ချန်ထားပါသည်');
+ await expect(page.locator('#comparison')).toContainText('Evaluated bars: 2');
+ await page.getByLabel('Prediction display',{exact:true}).selectOption('line');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('Line =');
+ await page.getByLabel('Prediction display',{exact:true}).selectOption('candles');
+ await expect(page.locator('#predictionStyleStatus')).toContainText('1/2');
 });
