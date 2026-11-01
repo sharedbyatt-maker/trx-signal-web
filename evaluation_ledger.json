@@ -1,4 +1,137 @@
 {
   "schema": "kronos-evaluation-ledger-v1",
-  "points": []
+  "points": [
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:0",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T02:45:00+00:00",
+      "model": "Kronos-mini",
+      "error": 2.0298,
+      "persistence": 4,
+      "random": 4.062500000000001,
+      "majority": 2
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:1",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T02:50:00+00:00",
+      "model": "Kronos-mini",
+      "error": 2.9014,
+      "persistence": 5,
+      "random": 5.15625,
+      "majority": 6
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:2",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T02:55:00+00:00",
+      "model": "Kronos-mini",
+      "error": 3.8506,
+      "persistence": 6,
+      "random": 6.20562744140625,
+      "majority": 10
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:3",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:00:00+00:00",
+      "model": "Kronos-mini",
+      "error": 4.8948,
+      "persistence": 7,
+      "random": 7.22777557373047,
+      "majority": 14
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:4",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:05:00+00:00",
+      "model": "Kronos-mini",
+      "error": 4.3004999999999995,
+      "persistence": 8,
+      "random": 8.233920037746431,
+      "majority": 18
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:5",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:10:00+00:00",
+      "model": "Kronos-mini",
+      "error": 2.7432,
+      "persistence": 7,
+      "random": 7.529855277389289,
+      "majority": 24
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:6",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:15:00+00:00",
+      "model": "Kronos-mini",
+      "error": 7.0367999999999995,
+      "persistence": 10,
+      "random": 10.221833421383057,
+      "majority": 26
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:7",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:20:00+00:00",
+      "model": "Kronos-mini",
+      "error": 6.839,
+      "persistence": 11,
+      "random": 11.209947000890677,
+      "majority": 30
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:8",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:25:00+00:00",
+      "model": "Kronos-mini",
+      "error": 12.9365,
+      "persistence": 16,
+      "random": 16.0365418923584,
+      "majority": 30
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:9",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:30:00+00:00",
+      "model": "Kronos-mini",
+      "error": 12.2817,
+      "persistence": 15,
+      "random": 15.084664107680027,
+      "majority": 36
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:10",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:35:00+00:00",
+      "model": "Kronos-mini",
+      "error": 11.450099999999999,
+      "persistence": 14,
+      "random": 14.168333993224353,
+      "majority": 42
+    },
+    {
+      "id": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json:11",
+      "forecast": "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T03:40:00+00:00",
+      "model": "Kronos-mini",
+      "error": 12.5418,
+      "persistence": 15,
+      "random": 15.154634519378236,
+      "majority": 46
+    }
+  ]
 }
