@@ -39,6 +39,25 @@ class RoundWalkTests(unittest.TestCase):
         self.assertEqual(bars[0]["open"], 100)
         self.assertEqual(issue, rows[-1][0])
 
+    def test_live_inference_rejects_missing_minutes_inside_aggregated_candle(self):
+        rows = self.samples(400)
+        del rows[-8]
+        # A 5m candle still exists, but one of its source rounds is unknown.
+        with self.assertRaisesRegex(ValueError, 'missing or duplicate minute'):
+            module.walk_bars(rows, 5, require_contiguous=True)
+
+    def test_old_gap_outside_model_input_does_not_block_fresh_inference(self):
+        rows = self.samples(2000)
+        del rows[1]
+        bars, issue = module.walk_bars(rows, 5, require_contiguous=True)
+        self.assertEqual(issue, rows[-1][0])
+
+    def test_normal_second_jitter_does_not_create_a_missing_minute(self):
+        rows = self.samples(400)
+        for i, row in enumerate(rows):
+            row[2] = row[2][:-2] + ('54' if i % 2 else '55')
+        self.assertEqual(module.walk_bars(rows, 1, require_contiguous=True)[1], rows[-1][0])
+
 
 if __name__ == "__main__":
     unittest.main()

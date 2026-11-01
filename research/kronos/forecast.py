@@ -27,7 +27,7 @@ def get_history(url):
     return data["history"]
 
 
-def walk_bars(rows, tf):
+def walk_bars(rows, tf, *, require_contiguous=False, lookback=256):
     """Match frontend base=100 and BIG +1 / SMALL -1; aggregate by time bucket."""
     if tf not in (1, 5, 15, 60):
         raise ValueError("Unsupported timeframe")
@@ -57,6 +57,13 @@ def walk_bars(rows, tf):
         raise ValueError("At least 128 valid rounds required")
     if any(a[1][0] >= b[1][0] for a, b in zip(ordered, ordered[1:])):
         raise ValueError("Round timestamps must increase with issue")
+    if require_contiguous:
+        # A synthetic walk cannot reconstruct a missing round. Do not pass
+        # compressed/gapped source history to the model as a regular series.
+        recent = ordered[-(lookback+1)*tf:]
+        minutes = [when.replace(second=0, microsecond=0) for _, (when, _) in recent]
+        if any(b-a != timedelta(minutes=1) for a,b in zip(minutes, minutes[1:])):
+            raise ValueError("Source history has a missing or duplicate minute in the inference window")
     level = 100.0
     bars = []
     for issue, (when, number) in ordered:
@@ -120,7 +127,7 @@ def generate(args):
     import torch
     started = time.monotonic()
     raw = json.loads(Path(args.history_file).read_text())["history"] if args.history_file else get_history(args.history_url)
-    bars, origin_issue = walk_bars(raw, args.timeframe)
+    bars, origin_issue = walk_bars(raw, args.timeframe, require_contiguous=True, lookback=args.lookback)
     predictor = load_predictor(args)
     closes, lookback = predict_bars(predictor, bars, args.timeframe, args.horizon, args.lookback)
     model_slug = "Kronos-mini" if args.model == "mini" else "Kronos-small"

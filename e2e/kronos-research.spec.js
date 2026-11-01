@@ -7,6 +7,8 @@ async function openKronos(page,missing=false,badBacktest=false,bothTimeframes=fa
  const history=Array.from({length:200},(_,i)=>[String(100000+i),i%10,new Date(start+i*60000+390*60000).toISOString().slice(0,19)]);
  const origin=variant==="pending"?199:180;
  const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:history[origin][0],forecast_close:[900,901],forecast_delta:variant==="exact"?[-1,-2]:[1,2],generated_at_utc:new Date(start+(variant==="excluded"?190:origin)*60000+1000).toISOString()};
+ const older={...snapshot,origin_issue:history[170][0],generated_at_utc:new Date(start+170*60000+1000).toISOString()};
+ if(variant==='gap')history.splice(181,1);
  await page.route('**/api/history?*',route=>route.fulfill({json:{history,last_time_utc:new Date(start+199*60000).toISOString()}}));
  await page.route('https://raw.githubusercontent.com/**',route=>{
   const url=new URL(route.request().url()).pathname;
@@ -17,12 +19,14 @@ async function openKronos(page,missing=false,badBacktest=false,bothTimeframes=fa
    return route.fulfill({json:{schema:'kronos-walk-forward-v1',retrospective_only:!badBacktest,timeframe:tf,model:'Kronos-mini',lookback_bars:256,generated_at_utc:new Date().toISOString(),origins:[{input_end_utc:new Date(start).toISOString(),last_target_end_utc:new Date(start+12*60000).toISOString()}],horizons:[1,3,6,12].map(horizon=>({horizon,targets:1,error:tf,persistence:2,random:3,majority:4}))}});
   }
   if(missing)return route.fulfill({status:404,body:'Not found'});
-  if(url.endsWith('index.json'))return route.fulfill({json:{schema:'kronos-index-v1',forecasts:[...(bothTimeframes?[{file:'forecasts/test5.json',timeframe:5,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc}]:[]),{file:'forecasts/test.json',timeframe:1,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc}]}});
+  if(url.endsWith('index.json'))return route.fulfill({json:{schema:'kronos-index-v1',forecasts:[...(bothTimeframes?[{file:'forecasts/test5.json',timeframe:5,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc}]:[]),{file:'forecasts/test.json',timeframe:1,origin_issue:snapshot.origin_issue,generated_at_utc:snapshot.generated_at_utc},...(variant==='archive'?[{file:'forecasts/older.json',timeframe:1,origin_issue:older.origin_issue,generated_at_utc:older.generated_at_utc}]:[])]}});
+  if(url.endsWith('older.json'))return route.fulfill({json:older});
   return route.fulfill({json:/status-(1|5)m\.json$/.test(url)?{status:'ready'}:url.endsWith('test5.json')?{...snapshot,timeframe_minutes:5}:snapshot});
  });
  const html=fs.readFileSync(path.join(__dirname,'../templates/kronos.html'),'utf8').replace(/\{\{ url_for\('static', filename='([^']+)'\) \}\}/g,'/static/$1');
  await page.route('**/kronos',route=>route.fulfill({contentType:'text/html',body:html}));
  await page.goto('/kronos');
+ return {snapshot,history};
 }
 test('Kronos loads historical comparisons and working forecast controls',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -116,4 +120,61 @@ for(const variant of ['pending','excluded','exact'])test('Kronos explains '+vari
   await expect(page.locator('#easyVerdict')).toContainText('0 steps');
  }
  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
+});
+
+test('Kronos preserves an archived forecast and replay through history refresh',async({page})=>{
+ await openKronos(page,false,false,false,'archive');
+ await expect(page.locator('#snapshotInfo')).toContainText('origin 100180');
+ await page.locator('#forecastHistory').selectOption('forecasts/older.json');
+ await expect(page.locator('#snapshotInfo')).toContainText('origin 100170');
+ await page.locator('#reload').click();
+ await expect(page.locator('#snapshotInfo')).toContainText('origin 100170');
+ await expect(page.locator('#forecastHistory')).toHaveValue('forecasts/older.json');
+ await page.locator('#replay').click();
+ await page.locator('#reload').click();
+ await expect(page.locator('#easyActual')).toContainText('ဖုံးထား');
+ await expect(page.locator('#scoredTargets')).toHaveText('—');
+ await page.locator('#latestForecast').click();
+ await expect(page.locator('#snapshotInfo')).toContainText('origin 100180');
+ await expect(page.locator('#easyActual')).not.toContainText('ဖုံးထား');
+ await expect(page.locator('#nextForecast')).toContainText('နောက်ကျနေသည်');
+});
+
+test('Kronos ignores a delayed snapshot from the previous timeframe',async({page})=>{
+ const {snapshot}=await openKronos(page,false,false,true);
+ await expect(page.locator('#snapshotInfo')).toContainText('1m');
+ let release,entered=false,finished;
+ const gate=new Promise(resolve=>{release=resolve;});
+ const done=new Promise(resolve=>{finished=resolve;});
+ await page.route('**/forecasts/test5.json',async route=>{
+  entered=true;await gate;
+  await route.fulfill({json:{...snapshot,timeframe_minutes:5}});finished();
+ });
+ await page.locator('[data-tf="5"]').click();
+ await expect.poll(()=>entered).toBe(true);
+ await page.locator('[data-tf="1"]').click();
+ await expect(page.locator('#snapshotInfo')).toContainText('1m');
+ release();await done;
+ await expect(page.locator('#easyTitle')).toContainText('1m');
+ await expect(page.locator('#snapshotInfo')).toContainText('1m');
+ await expect(page.locator('#forecastStatus')).not.toHaveText('Rejected');
+});
+
+test('Kronos clears prior forecast results when publication becomes unavailable',async({page})=>{
+ await openKronos(page);
+ await expect(page.locator('#scoredTargets')).toHaveText('2');
+ await page.route('**/index.json*',route=>route.fulfill({status:503,body:'Unavailable'}));
+ await page.locator('#reload').click();
+ await expect(page.locator('#forecastStatus')).toHaveText('Unavailable');
+ await expect(page.locator('#scoredTargets')).toHaveText('—');
+ await expect(page.locator('#easyRows li')).toHaveCount(0);
+ await expect(page.locator('#replay')).toBeDisabled();
+ await expect(page.locator('#count')).toHaveText('200');
+});
+
+test('Kronos separates source gaps from outcomes that are still pending',async({page})=>{
+ await openKronos(page,false,false,false,'gap');
+ await expect(page.locator('#easyCount')).toContainText('data မပြည့် 2 ခု');
+ await expect(page.locator('#pendingTargets')).toHaveText('0');
+ await expect(page.locator('#scoredTargets')).toHaveText('0');
 });

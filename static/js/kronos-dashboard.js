@@ -1,8 +1,10 @@
 (function(root){
 'use strict';
-let report=null,currentTf=1,requestId=0;
+let report=null,currentTf=1,requestId=0,reportFailed=false;
 const backtests=new Map();
+const backtestRequests=new Map();
 const publicationURL=(base,file)=>base+file+'?v='+Math.floor(Date.now()/30000);
+const fetchOptions=()=>typeof AbortSignal!=='undefined'&&AbortSignal.timeout?{cache:'no-store',signal:AbortSignal.timeout(15000)}:{cache:'no-store'};
 const $=id=>document.getElementById(id);
 const metricKeys=['error','persistence','random','majority'];
 function appendMetrics(body,label,targets,metrics){
@@ -24,10 +26,9 @@ function renderBacktest(tf){
 function summary(evaluated,pending,generated){
  $('scoredTargets').textContent=String(evaluated);
  $('pendingTargets').textContent=String(pending);
- const earliest=Math.max(Date.now(),currentTf===5?Date.parse(generated)+55*60000:0);
- const slot=Math.floor((earliest-120000)/300000)+1;
- const next=new Date(slot*300000+120000);
- $('nextForecast').textContent=new Date(next.getTime()+420*60000).toISOString().slice(11,16)+' Bangkok · '+currentTf+'m estimate';
+ const schedule=root.KronosResearch.publicationSchedule(currentTf,generated);
+ $('nextForecast').textContent=schedule?(schedule.overdue?'နောက်ကျနေသည် · ':'')+new Date(schedule.expected+420*60000).toISOString().slice(11,16)+' Bangkok · '+currentTf+'m estimate':'ဒီ timeframe အတွက် auto schedule မရှိပါ';
+ $('publicationStatus').textContent=schedule?.overdue?'Forecast အသစ် မရောက်သေးပါ။ အောက်ကအချိန်က စီစဉ်ထားသည့်အချိန်သာဖြစ်ပြီး timer အလုပ်လုပ်ကြောင်း အတည်ပြုချက် မဟုတ်ပါ။':'အချိန်သည် ခန့်မှန်းသာဖြစ်သည်။ Refresh က ရှိပြီးသား forecast ကိုသာ ပြန်ယူပြီး model ကို မမောင်းပါ။';
  $('forecastAge').textContent=Math.max(0,Math.floor((Date.now()-Date.parse(generated))/60000))+' min ago';
 }
 function renderReport(tf){
@@ -66,13 +67,14 @@ function renderReport(tf){
   $('baselineVerdict').textContent=(early?'Data မလုံလောက်သေးပါ။ Early sample: ':'Descriptive comparison only: ')+`${forecasts.size} forecasts across ${measuredDays} Bangkok days. Baseline MAE minus model MAE: ${gaps}. Positive = model lower error; negative = baseline lower error. `+(early?'At least 30 forecasts and 3 days are required to leave the early-sample label; this is a display rule, not statistical proof. ':'Overlapping targets remain correlated; these differences do not establish predictive value.');
  }
  const age=Math.max(0,Math.floor((Date.now()-Date.parse(report.updated_at_utc))/60000));
- if(age>15)$('reportSimple').textContent+=' Report update နောက်ကျနေပါတယ်။ နောက်ဆုံးအောင်မြင်ခဲ့သော စာရင်းကိုသာ ပြထားပါတယ်။';
+ if(age>15||reportFailed)$('reportSimple').textContent+=' Report update နောက်ကျနေပါတယ်။ နောက်ဆုံးအောင်မြင်ခဲ့သော စာရင်းကိုသာ ပြထားပါတယ်။';
  $('reportUpdated').textContent='Bangkok calendar · last measured '+report.updated_at_utc+' · '+age+' min ago · five-minute publication schedule, may be delayed · overlapping targets are correlated.'+(age>15?' Report delayed; this is the last successful measurement.':'');
 }
 async function loadReport(base,tf){
+ currentTf=tf;
  const id=++requestId;
  try{
-  const response=await fetch(publicationURL(base,'reports.json'),{cache:'no-store'});
+  const response=await fetch(publicationURL(base,'reports.json'),fetchOptions());
   if(!response.ok)throw Error('Report unavailable');
   const data=await response.json();
   if(data.calendar!=='Asia/Bangkok'||data.schema!=='kronos-daily-reports-v1'||!Array.isArray(data.days)||!Number.isFinite(Date.parse(data.updated_at_utc)))throw Error('Invalid report');
@@ -81,19 +83,22 @@ async function loadReport(base,tf){
    if(day.horizons!==undefined&&(!Array.isArray(day.horizons)||!day.horizons.every(x=>[1,3,6,12].includes(x.horizon)&&Number.isInteger(x.targets)&&x.targets>0&&metricKeys.every(k=>Number.isFinite(x[k])&&x[k]>=0))))throw Error('Invalid horizon metrics');
   }
   if(id!==requestId)return;
-  report=data;
- }catch(_error){if(id!==requestId)return;report=null;}
+  report=data;reportFailed=false;
+ }catch(_error){if(id!==requestId)return;reportFailed=true;}
  renderReport(currentTf);
 }
 async function loadBacktest(base,tf=currentTf){
+ if(![1,5].includes(tf)){renderBacktest(currentTf);return;}
+ const id=(backtestRequests.get(tf)||0)+1;backtestRequests.set(tf,id);
  try{
-  const response=await fetch(publicationURL(base,tf===1?'backtest-1m.json':'backtest.json'),{cache:'no-store'});
+  const response=await fetch(publicationURL(base,tf===1?'backtest-1m.json':'backtest.json'),fetchOptions());
   if(!response.ok)throw Error('Unavailable');
   const data=await response.json();
   if(data.timeframe!==tf||data.schema!=='kronos-walk-forward-v1'||data.retrospective_only!==true||!Number.isFinite(Date.parse(data.generated_at_utc))||!Array.isArray(data.origins)||data.origins.length>8||!Array.isArray(data.horizons)||data.horizons.length!==4||!data.horizons.every((x,i)=>x.horizon===[1,3,6,12][i]&&x.targets===data.origins.length&&metricKeys.every(k=>Number.isFinite(x[k])&&x[k]>=0)))throw Error('Invalid backtest');
   if(!data.origins.every(x=>Number.isFinite(Date.parse(x.input_end_utc))&&Number.isFinite(Date.parse(x.last_target_end_utc))))throw Error('Invalid cutoffs');
+  if(backtestRequests.get(tf)!==id)return;
   backtests.set(tf,data);
- }catch(_error){backtests.delete(tf);}
+ }catch(_error){if(backtestRequests.get(tf)!==id)return;backtests.delete(tf);}
  renderBacktest(currentTf);
 }
 root.KronosDashboard={summary,loadReport,loadBacktest,renderReport,publicationURL};
