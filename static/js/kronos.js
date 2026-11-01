@@ -13,8 +13,8 @@ function inspectTarget(event){
  if(predicted===undefined){$("inspector").textContent=label+" · Historical candle · close "+(actual?actual.close.toFixed(3):"unavailable");return;}
  const eligible=event.time*1000>inspectData.generation;
  const complete=actual&&event.time<inspectData.latest;
- const visible=complete&&!replayMode;
- $("inspector").textContent=label+" · forecast "+predicted.toFixed(3)+" · actual "+(visible?actual.close.toFixed(3):replayMode?"hidden in replay":"pending")+" · error "+(visible&&eligible?Math.abs(predicted-actual.close).toFixed(3):"not scored")+(!eligible?" · excluded: target started before generation":"")+" · walk steps";
+ const visible=complete&&!replayMode&&inspectData.scorable.has(event.time);
+ $("inspector").textContent=label+" · forecast "+predicted.toFixed(3)+" · actual "+(visible?actual.close.toFixed(3):replayMode?"hidden in replay":complete?"unavailable: source gap or excluded target":"pending")+" · error "+(visible&&eligible?Math.abs(predicted-actual.close).toFixed(3):"not scored")+(!eligible?" · excluded: target started before generation":"")+" · walk steps";
 }
 function parseRound(r){
  if(!Array.isArray(r)||r.length<3)return null;
@@ -120,6 +120,9 @@ async function importSnapshot(file,dry=false){
   let evaluated=0,error=0,persistence=0,excluded=0,randomError=0,majorityError=0,directions=0,correctDirections=0;
   const training=rounds.slice(Math.max(0,origin-(snap.lookback_bars||256)*tf+1),origin+1);
   const majority=Math.sign(training.reduce((sum,r)=>sum+(r.number>=5?1:-1),0));
+  const contiguous=[];let expectedMinute=rounds[origin].minute+1;
+  for(const row of rounds.slice(origin+1)){if(row.minute!==expectedMinute)break;contiguous.push(row);expectedMinute++;}
+  const scorable=new Set();
   for(let i=0;i<delta.length;i++){
    const bucket=originBucket+i+1;
    const actual=bars.find(b=>b.bucket===bucket);
@@ -129,7 +132,9 @@ async function importSnapshot(file,dry=false){
    // started before publication and the currently incomplete source bar.
    const startUtc=(bucket*tf-390)*60000;
    if(startUtc<=generation){excluded++;continue;}
-   if(actual&&bucket<bars[bars.length-1].bucket){
+   const targetRows=contiguous.filter(r=>r.minute<(bucket+1)*tf);
+   if(actual&&bucket<bars[bars.length-1].bucket&&targetRows.length&&targetRows[targetRows.length-1].minute===(bucket+1)*tf-1){
+    scorable.add(time);
     evaluated++;error+=Math.abs(originAnchor+delta[i]-actual.close);
     const observedDelta=actual.close-originAnchor;
     persistence+=Math.abs(observedDelta);
@@ -142,7 +147,7 @@ async function importSnapshot(file,dry=false){
   if(dry)return {evaluated,error,persistence,randomError,majorityError,excluded,horizon:values.length};
   projected.setData(forecastVisible?points:[]);
   activeSnapshot=snap;
-  inspectData={predicted:new Map(points.slice(1).map(p=>[p.time,p.value])),actual:new Map((replayMode?makeBars(rounds.slice(0,origin+1)):bars).map(b=>[b.time,b])),generation,latest:bars[bars.length-1].time};
+  inspectData={predicted:new Map(points.slice(1).map(p=>[p.time,p.value])),actual:new Map((replayMode?makeBars(rounds.slice(0,origin+1)):bars).map(b=>[b.time,b])),generation,scorable,latest:bars[bars.length-1].time};
   KronosDashboard.summary(evaluated,Math.max(0,values.length-excluded-evaluated),snap.generated_at_utc);
   $("replay").disabled=false;
   candle.setData(replayMode?makeBars(rounds.slice(0,origin+1)):bars);

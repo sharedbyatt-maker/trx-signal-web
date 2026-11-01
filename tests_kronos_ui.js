@@ -6,11 +6,12 @@ const KronosResearch=require('./static/js/kronos-research.js');
 assert.equal(KronosResearch.randomAbsoluteError(2,0),1);
 assert.equal(KronosResearch.randomAbsoluteError(2,2),2);
 assert.ok(KronosResearch.randomAbsoluteError(1100,0)>20);
-async function boot(unavailable=false){
+async function boot(unavailable=false,gap=false){
  const nodes=new Map();
  function element(id){if(!nodes.has(id))nodes.set(id,{textContent:'',value:'',clientWidth:1000,clientHeight:480,events:{},classList:{toggle(){}},addEventListener(k,v){this.events[k]=v;},replaceChildren(){this.children=[];},append(v){(this.children??=[]).push(v);}});return nodes.get(id);}
  const now=Date.now(), start=Math.floor(now/60000)*60000-200*60000;
  const rows=Array.from({length:200},(_,i)=>[String(100000+i),i%10,new Date(start+i*60000+390*60000).toISOString().slice(0,19)]);
+ if(gap)rows.splice(181,1);
  const origin=180;
  const snapshot={schema:'kronos-round-snapshot-v1',data_source:'big-small-walk',model:'Kronos-mini',source:'official-kronos-inference-cpu',research_only:true,timeframe_minutes:1,origin_issue:rows[origin][0],forecast_close:[900,901],forecast_delta:[1,2],generated_at_utc:new Date(start+origin*60000+1000).toISOString()};
  let projection=[],view=null,chartOptions=null;const historyUrls=[];
@@ -51,6 +52,9 @@ async function boot(unavailable=false){
  assert.match(app.historyUrls[1],/&since=100199/);
  assert.equal(app.element('count').textContent,'200');
  assert.match(app.element('forecastStatus').textContent,/Historical/);
+ const gap=await boot(false,true);
+ assert.equal(gap.element('scoredTargets').textContent,'0');
+ assert.match(gap.element('comparison').textContent,/Pending/);
  const missing=await boot(true);
  assert.equal(missing.element('forecastStatus').textContent,'Unavailable');
  assert.equal(missing.projection().length,0);
