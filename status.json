@@ -1,5 +1,5 @@
 {
-  "attempt_at_utc": "2026-11-01T04:06:48.480547+00:00",
-  "status": "failed",
-  "reason": "ValueError: At least 128 valid rounds required"
+  "attempt_at_utc": "2026-11-01T04:09:10.585222+00:00",
+  "status": "ready",
+  "latest_file": "forecasts/20261101103010249-5-84b50459f27aac4e.json"
 }

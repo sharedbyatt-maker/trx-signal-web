@@ -1,0 +1,9 @@
+{
+  "schema": "kronos-daily-reports-v1",
+  "updated_at_utc": "2026-11-01T04:09:10.585222+00:00",
+  "calendar": "Asia/Bangkok",
+  "retention_days": 30,
+  "unavailable_forecasts": 0,
+  "days": [],
+  "note": "MAE in walk steps; overlapping targets are correlated. No next-round accuracy claim."
+}
