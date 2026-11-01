@@ -1,6 +1,11 @@
 name: Kronos isolated research inference
 on:
   workflow_dispatch:
+  pull_request:
+    paths: ["research/kronos/**", "static/js/kronos.js", "templates/kronos.html", "tests_kronos*", ".github/workflows/kronos-inference.yml"]
+  push:
+    branches: [main]
+    paths: ["research/kronos/**", ".github/workflows/kronos-inference.yml"]
   schedule:
     - cron: '17 * * * *'
 permissions:
@@ -24,6 +29,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Verify isolated adapters and UI contracts
+        run: |
+          python tests_kronos_round_adapter.py
+          python tests_kronos_automation.py
+          node tests_kronos_ui.js
       - uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
@@ -51,7 +64,7 @@ jobs:
         id: model
         run: python research/kronos/pipeline.py --kronos-dir /tmp/Kronos --history-url 'https://trx-signal-web.onrender.com/api/history?days=30' --output /tmp/published --timeframe 5
       - name: Publish results or failure status without deploying main
-        if: always() && steps.model.outcome != 'skipped'
+        if: always() && github.event_name != 'pull_request' && steps.model.outcome != 'skipped'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

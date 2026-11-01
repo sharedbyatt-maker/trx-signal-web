@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity;
+let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity, firstPublication=true;
 const PUBLICATION="https://raw.githubusercontent.com/sharedbyatt-maker/trx-signal-web/kronos-forecasts/";
 const MAX_ROUNDS=10000;
 function parseRound(r){
@@ -113,7 +113,7 @@ async function importSnapshot(file){
 
  }catch(err){activeSnapshot=null;projected?.setData([]);$("forecastStatus").textContent="Rejected";$("snapshotInfo").textContent=err.message;$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
 }
-document.querySelectorAll("[data-tf]").forEach(button=>button.addEventListener("click",()=>{tf=Number(button.dataset.tf);document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",x===button));render();autoSnapshot();}));
+document.querySelectorAll("[data-tf]").forEach(button=>button.addEventListener("click",()=>{firstPublication=false;tf=Number(button.dataset.tf);document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",x===button));render();autoSnapshot();}));
 $("reload").addEventListener("click",()=>load().then(autoSnapshot));
 $("forecastToggle").addEventListener("click",()=>{forecastVisible=!forecastVisible;$("forecastToggle").textContent="Forecast "+(forecastVisible?"ON":"OFF");if(!forecastVisible)projected.setData([]);else if(activeSnapshot)importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
 $("forecastHistory").addEventListener("change",async event=>{const path=event.target.value;if(!/^forecasts\/[a-zA-Z0-9-]+\.json$/.test(path))return;try{const r=await fetch(PUBLICATION+path,{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);await importSnapshot({size:0,text:()=>r.text()});}catch(e){$("snapshotInfo").textContent=e.message;}});$("snapshot").addEventListener("change",event=>importSnapshot(event.target.files?.[0]));
@@ -124,6 +124,15 @@ async function autoSnapshot(){
   if(!response.ok)throw Error("No published forecast manifest (HTTP "+response.status+")");
   const manifest=await response.json();
   if(manifest.schema!=="kronos-index-v1"||!Array.isArray(manifest.forecasts))throw Error("Invalid manifest");
+  if(firstPublication){
+   firstPublication=false;
+   const available=manifest.forecasts.find(x=>[1,5,15,60].includes(x.timeframe));
+   if(available&&!manifest.forecasts.some(x=>x.timeframe===tf)){
+    tf=available.timeframe;
+    document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",Number(x.dataset.tf)===tf));
+    render();
+   }
+  }
   const entries=manifest.forecasts.filter(x=>x.timeframe===tf&&/^forecasts\/[a-zA-Z0-9-]+\.json$/.test(x.file)).slice(0,60);
   $("forecastHistory").replaceChildren();
   for(const item of entries){const option=document.createElement("option");option.value=item.file;option.textContent=item.origin_issue+" · "+item.generated_at_utc;$("forecastHistory").append(option);}
