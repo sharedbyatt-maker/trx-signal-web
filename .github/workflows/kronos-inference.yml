@@ -11,8 +11,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: kronos-publication
-  cancel-in-progress: false
+  group: kronos-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   inference:
     runs-on: ubuntu-latest
