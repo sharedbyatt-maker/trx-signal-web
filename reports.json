@@ -1,6 +1,6 @@
 {
   "schema": "kronos-daily-reports-v1",
-  "updated_at_utc": "2026-11-01T04:12:23.892956+00:00",
+  "updated_at_utc": "2026-11-01T04:30:05.455884+00:00",
   "calendar": "Asia/Bangkok",
   "retention_days": 30,
   "unavailable_forecasts": 0,
@@ -9,14 +9,15 @@
       "day_local": "2026-11-01",
       "timeframe": 5,
       "model": "Kronos-mini",
-      "targets": 12,
+      "targets": 16,
       "forecasts": [
-        "forecasts/20261101103010159-5-2f085eda3f35e1ec.json"
+        "forecasts/20261101103010159-5-2f085eda3f35e1ec.json",
+        "forecasts/20261101103010249-5-84b50459f27aac4e.json"
       ],
-      "error": 83.8062,
-      "persistence": 118,
-      "random": 120.2918832651872,
-      "majority": 284
+      "error": 96.7426,
+      "persistence": 126,
+      "random": 133.63624743144695,
+      "majority": 344
     }
   ],
   "note": "MAE in walk steps; overlapping targets are correlated. No next-round accuracy claim."

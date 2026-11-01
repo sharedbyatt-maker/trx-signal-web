@@ -132,6 +132,50 @@
       "persistence": 15,
       "random": 15.154634519378236,
       "majority": 46
+    },
+    {
+      "id": "forecasts/20261101103010249-5-84b50459f27aac4e.json:0",
+      "forecast": "forecasts/20261101103010249-5-84b50459f27aac4e.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T04:15:00+00:00",
+      "model": "Kronos-mini",
+      "error": 3.2036,
+      "persistence": 2,
+      "random": 2.5000000000000004,
+      "majority": 8
+    },
+    {
+      "id": "forecasts/20261101103010249-5-84b50459f27aac4e.json:1",
+      "forecast": "forecasts/20261101103010249-5-84b50459f27aac4e.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T04:20:00+00:00",
+      "model": "Kronos-mini",
+      "error": 4.9257,
+      "persistence": 3,
+      "random": 3.609375,
+      "majority": 14
+    },
+    {
+      "id": "forecasts/20261101103010249-5-84b50459f27aac4e.json:2",
+      "forecast": "forecasts/20261101103010249-5-84b50459f27aac4e.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T04:25:00+00:00",
+      "model": "Kronos-mini",
+      "error": 4.1508,
+      "persistence": 2,
+      "random": 3.5348510742187504,
+      "majority": 18
+    },
+    {
+      "id": "forecasts/20261101103010249-5-84b50459f27aac4e.json:3",
+      "forecast": "forecasts/20261101103010249-5-84b50459f27aac4e.json",
+      "timeframe": 5,
+      "target_end_utc": "2026-11-01T04:30:00+00:00",
+      "model": "Kronos-mini",
+      "error": 0.6563,
+      "persistence": 1,
+      "random": 3.7001380920410165,
+      "majority": 20
     }
   ]
 }
