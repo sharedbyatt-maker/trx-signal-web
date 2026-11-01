@@ -7,6 +7,9 @@ Install official Kronos repository and CPU PyTorch locally. Model is out-of-doma
 import argparse
 import json
 import math
+import hashlib
+import time
+from zoneinfo import ZoneInfo
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -26,6 +29,8 @@ def get_history(url):
 
 def walk_bars(rows, tf):
     """Match frontend base=100 and BIG +1 / SMALL -1; aggregate by time bucket."""
+    if tf not in (1, 5, 15, 60):
+        raise ValueError("Unsupported timeframe")
     parsed = {}
     for entry in rows:
         if not isinstance(entry, list) or len(entry) < 3:
@@ -34,16 +39,24 @@ def walk_bars(rows, tf):
         if not issue.isdigit():
             continue
         try:
+            if not number.isdigit():
+                continue
             digit = int(number)
-            when = datetime.strptime(raw_time[:16].replace("T", " "), "%Y-%m-%d %H:%M")
+            when = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+            if when.tzinfo is not None:
+                when = when.astimezone(ZoneInfo("Asia/Yangon")).replace(tzinfo=None)
         except ValueError:
             continue
         if not 0 <= digit <= 9:
             continue
+        if issue in parsed and parsed[issue] != (when, digit):
+            raise ValueError("Conflicting duplicate round")
         parsed[issue] = (when, digit)
-    ordered = sorted(parsed.items(), key=lambda row: row[0])[-10000:]  # match the public chart history window exactly
+    ordered = sorted(parsed.items(), key=lambda row: int(row[0]))[-10000:]  # match the public chart history window exactly
     if len(ordered) < 128:
         raise ValueError("At least 128 valid rounds required")
+    if any(a[1][0] >= b[1][0] for a, b in zip(ordered, ordered[1:])):
+        raise ValueError("Round timestamps must increase with issue")
     level = 100.0
     bars = []
     for issue, (when, number) in ordered:
@@ -69,17 +82,21 @@ def generate(args):
     # Heavy dependencies imported only for real inference, not validation.
     import numpy as np
     import pandas as pd
+    import torch
+    torch.manual_seed(0)
+    np.random.seed(0)
     if args.kronos_dir:
         sys.path.insert(0, str(Path(args.kronos_dir).resolve()))
     from model import Kronos, KronosTokenizer, KronosPredictor
 
-    raw = get_history(args.history_url)
+    started = time.monotonic()
+    raw = json.loads(Path(args.history_file).read_text())["history"] if args.history_file else get_history(args.history_url)
     bars, origin_issue = walk_bars(raw, args.timeframe)
     model_slug = "Kronos-mini" if args.model == "mini" else "Kronos-small"
     tokenizer_slug = "Kronos-Tokenizer-2k" if args.model == "mini" else "Kronos-Tokenizer-base"
     print(f"Loading genuine {model_slug} and tokenizer on CPU; first use downloads model weights.")
-    tokenizer = KronosTokenizer.from_pretrained("NeoQuasar/" + tokenizer_slug)
-    model = Kronos.from_pretrained("NeoQuasar/" + model_slug)
+    tokenizer = KronosTokenizer.from_pretrained("NeoQuasar/" + tokenizer_slug, revision=args.tokenizer_revision)
+    model = Kronos.from_pretrained("NeoQuasar/" + model_slug, revision=args.model_revision)
     predictor = KronosPredictor(model, tokenizer, device="cpu", max_context=512 if args.model == "small" else 2048)
     lookback = min(args.lookback, len(bars))
     selected = bars[-lookback:]
@@ -92,12 +109,20 @@ def generate(args):
     closes = [float(v) for v in prediction["close"].tolist()]
     if len(closes) != args.horizon or not all(math.isfinite(v) for v in closes):
         raise ValueError("Kronos produced invalid close values")
-    # The frontend does not certify the origin; verifies latest issue upon loading.
+    # Preserve the input anchor: viewer windows move, so absolute levels cannot be reused.
+    origin_time = bars[-1]["time"].isoformat()
+    input_hash = hashlib.sha256(json.dumps(raw, separators=(",", ":")).encode()).hexdigest()
     snapshot = {
         "schema": "kronos-round-snapshot-v1", "data_source": "big-small-walk",
         "model": model_slug, "timeframe_minutes": args.timeframe, "origin_issue": origin_issue,
         "forecast_close": [round(v, 4) for v in closes],
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "seed": 0, "torch_version": torch.__version__,
+        "model_revision": args.model_revision, "tokenizer_revision": args.tokenizer_revision,
+        "origin_bar_time_local": origin_time, "source_timezone": "Asia/Yangon",
+        "origin_close": bars[-1]["close"], "input_sha256": input_hash,
+        "forecast_delta": [round(v - bars[-1]["close"], 4) for v in closes],
+        "inference_seconds": round(time.monotonic() - started, 3),
         "lookback_bars": lookback, "source": "official-kronos-inference-cpu",
         "research_only": True,
     }
@@ -110,16 +135,23 @@ def generate(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--history-url", required=True, help="https://your-existing-site/api/history?days=30")
+    ap.add_argument("--history-file", help="Frozen compact history JSON for isolated jobs")
+    ap.add_argument("--history-url", help="https://your-existing-site/api/history?days=30")
     ap.add_argument("--kronos-dir", required=True, help="Directory of cloned shiyu-coder/Kronos repository")
     ap.add_argument("--output", default="static/data/kronos_latest.json")
+    ap.add_argument("--model-revision", default=None)
+    ap.add_argument("--tokenizer-revision", default=None)
     ap.add_argument("--model", choices=["mini", "small"], default="mini")
     ap.add_argument("--timeframe", type=int, choices=[1, 5, 15, 60], default=1)
     ap.add_argument("--horizon", type=int, default=12)
     ap.add_argument("--lookback", type=int, default=256)
     args = ap.parse_args()
+    args.model_revision = args.model_revision or ("f4e68697d9d5aed55cef5c96aabc3376bcad9f81" if args.model == "mini" else "main")
+    args.tokenizer_revision = args.tokenizer_revision or ("26966d0035065a0cae0ebad7af8ece35bc1fb51c" if args.model == "mini" else "main")
     if not 1 <= args.horizon <= 60 or not 64 <= args.lookback <= 512:
         ap.error("horizon must be 1..60; lookback must be 64..512")
+    if not args.history_file and not args.history_url:
+        ap.error("history-url or history-file is required")
     generate(args)
 
 
