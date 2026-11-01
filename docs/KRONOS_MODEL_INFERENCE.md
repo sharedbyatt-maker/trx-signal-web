@@ -68,7 +68,9 @@ excludes all target buckets that already started by generation time.
 
 ### Evaluation scope
 
-The page refreshes history/publication every two minutes and supports historical
+The page refreshes history/publication every two minutes, using the existing
+`since` incremental API after its initial full load to avoid repeated large
+history downloads. It supports historical
 overlay selection, forecast on/off, replay, and close MAE
 versus persistence for the selected snapshot. Only completed target candles
 starting after generation are eligible. Current incomplete candles are excluded.

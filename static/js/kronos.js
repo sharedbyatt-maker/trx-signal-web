@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity, firstPublication=true, replayMode=false;
+let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity, firstPublication=true, replayMode=false, lastSourceUtc=null;
 const PUBLICATION="https://raw.githubusercontent.com/sharedbyatt-maker/trx-signal-web/kronos-forecasts/";
 const MAX_ROUNDS=10000;
 function parseRound(r){
@@ -48,12 +48,15 @@ function render(){
 async function load(){
  $("historyStatus").textContent="Loading existing /api/history…";
  try{
-  const response=await fetch("/api/history?days=30",{cache:"no-store",headers:{Accept:"application/json"}});
+  const historyUrl=rounds.length?"/api/history?days=30&since="+encodeURIComponent(rounds[rounds.length-1].issue):"/api/history?days=30";
+  const response=await fetch(historyUrl,{cache:"no-store",headers:{Accept:"application/json"}});
   if(!response.ok)throw new Error("HTTP "+response.status);
   const json=await response.json();if(!Array.isArray(json.history))throw Error("History format unavailable");
-  sourceAgeMinutes=(Date.now()-Date.parse(json.last_time_utc))/60000;
+  if(Number.isFinite(Date.parse(json.last_time_utc)))lastSourceUtc=json.last_time_utc;
+  sourceAgeMinutes=(Date.now()-Date.parse(lastSourceUtc))/60000;
+  const incoming=json.incremental?[...rounds.map(r=>[r.issue,r.number,r.time]),...json.history]:json.history;
   const unique=new Map();
-  for(const r of json.history.map(parseRound).filter(Boolean)){
+  for(const r of incoming.map(parseRound).filter(Boolean)){
    const previous=unique.get(r.issue);
    if(previous&&(previous.number!==r.number||previous.time!==r.time))throw Error("Conflicting duplicate round");
    unique.set(r.issue,r);
