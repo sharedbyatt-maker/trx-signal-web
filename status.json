@@ -1,5 +1,20 @@
 {
-  "attempt_at_utc": "2026-11-01T05:06:52.337003+00:00",
+  "attempt_at_utc": "2026-11-01T07:22:50.411373+00:00",
   "status": "ready",
-  "latest_file": "forecasts/20261101103010306-5-b994a66d01560b73.json"
+  "timeframes": {
+    "5": {
+      "attempt_at_utc": "2026-11-01T07:22:51.460630+00:00",
+      "status": "ready",
+      "timeframe": 5,
+      "latest_file": "forecasts/20261101103010442-5-583b9a684ecc2d99.json"
+    },
+    "1": {
+      "attempt_at_utc": "2026-11-01T07:23:07.167390+00:00",
+      "status": "ready",
+      "timeframe": 1,
+      "latest_file": "forecasts/20261101103010443-1-02cd524e1261034a.json"
+    }
+  },
+  "schedule_minutes": 5,
+  "reason": ""
 }
