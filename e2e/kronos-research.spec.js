@@ -23,6 +23,10 @@ test('Kronos loads historical comparisons and working forecast controls',async({
  await expect(page.locator('#forecastStatus')).toContainText('Historical');
  await expect(page.locator('#comparison')).toContainText('Evaluated bars: 2');
  await expect(page.locator('#kronosChart canvas').first()).toBeVisible();
+ await page.locator('#replay').click();
+ await expect(page.locator('#comparison')).toContainText('Replay: only rounds');
+ await page.locator('#replay').click();
+ await expect(page.locator('#comparison')).toContainText('expected random MAE');
  await page.locator('#forecastToggle').click();
  await expect(page.locator('#forecastToggle')).toHaveText('Forecast OFF');
  await page.locator('#forecastToggle').click();

@@ -1,12 +1,13 @@
 (() => {
 "use strict";
 const $ = id => document.getElementById(id);
-let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity, firstPublication=true;
+let rounds=[], tf=1, chart, candle, projected, resizeObserver, activeSnapshot=null, forecastVisible=true, sourceAgeMinutes=Infinity, firstPublication=true, replayMode=false;
 const PUBLICATION="https://raw.githubusercontent.com/sharedbyatt-maker/trx-signal-web/kronos-forecasts/";
 const MAX_ROUNDS=10000;
 function parseRound(r){
  if(!Array.isArray(r)||r.length<3)return null;
  const issue=String(r[0]??"");
+ if(!/^[0-9]$/.test(String(r[1])))return null;
  const number=Number(r[1]);
  const time=String(r[2]??"");
  if(!/^\d{4,}$/.test(issue)||!Number.isInteger(number)||number<0||number>9)return null;
@@ -20,9 +21,9 @@ function parseRound(r){
  if(!Number.isFinite(minute))return null;
  return {issue,number,time,minute};
 }
-function makeBars(){
+function makeBars(source=rounds){
  const bars=[];let level=100,lastKey=null;
- for(const r of rounds){
+ for(const r of source){
   const key=Math.floor(r.minute/tf);
   const open=level;level+=r.number>=5?1:-1;
   if(key!==lastKey){bars.push({bucket:key,time:bars.length+1,open,high:Math.max(open,level),low:Math.min(open,level),close:level});lastKey=key;}
@@ -34,11 +35,12 @@ function initChart(){
  if(!window.LightweightCharts){$("historyStatus").textContent="Chart library unavailable";return;}
  chart=LightweightCharts.createChart($("kronosChart"),{width:$("kronosChart").clientWidth,height:$("kronosChart").clientHeight,layout:{background:{type:"solid",color:"#0c1c2c"},textColor:"#a7bbcd"},grid:{vertLines:{color:"#172c3e"},horzLines:{color:"#172c3e"}},rightPriceScale:{borderColor:"#304a61"},timeScale:{borderColor:"#304a61",rightOffset:12,fixLeftEdge:true},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}});
  candle=chart.addCandlestickSeries({upColor:"#04b99c",downColor:"#ee5162",wickUpColor:"#04b99c",wickDownColor:"#ee5162",borderVisible:false,priceFormat:{type:"price",precision:1,minMove:1}});
- projected=chart.addLineSeries({color:"#ae86fa",lineWidth:3,lineStyle:2,lastValueVisible:false,priceLineVisible:false});
+ projected=chart.addAreaSeries({lineColor:"#ae86fa",topColor:"rgba(174,134,250,0.3)",bottomColor:"rgba(174,134,250,0.03)",lineWidth:3,lineStyle:2,lastValueVisible:false,priceLineVisible:false});
  resizeObserver=new ResizeObserver(()=>chart.applyOptions({width:$("kronosChart").clientWidth,height:$("kronosChart").clientHeight}));resizeObserver.observe($("kronosChart"));
 }
 function render(){
  if(!candle)return;
+ $("replay").disabled=true;
  const bars=makeBars();candle.setData(bars);projected.setData([]);$("horizon").textContent="—";$("forecastStatus").textContent="Not loaded";$("snapshotInfo").textContent="No snapshot imported";$("comparison").textContent="No validated forecast loaded. Research snapshots can be compared only after their target rounds have occurred.";chart.timeScale().fitContent();
  $("issue").textContent=rounds.length?rounds[rounds.length-1].issue:"—";$("count").textContent=String(rounds.length);
 }
@@ -49,7 +51,14 @@ async function load(){
   if(!response.ok)throw new Error("HTTP "+response.status);
   const json=await response.json();if(!Array.isArray(json.history))throw Error("History format unavailable");
   sourceAgeMinutes=(Date.now()-Date.parse(json.last_time_utc))/60000;
-  const seen=new Set();rounds=json.history.map(parseRound).filter(Boolean).filter(r=>{if(seen.has(r.issue))return false;seen.add(r.issue);return true;}).sort((a,b)=>a.issue.length-b.issue.length||a.issue.localeCompare(b.issue)).slice(-MAX_ROUNDS);
+  const unique=new Map();
+  for(const r of json.history.map(parseRound).filter(Boolean)){
+   const previous=unique.get(r.issue);
+   if(previous&&(previous.number!==r.number||previous.time!==r.time))throw Error("Conflicting duplicate round");
+   unique.set(r.issue,r);
+  }
+  rounds=Array.from(unique.values()).sort((a,b)=>a.issue.length-b.issue.length||a.issue.localeCompare(b.issue)).slice(-MAX_ROUNDS);
+  if(rounds.some((r,i)=>i>0&&r.minute<rounds[i-1].minute))throw Error("Round timestamps out of order");
   $("historyStatus").textContent=rounds.length?"Loaded "+rounds.length+" rounds · read-only":"No valid rounds available";
   render();
  }catch(err){$("historyStatus").textContent="History unavailable: "+err.message;rounds=[];render();}
@@ -87,7 +96,9 @@ async function importSnapshot(file){
   const withinOrigin=rounds.slice(origin+1).filter(r=>Math.floor(r.minute/tf)===originBucket);
   const originAnchor=anchor-withinOrigin.reduce((n,r)=>n+(r.number>=5?1:-1),0);
   const points=[{time:originBar+1,value:originAnchor}];
-  let evaluated=0,error=0,persistence=0,excluded=0;
+  let evaluated=0,error=0,persistence=0,excluded=0,randomError=0,majorityError=0,directions=0,correctDirections=0;
+  const training=rounds.slice(Math.max(0,origin-(snap.lookback_bars||256)*tf+1),origin+1);
+  const majority=Math.sign(training.reduce((sum,r)=>sum+(r.number>=5?1:-1),0));
   for(let i=0;i<delta.length;i++){
    const bucket=originBucket+i+1;
    const actual=bars.find(b=>b.bucket===bucket);
@@ -99,22 +110,37 @@ async function importSnapshot(file){
    if(startUtc<=generation){excluded++;continue;}
    if(actual&&bucket<bars[bars.length-1].bucket){
     evaluated++;error+=Math.abs(originAnchor+delta[i]-actual.close);
-    persistence+=Math.abs(originAnchor-actual.close);
+    const observedDelta=actual.close-originAnchor;
+    persistence+=Math.abs(observedDelta);
+    const n=rounds.slice(origin+1).filter(r=>Math.floor(r.minute/tf)<=bucket).length;
+    randomError+=KronosResearch.randomAbsoluteError(n,observedDelta);
+    majorityError+=Math.abs(majority*n-observedDelta);
+    if(delta[i]!==0&&observedDelta!==0){directions++;correctDirections+=Math.sign(delta[i])===Math.sign(observedDelta)?1:0;}
    }
   }
   projected.setData(forecastVisible?points:[]);
   activeSnapshot=snap;
+  $("replay").disabled=false;
+  candle.setData(replayMode?makeBars(rounds.slice(0,origin+1)):bars);
+  $("replay").textContent=replayMode?"Show actual":"Replay origin";
   const ageMinutes=Math.max(0,(Date.now()-generation)/60000);
   const historical=origin!==rounds.length-1;
   $("horizon").textContent=values.length+" bars";
-  $("forecastStatus").textContent=historical?"Historical · not latest":!Number.isFinite(sourceAgeMinutes)||sourceAgeMinutes>5||sourceAgeMinutes< -1?"Feed stale / unknown":ageMinutes>tf*2?"Stale":"Current · research";
-  $("snapshotInfo").textContent=snap.model+" · origin "+snap.origin_issue+" · generated "+new Date(generation).toISOString()+" · "+Math.round(ageMinutes)+" min ago · "+tf+"m";
-  $("comparison").textContent=evaluated?"Evaluated bars: "+evaluated+" · close MAE: "+(error/evaluated).toFixed(3)+" steps · persistence MAE: "+(persistence/evaluated).toFixed(3)+" steps · excluded already-started bars: "+excluded+". Continuous projection; no round win-rate claim.":"Pending: no fully completed, post-publication target bars available. Excluded already-started bars: "+excluded+". No measured accuracy yet.";
+  $("forecastStatus").textContent=!Number.isFinite(sourceAgeMinutes)||sourceAgeMinutes>5||sourceAgeMinutes< -1?"Feed stale / unknown":bars[bars.length-1].bucket>originBucket+values.length?"Historical · horizon ended":ageMinutes>tf*values.length?"Stale · not latest":historical?"Active · older origin":"Current · research";
+  $("snapshotInfo").textContent=snap.model+"@"+(snap.model_revision||"unknown").slice(0,8)+" · origin "+snap.origin_issue+" · generated "+new Date(generation).toISOString()+" · "+Math.round(ageMinutes)+" min ago · "+tf+"m";
+  $("comparison").textContent=evaluated?"Evaluated bars: "+evaluated+" · close MAE: "+(error/evaluated).toFixed(3)+" steps · persistence MAE: "+(persistence/evaluated).toFixed(3)+" steps · expected random MAE: "+(randomError/evaluated).toFixed(3)+" · past-majority MAE: "+(majorityError/evaluated).toFixed(3)+" · origin-to-target direction: "+(directions?correctDirections+"/"+directions:"no non-tied samples")+" · excluded already-started bars: "+excluded+". Continuous projection; no round win-rate claim.":"Pending: no fully completed, post-publication target bars available. Excluded already-started bars: "+excluded+". No measured accuracy yet.";
 
- }catch(err){activeSnapshot=null;projected?.setData([]);$("forecastStatus").textContent="Rejected";$("snapshotInfo").textContent=err.message;$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
+  if(replayMode)$("comparison").textContent="Replay: only rounds known at the original forecast origin are visible. Select Show actual for the subsequent comparison.";
+ }catch(err){activeSnapshot=null;$("replay").disabled=true;projected?.setData([]);$("forecastStatus").textContent="Rejected";$("snapshotInfo").textContent=err.message;$("historyStatus").textContent="Snapshot rejected: "+err.message;}finally{$("snapshot").value="";}
 }
 document.querySelectorAll("[data-tf]").forEach(button=>button.addEventListener("click",()=>{firstPublication=false;tf=Number(button.dataset.tf);document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("chosen",x===button));render();autoSnapshot();}));
-$("reload").addEventListener("click",()=>load().then(autoSnapshot));
+async function refresh(){
+ const view=chart?.timeScale().getVisibleLogicalRange?.();
+ await load();await autoSnapshot();
+ if(view)chart.timeScale().setVisibleLogicalRange(view);
+}
+$("reload").addEventListener("click",refresh);
+$("replay").addEventListener("click",()=>{if(!activeSnapshot)return;replayMode=!replayMode;importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
 $("forecastToggle").addEventListener("click",()=>{forecastVisible=!forecastVisible;$("forecastToggle").textContent="Forecast "+(forecastVisible?"ON":"OFF");if(!forecastVisible)projected.setData([]);else if(activeSnapshot)importSnapshot({size:0,text:async()=>JSON.stringify(activeSnapshot)});});
 $("forecastHistory").addEventListener("change",async event=>{const path=event.target.value;if(!/^forecasts\/[a-zA-Z0-9-]+\.json$/.test(path))return;try{const r=await fetch(PUBLICATION+path,{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);await importSnapshot({size:0,text:()=>r.text()});}catch(e){$("snapshotInfo").textContent=e.message;}});$("snapshot").addEventListener("change",event=>importSnapshot(event.target.files?.[0]));
 async function autoSnapshot(){
@@ -145,4 +171,5 @@ async function autoSnapshot(){
 }
 
 initChart();load().then(autoSnapshot);
+setInterval(refresh,120000);
 })();

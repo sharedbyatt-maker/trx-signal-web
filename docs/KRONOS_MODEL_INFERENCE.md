@@ -68,12 +68,17 @@ excludes all target buckets that already started by generation time.
 
 ### Evaluation scope
 
-The page supports historical overlay selection, forecast on/off, and close MAE
+The page refreshes history/publication every two minutes and supports historical
+overlay selection, forecast on/off, replay, and close MAE
 versus persistence for the selected snapshot. Only completed target candles
 starting after generation are eligible. Current incomplete candles are excluded.
 This is a continuous synthetic-walk forecast, not a next-round BIG probability.
-Random/majority baselines, aggregate walk-forward reporting, interactive replay,
-and a shaded forecast zone are **not implemented yet**. No measured predictive
+The selected snapshot also reports an exact expected random-walk MAE and a
+majority-direction baseline fitted only to its pre-origin rounds. Origin-to-target
+direction counts exclude ties; these are not next-round classification accuracy.
+Replay hides actual candles after the original origin. Purple area fill marks
+the projection. Aggregate walk-forward reporting across all snapshots remains
+unimplemented. No measured predictive
 advantage is claimed. Public JSON metadata is an audit trail, not a cryptographic
 proof of model provenance.
 
@@ -93,9 +98,13 @@ proof of model provenance.
 - Main at audit: `c9604568c553461a09bc13129f977f64dbb1b920`.
   Existing main CI run 41232746136 succeeded. Live `/kronos` and `/api/history`
   returned HTTP 200. This does not establish deployment SHA or complete UI health.
-- The connected Render account did not contain this service; the owner identified
-  a different account. Deployment identity and rollback capability are unverified.
-  Do not merge/deploy until that baseline, full CI and real browser QA are verified.
+- The corrected `trx web render` connection identifies service
+  `srv-da8nivrtqb8s73aojamg` in the confirmed TRX Website workspace. Baseline live
+  deployment `dep-dbj3p395efls73dk4gc0` runs the main commit above.
+  The earlier browser/regression CI run passed on both Python versions. New
+  Kronos-specific desktop/mobile E2E coverage and real inference CI are added;
+  require their latest results before merge. Production deployment verification
+  is still required after merge.
 
 Rollback: revert this isolated change using a normal revert PR, disable the new
 schedule, and retain the separate publication branch for audit. Do not alter
