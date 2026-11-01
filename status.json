@@ -1,12 +1,12 @@
 {
-  "attempt_at_utc": "2026-11-01T08:26:28.361951+00:00",
+  "attempt_at_utc": "2026-11-01T08:27:24.009826+00:00",
   "status": "ready",
   "timeframes": {
     "1": {
-      "attempt_at_utc": "2026-11-01T08:26:39.033427+00:00",
+      "attempt_at_utc": "2026-11-01T08:27:24.432957+00:00",
       "status": "ready",
       "timeframe": 1,
-      "latest_file": "forecasts/20261101103010506-1-735b832f30ceda7f.json"
+      "latest_file": "forecasts/20261101103010507-1-4b10c0d1b785647f.json"
     },
     "5": {
       "attempt_at_utc": "2026-11-01T08:26:29.066785+00:00",
