@@ -6,7 +6,7 @@ const PUBLICATION="https://raw.githubusercontent.com/sharedbyatt-maker/trx-signa
 const MAX_ROUNDS=10000;
 let inspectData=null,refreshing=false;
 let requestVersion=0;
-const selections=new Map(),snapshotCache=new Map();
+const selections=new Map(),snapshotCache=new Map(),publicationTimes=new Map();
 const current=version=>version===requestVersion;
 async function download(url){
  const options={cache:'no-store'};
@@ -184,7 +184,7 @@ async function importSnapshot(file,dry=false,version=requestVersion){
   projected.setData(forecastVisible?points:[]);
   activeSnapshot=snap;
   inspectData={predicted:new Map(points.slice(1).map(p=>[p.time,p.value])),actual:new Map((replayMode?makeBars(rounds.slice(0,origin+1)):bars).map(b=>[b.time,b])),generation,scorable,latest:bars[bars.length-1].time};
-  KronosDashboard.summary(replayMode?'—':evaluated,replayMode?'—':explanations.filter(row=>row.status==='pending').length,snap.generated_at_utc);
+  KronosDashboard.summary(replayMode?'—':evaluated,replayMode?'—':explanations.filter(row=>row.status==='pending').length,snap.generated_at_utc,publicationTimes.get(tf)||null);
   $("replay").disabled=false;
   candle.setData(replayMode?makeBars(rounds.slice(0,origin+1)):bars);
   $("replay").textContent=replayMode?"Show actual":"Replay origin";
@@ -268,6 +268,7 @@ async function autoSnapshot(version=++requestVersion){
   }
   const all=manifest.forecasts.filter(x=>x.timeframe===timeframe&&/^forecasts\/[a-zA-Z0-9-]+\.json$/.test(x.file)&&Number.isFinite(Date.parse(x.generated_at_utc))).sort((a,b)=>Date.parse(b.generated_at_utc)-Date.parse(a.generated_at_utc));
   const entries=all.slice(0,60);
+  if(entries.length)publicationTimes.set(timeframe,entries[0].generated_at_utc);else publicationTimes.delete(timeframe);
   const chosen=selection?.path?all.find(x=>x.file===selection.path):entries[0];
   if(chosen&&!entries.includes(chosen))entries.push(chosen);
   $("forecastHistory").replaceChildren();

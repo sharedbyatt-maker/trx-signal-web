@@ -23,11 +23,11 @@ function renderBacktest(tf){
  $('backtestSummary').textContent=`${origins.length} historical origins · ${backtest.lookback_bars} input bars each · retrospective only · sample too small to establish predictive value.`;
  $('backtestDetails').textContent='Computed '+backtest.generated_at_utc+' · bounded to 8 origins per run · non-overlapping target windows. '+(origins.length?'Input cutoffs '+origins[0].input_end_utc+' to '+origins[origins.length-1].input_end_utc+'.':'Not enough complete source history yet.');
 }
-function summary(evaluated,pending,generated){
+function summary(evaluated,pending,generated,latestGenerated=generated){
  $('scoredTargets').textContent=String(evaluated);
  $('pendingTargets').textContent=String(pending);
- const schedule=root.KronosResearch.publicationSchedule(currentTf,generated);
- $('nextForecast').textContent=schedule?(schedule.overdue?'နောက်ကျနေသည် · ':'')+new Date(schedule.expected+420*60000).toISOString().slice(11,16)+' Bangkok · '+currentTf+'m estimate':'ဒီ timeframe အတွက် auto schedule မရှိပါ';
+ const schedule=root.KronosResearch.publicationSchedule(currentTf,latestGenerated);
+ $('nextForecast').textContent=schedule?(schedule.overdue?'နောက်ကျနေသည် · ':'')+new Date(schedule.expected+420*60000).toISOString().slice(11,16)+' Bangkok · '+currentTf+'m estimate':[1,5].includes(currentTf)?'နောက်ထုတ်ချိန် မသိရသေးပါ':'ဒီ timeframe အတွက် auto schedule မရှိပါ';
  $('publicationStatus').textContent=schedule?.overdue?'Forecast အသစ် မရောက်သေးပါ။ အောက်ကအချိန်က စီစဉ်ထားသည့်အချိန်သာဖြစ်ပြီး timer အလုပ်လုပ်ကြောင်း အတည်ပြုချက် မဟုတ်ပါ။':'အချိန်သည် ခန့်မှန်းသာဖြစ်သည်။ Refresh က ရှိပြီးသား forecast ကိုသာ ပြန်ယူပြီး model ကို မမောင်းပါ။';
  $('forecastAge').textContent=Math.max(0,Math.floor((Date.now()-Date.parse(generated))/60000))+' min ago';
 }

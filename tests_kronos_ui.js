@@ -43,6 +43,7 @@ async function regressions(app){
  const entries=[{file:'forecasts/test.json',timeframe:1,origin_issue:app.snapshot.origin_issue,generated_at_utc:app.snapshot.generated_at_utc},{file:'forecasts/older.json',timeframe:1,origin_issue:older.origin_issue,generated_at_utc:older.generated_at_utc},{file:'forecasts/test5.json',timeframe:5,origin_issue:app.snapshot.origin_issue,generated_at_utc:app.snapshot.generated_at_utc}];
  const json=data=>({ok:true,json:async()=>data,text:async()=>JSON.stringify(data)});
  const manifest=json({schema:'kronos-index-v1',forecasts:entries});
+ const originalNext=app.element('nextForecast').textContent;
  let release,delayFive=false;
  app.fetchControl.override=url=>{
   if(url.includes('index.json'))return manifest;
@@ -54,6 +55,7 @@ async function regressions(app){
  };
  app.element('forecastHistory').events.change({target:{value:'forecasts/older.json'}});await settle();
  assert.match(app.element('snapshotInfo').textContent,/origin 100170/);
+ assert.equal(app.element('nextForecast').textContent,originalNext,'schedule follows latest publication even while viewing an archive');
  await app.element('reload').events.click();await settle();
  assert.match(app.element('snapshotInfo').textContent,/origin 100170/,'refresh preserves historical selection');
  app.element('replay').events.click();await settle();
