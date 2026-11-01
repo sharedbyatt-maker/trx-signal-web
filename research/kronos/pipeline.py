@@ -27,7 +27,7 @@ def run(args, *, history_rows=None):
     try:
         rows = get_history(args.history_url) if history_rows is None else history_rows
         # Source timestamps are explicitly Asia/Yangon in the existing API.
-        bars, origin_issue = walk_bars(rows, args.timeframe)
+        bars, origin_issue = walk_bars(rows, args.timeframe, require_contiguous=True)
         latest = max(datetime.fromisoformat(str(r[2]).replace('Z', '+00:00')).replace(tzinfo=ZoneInfo('Asia/Yangon'))
                      if datetime.fromisoformat(str(r[2]).replace('Z', '+00:00')).tzinfo is None
                      else datetime.fromisoformat(str(r[2]).replace('Z', '+00:00')) for r in rows)

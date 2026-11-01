@@ -11,6 +11,16 @@ function randomAbsoluteError(roundCount,actualDelta){
  for(let k=mode;k>0;k--){weight*=k/(roundCount-k+1);total+=weight;error+=weight*Math.abs(2*(k-1)-roundCount-actualDelta);}
  return error/total;
 }
-const api={randomAbsoluteError};
+// This is a configured opportunity to run, never evidence of a scheduled run.
+// Anchor to the last publication instead of moving an overdue time forward.
+function publicationSchedule(tf,generated,now=Date.now()){
+ if(![1,5].includes(tf))return null;
+ const time=Date.parse(generated);
+ if(!Number.isFinite(time))return null;
+ const earliest=time+(tf===5?55:0)*60000;
+ const expected=(Math.floor((earliest-120000)/300000)+1)*300000+120000;
+ return {expected,overdue:now>expected+120000};
+}
+const api={randomAbsoluteError,publicationSchedule};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.KronosResearch=api;
 })(typeof window!=='undefined'?window:this);
