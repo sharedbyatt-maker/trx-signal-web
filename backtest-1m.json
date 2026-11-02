@@ -1,91 +1,91 @@
 {
   "schema": "kronos-walk-forward-v1",
   "retrospective_only": true,
-  "generated_at_utc": "2026-11-01T20:56:34.602742+00:00",
+  "generated_at_utc": "2026-11-02T00:05:28.785992+00:00",
   "timeframe": 1,
   "model": "Kronos-mini",
   "origins": [
     {
-      "origin_issue": "20261101103011153",
-      "input_end_utc": "2026-11-01T19:12:54+00:00",
-      "simulated_issue_utc": "2026-11-01T19:12:55+00:00",
-      "last_target_end_utc": "2026-11-01T19:25:00+00:00"
+      "origin_issue": "20261101103011342",
+      "input_end_utc": "2026-11-01T22:21:54+00:00",
+      "simulated_issue_utc": "2026-11-01T22:21:55+00:00",
+      "last_target_end_utc": "2026-11-01T22:34:00+00:00"
     },
     {
-      "origin_issue": "20261101103011166",
-      "input_end_utc": "2026-11-01T19:25:54+00:00",
-      "simulated_issue_utc": "2026-11-01T19:25:55+00:00",
-      "last_target_end_utc": "2026-11-01T19:38:00+00:00"
+      "origin_issue": "20261101103011355",
+      "input_end_utc": "2026-11-01T22:34:54+00:00",
+      "simulated_issue_utc": "2026-11-01T22:34:55+00:00",
+      "last_target_end_utc": "2026-11-01T22:47:00+00:00"
     },
     {
-      "origin_issue": "20261101103011179",
-      "input_end_utc": "2026-11-01T19:38:54+00:00",
-      "simulated_issue_utc": "2026-11-01T19:38:55+00:00",
-      "last_target_end_utc": "2026-11-01T19:51:00+00:00"
+      "origin_issue": "20261101103011368",
+      "input_end_utc": "2026-11-01T22:47:54+00:00",
+      "simulated_issue_utc": "2026-11-01T22:47:55+00:00",
+      "last_target_end_utc": "2026-11-01T23:00:00+00:00"
     },
     {
-      "origin_issue": "20261101103011192",
-      "input_end_utc": "2026-11-01T19:51:54+00:00",
-      "simulated_issue_utc": "2026-11-01T19:51:55+00:00",
-      "last_target_end_utc": "2026-11-01T20:04:00+00:00"
+      "origin_issue": "20261101103011381",
+      "input_end_utc": "2026-11-01T23:00:54+00:00",
+      "simulated_issue_utc": "2026-11-01T23:00:55+00:00",
+      "last_target_end_utc": "2026-11-01T23:13:00+00:00"
     },
     {
-      "origin_issue": "20261101103011205",
-      "input_end_utc": "2026-11-01T20:04:54+00:00",
-      "simulated_issue_utc": "2026-11-01T20:04:55+00:00",
-      "last_target_end_utc": "2026-11-01T20:17:00+00:00"
+      "origin_issue": "20261101103011394",
+      "input_end_utc": "2026-11-01T23:13:54+00:00",
+      "simulated_issue_utc": "2026-11-01T23:13:55+00:00",
+      "last_target_end_utc": "2026-11-01T23:26:00+00:00"
     },
     {
-      "origin_issue": "20261101103011218",
-      "input_end_utc": "2026-11-01T20:17:54+00:00",
-      "simulated_issue_utc": "2026-11-01T20:17:55+00:00",
-      "last_target_end_utc": "2026-11-01T20:30:00+00:00"
+      "origin_issue": "20261101103011407",
+      "input_end_utc": "2026-11-01T23:26:54+00:00",
+      "simulated_issue_utc": "2026-11-01T23:26:55+00:00",
+      "last_target_end_utc": "2026-11-01T23:39:00+00:00"
     },
     {
-      "origin_issue": "20261101103011231",
-      "input_end_utc": "2026-11-01T20:30:54+00:00",
-      "simulated_issue_utc": "2026-11-01T20:30:55+00:00",
-      "last_target_end_utc": "2026-11-01T20:43:00+00:00"
+      "origin_issue": "20261101103011420",
+      "input_end_utc": "2026-11-01T23:39:54+00:00",
+      "simulated_issue_utc": "2026-11-01T23:39:55+00:00",
+      "last_target_end_utc": "2026-11-01T23:52:00+00:00"
     },
     {
-      "origin_issue": "20261101103011244",
-      "input_end_utc": "2026-11-01T20:43:54+00:00",
-      "simulated_issue_utc": "2026-11-01T20:43:55+00:00",
-      "last_target_end_utc": "2026-11-01T20:56:00+00:00"
+      "origin_issue": "20261101103011433",
+      "input_end_utc": "2026-11-01T23:52:54+00:00",
+      "simulated_issue_utc": "2026-11-01T23:52:55+00:00",
+      "last_target_end_utc": "2026-11-02T00:05:00+00:00"
     }
   ],
   "horizons": [
     {
       "horizon": 1,
       "targets": 8,
-      "error": 9.1001,
+      "error": 9.8598,
       "persistence": 8,
       "random": 8.0,
-      "majority": 10
+      "majority": 11
     },
     {
       "horizon": 3,
       "targets": 8,
-      "error": 8.2392,
+      "error": 14.2643,
       "persistence": 10,
       "random": 13.499999999999998,
-      "majority": 22
+      "majority": 25
     },
     {
       "horizon": 6,
       "targets": 8,
-      "error": 13.7493,
-      "persistence": 16,
-      "random": 20.000000000000007,
-      "majority": 44
+      "error": 14.3877,
+      "persistence": 12,
+      "random": 18.750000000000007,
+      "majority": 50
     },
     {
       "horizon": 12,
       "targets": 8,
-      "error": 20.8263,
-      "persistence": 14,
-      "random": 25.587890624999993,
-      "majority": 98
+      "error": 28.0788,
+      "persistence": 28,
+      "random": 35.82519531249999,
+      "majority": 100
     }
   ],
   "lookback_bars": 256,
