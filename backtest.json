@@ -1,7 +1,7 @@
 {
   "schema": "kronos-walk-forward-v1",
   "retrospective_only": true,
-  "generated_at_utc": "2026-11-03T11:19:57.272352+00:00",
+  "generated_at_utc": "2026-11-03T18:30:26.998340+00:00",
   "timeframe": 5,
   "model": "Kronos-mini",
   "origins": [],
