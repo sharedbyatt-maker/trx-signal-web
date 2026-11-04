@@ -1,42 +1,49 @@
 {
   "schema": "kronos-walk-forward-v1",
   "retrospective_only": true,
-  "generated_at_utc": "2026-11-03T23:35:16.338761+00:00",
+  "generated_at_utc": "2026-11-04T03:11:24.492356+00:00",
   "timeframe": 5,
   "model": "Kronos-mini",
-  "origins": [],
+  "origins": [
+    {
+      "origin_issue": "20261104103010130",
+      "input_end_utc": "2026-11-04T02:09:54+00:00",
+      "simulated_issue_utc": "2026-11-04T02:09:55+00:00",
+      "last_target_end_utc": "2026-11-04T03:10:00+00:00"
+    }
+  ],
   "horizons": [
     {
       "horizon": 1,
-      "targets": 0,
-      "error": 0,
-      "persistence": 0,
-      "random": 0,
-      "majority": 0
+      "targets": 1,
+      "error": 3.1098,
+      "persistence": 3,
+      "random": 3.125,
+      "majority": 2
     },
     {
       "horizon": 3,
-      "targets": 0,
-      "error": 0,
-      "persistence": 0,
-      "random": 0,
-      "majority": 0
+      "targets": 1,
+      "error": 3.5434,
+      "persistence": 3,
+      "random": 3.9276123046875013,
+      "majority": 12
     },
     {
       "horizon": 6,
-      "targets": 0,
-      "error": 0,
-      "persistence": 0,
-      "random": 0,
-      "majority": 0
+      "targets": 1,
+      "error": 6.1556,
+      "persistence": 4,
+      "random": 5.45353291556239,
+      "majority": 26
     },
     {
       "horizon": 12,
-      "targets": 0,
-      "error": 0,
-      "persistence": 0,
-      "random": 0,
-      "majority": 0
+      "targets": 1,
+      "error": 5.5745000000000005,
+      "persistence": 2,
+      "random": 6.359846726531311,
+      "majority": 58
     }
   ],
   "lookback_bars": 256,
