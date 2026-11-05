@@ -1,6 +1,6 @@
 {
   "schema": "kronos-daily-reports-v1",
-  "updated_at_utc": "2026-11-05T03:45:11.330487+00:00",
+  "updated_at_utc": "2026-11-05T11:33:33.028089+00:00",
   "calendar": "Asia/Bangkok",
   "retention_days": 30,
   "unavailable_forecasts": 0,
@@ -573,59 +573,63 @@
       "day_local": "2026-11-05",
       "timeframe": 1,
       "model": "Kronos-mini",
-      "targets": 22,
+      "targets": 33,
       "horizons": [
         {
           "horizon": 3,
-          "targets": 2,
+          "targets": 3,
           "forecasts": [
             "forecasts/20261104103011096-1-9872eae1de2bf49d.json",
-            "forecasts/20261104103011423-1-b720d620dc34a177.json"
+            "forecasts/20261104103011423-1-b720d620dc34a177.json",
+            "forecasts/20261105103010225-1-06d066ff6fae414e.json"
           ],
-          "error": 8.1604,
-          "persistence": 2,
-          "random": 2.9999999999999996,
-          "majority": 6
+          "error": 9.1423,
+          "persistence": 3,
+          "random": 4.499999999999999,
+          "majority": 8
         },
         {
           "horizon": 6,
-          "targets": 2,
+          "targets": 3,
           "forecasts": [
             "forecasts/20261104103011096-1-9872eae1de2bf49d.json",
-            "forecasts/20261104103011423-1-b720d620dc34a177.json"
+            "forecasts/20261104103011423-1-b720d620dc34a177.json",
+            "forecasts/20261105103010225-1-06d066ff6fae414e.json"
           ],
-          "error": 7.1387,
-          "persistence": 0,
-          "random": 3.750000000000001,
-          "majority": 12
+          "error": 10.8454,
+          "persistence": 2,
+          "random": 6.250000000000002,
+          "majority": 16
         },
         {
           "horizon": 12,
-          "targets": 2,
+          "targets": 3,
           "forecasts": [
             "forecasts/20261104103011096-1-9872eae1de2bf49d.json",
-            "forecasts/20261104103011423-1-b720d620dc34a177.json"
+            "forecasts/20261104103011423-1-b720d620dc34a177.json",
+            "forecasts/20261105103010225-1-06d066ff6fae414e.json"
           ],
-          "error": 13.5068,
-          "persistence": 6,
-          "random": 7.541015624999998,
-          "majority": 22
+          "error": 23.1149,
+          "persistence": 10,
+          "random": 11.923828124999996,
+          "majority": 30
         }
       ],
       "forecasts": [
         "forecasts/20261104103011096-1-9872eae1de2bf49d.json",
-        "forecasts/20261104103011423-1-b720d620dc34a177.json"
+        "forecasts/20261104103011423-1-b720d620dc34a177.json",
+        "forecasts/20261105103010225-1-06d066ff6fae414e.json"
       ],
-      "error": 92.0945,
-      "persistence": 24,
-      "random": 49.99023437499999,
-      "majority": 144
+      "error": 144.9158,
+      "persistence": 47,
+      "random": 79.787109375,
+      "majority": 198
     },
     {
       "day_local": "2026-11-05",
       "timeframe": 5,
       "model": "Kronos-mini",
-      "targets": 24,
+      "targets": 35,
       "horizons": [
         {
           "horizon": 1,
@@ -641,49 +645,53 @@
         },
         {
           "horizon": 3,
-          "targets": 2,
+          "targets": 3,
           "forecasts": [
             "forecasts/20261104103011096-5-b851fc79de829911.json",
-            "forecasts/20261104103011423-5-70fc3757f16a90a3.json"
+            "forecasts/20261104103011423-5-70fc3757f16a90a3.json",
+            "forecasts/20261105103010224-5-3707c0c0c2cc11d8.json"
           ],
-          "error": 9.096400000000001,
-          "persistence": 4,
-          "random": 7.567199707031252,
-          "majority": 32
+          "error": 9.947400000000002,
+          "persistence": 6,
+          "random": 11.102050781250002,
+          "majority": 46
         },
         {
           "horizon": 6,
-          "targets": 2,
+          "targets": 3,
           "forecasts": [
             "forecasts/20261104103011096-5-b851fc79de829911.json",
-            "forecasts/20261104103011423-5-70fc3757f16a90a3.json"
+            "forecasts/20261104103011423-5-70fc3757f16a90a3.json",
+            "forecasts/20261105103010224-5-3707c0c0c2cc11d8.json"
           ],
-          "error": 12.363199999999999,
-          "persistence": 2,
-          "random": 9.376645584125072,
-          "majority": 68
+          "error": 16.1343,
+          "persistence": 5,
+          "random": 14.414843211416159,
+          "majority": 96
         },
         {
           "horizon": 12,
-          "targets": 2,
+          "targets": 3,
           "forecasts": [
             "forecasts/20261104103011096-5-b851fc79de829911.json",
-            "forecasts/20261104103011423-5-70fc3757f16a90a3.json"
+            "forecasts/20261104103011423-5-70fc3757f16a90a3.json",
+            "forecasts/20261105103010224-5-3707c0c0c2cc11d8.json"
           ],
-          "error": 20.5935,
-          "persistence": 6,
-          "random": 13.608928330872285,
-          "majority": 128
+          "error": 24.866,
+          "persistence": 7,
+          "random": 19.86619688439503,
+          "majority": 188
         }
       ],
       "forecasts": [
         "forecasts/20261104103011096-5-b851fc79de829911.json",
-        "forecasts/20261104103011423-5-70fc3757f16a90a3.json"
+        "forecasts/20261104103011423-5-70fc3757f16a90a3.json",
+        "forecasts/20261105103010224-5-3707c0c0c2cc11d8.json"
       ],
-      "error": 157.6198,
-      "persistence": 56,
-      "random": 123.24232725396331,
-      "majority": 848
+      "error": 182.9203,
+      "persistence": 72,
+      "random": 176.85662173507376,
+      "majority": 1232
     }
   ],
   "note": "MAE in walk steps; overlapping targets are correlated. No next-round accuracy claim."
