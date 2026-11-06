@@ -1,18 +1,18 @@
 {
-  "attempt_at_utc": "2026-11-06T18:21:08.974552+00:00",
+  "attempt_at_utc": "2026-11-06T23:17:12.763576+00:00",
   "status": "ready",
   "timeframes": {
     "1": {
-      "attempt_at_utc": "2026-11-06T18:21:24.798238+00:00",
+      "attempt_at_utc": "2026-11-06T23:17:26.939747+00:00",
       "status": "ready",
       "timeframe": 1,
-      "latest_file": "forecasts/20261106103011101-1-269b4a7b3d6c5c4d.json"
+      "latest_file": "forecasts/20261106103011397-1-d748a9c2a45c5e27.json"
     },
     "5": {
-      "attempt_at_utc": "2026-11-06T18:21:10.169046+00:00",
+      "attempt_at_utc": "2026-11-06T23:17:13.535091+00:00",
       "status": "ready",
       "timeframe": 5,
-      "latest_file": "forecasts/20261106103011101-5-c1f7fc0b75e12c95.json"
+      "latest_file": "forecasts/20261106103011397-5-9ddc52726a9ff312.json"
     }
   },
   "schedule_minutes": 5,
