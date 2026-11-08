@@ -15,6 +15,9 @@ jobs:
           sources = {
               "health": "https://trx-signal-web.onrender.com/api/health",
               "latest": "https://trx-signal-web.onrender.com/api/latest",
+              "state": "https://trx-signal-web.onrender.com/api/state",
+              "primary_plain": "https://trxchart.com/api/trx-data",
+              "primary_home": "https://trxchart.com/",
               "primary_tail": "https://trxchart.com/api/trx-data?limit=50",
               "primary_fresh": "https://trxchart.com/api/trx-data?limit=1000&_trx_probe=" + str(time.time_ns()),
           }
@@ -27,12 +30,17 @@ jobs:
                   except urllib.error.HTTPError as error:
                       response = error
                   with response:
+                      if name == "primary_home":
+                          print(name, response.code, urllib.parse.urlparse(response.geturl()).path, response.headers.get("Content-Type"), flush=True)
+                          return
                       result = json.load(response)
                       if name == "health":
                           engine = result.get("engine", {})
                           feed = result.get("feed", {})
                           summary = {k: feed.get(k) for k in ("last_issue","result_age_sec","seconds_since_request","request_count","recovery_count","failure_count","last_status_code")}
                           summary.update(status=result.get("status"), connected=engine.get("connected"), worker=engine.get("thread_alive"))
+                      elif name == "state":
+                          summary = {"source": result.get("data_source"), "rounds": len(result.get("history") or []), "feed_status": (result.get("feed_health") or {}).get("status")}
                       elif name == "latest":
                           summary = result.get("round")
                       else:
