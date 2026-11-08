@@ -31,6 +31,7 @@ from core_config import *  # noqa: F401,F403
 from feed_utils import next_issue_number, feed_delay_seconds, source_time_iso
 from core_notifications import consecutive_bs_streak, format_streak_telegram, rsi_alert_state
 from engine_checkpoint import EngineCheckpoint
+from pullback_alert import pullback_alert
 
 session = requests.Session()
 session.headers.update(HEADERS)
@@ -196,7 +197,7 @@ def _tg_worker():
             def delivery_check():
                 if not _admin_telegram_enabled() or (store and not allowed(store.controls['telegram']['settings'],engine,category)):
                     return 'disabled by admin'
-                if category=='signal' and created is not None and time.monotonic()-created>=55:
+                if category in ('signal', 'ema_pullback') and created is not None and time.monotonic()-created>=55:
                     return 'expired signal — discarded'
                 return None
             result=delivery_check()
@@ -1237,6 +1238,7 @@ def engine_loop():
     # Notification-only dedupe: engine already processes each fresh issue once;
     # this additionally guarantees one streak message per issue in this process.
     last_streak_alert_issue = None
+    last_pullback_minute = None
     # ---- tail-mode polling state (local to engine thread) ----
     all_rows = []          # persistent parsed rows (newest at end)
     seen_issues = set()
@@ -1373,6 +1375,15 @@ def engine_loop():
                                     "WIN" if win else "LOSS") if traded else "NO TRADE"
                                 append_signal_history(unresolved_signal)
                                 unresolved_signal = None
+
+                            if is_latest and last_issue and os.environ.get("TRX_EMA_PULLBACK_ALERT", "1") == "1":
+                                minute = source_time_iso(latest.get("block_time"))
+                                minute = minute[:16] if minute else None
+                                if minute and minute != last_pullback_minute:
+                                    last_pullback_minute = minute
+                                    alert = pullback_alert(parsed_history, ema_series, datetime.now(timezone.utc))
+                                    if alert:
+                                        tg_notify(alert, engine="market", category="ema_pullback")
 
                             last_issue = latest["issue"]
                             next_issue = next_issue_number(latest["issue"])

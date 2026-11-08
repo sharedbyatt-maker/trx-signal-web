@@ -58,7 +58,8 @@ def classify(text):
     return engine,kind
 
 def allowed(policy,engine,kind,now=None):
-    if not policy['engines'].get(engine,False) or not policy['types'].get(kind,False):return False
+    policy_kind = 'signal' if kind == 'ema_pullback' else kind
+    if not policy['engines'].get(engine,False) or not policy['types'].get(policy_kind,False):return False
     q=policy['quiet']
     if q['enabled']:
         now=now or datetime.now(ZoneInfo('Asia/Bangkok'))
