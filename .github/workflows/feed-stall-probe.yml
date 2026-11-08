@@ -55,3 +55,12 @@ jobs:
           with concurrent.futures.ThreadPoolExecutor() as pool:
               list(pool.map(read, sources.items()))
           PY
+      - name: Preserve public chart history before recovery
+        run: |
+          curl --fail --silent --show-error --max-time 30 'https://trx-signal-web.onrender.com/api/history?days=30' -o trx-history.json
+          python -c 'import json; d=json.load(open("trx-history.json")); assert len(d["history"]) >= 100; print(d["count"], d["history"][-1][0])'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trx-public-history
+          path: trx-history.json
+          retention-days: 7
