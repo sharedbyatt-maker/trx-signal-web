@@ -1,20 +1,46 @@
-name: Check deployed TronGrid recovery
+name: Verify recovered production rounds
 on:
   push:
     branches: [diagnostics/feed-stall-20261108]
 permissions: {}
 jobs:
-  check:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Check recovery asset and authentication gate
+      - name: Check chart recovery and live source
         run: |
-          set -eu
-          site=https://trx-signal-web.onrender.com
-          curl --fail --silent --show-error --max-time 25 "$site/static/js/admin.js?v=21" -o admin.js
-          grep -q 'recover-trongrid' admin.js
-          grep -q '/api/admin/trongrid/recovery' admin.js
-          status=$(curl --silent --show-error --max-time 25 --output /dev/null --write-out '%{http_code}' "$site/api/admin/trongrid/recovery")
-          test "$status" = 401
-          printf 'Recovery UI asset served. Admin recovery endpoint returned %s without a session.\n' "$status"
+          python - <<'PY'
+          import concurrent.futures, json, urllib.request, urllib.error
+          from datetime import datetime, timedelta
+          base = 'https://trx-signal-web.onrender.com'
+          def read(path):
+              try:
+                  r = urllib.request.urlopen(base+path,timeout=20)
+              except urllib.error.HTTPError as exc:
+                  r = exc
+              with r:
+                  return r.code, json.load(r)
+          paths = ['/api/health','/api/state','/api/history?days=30','/api/latest']
+          with concurrent.futures.ThreadPoolExecutor() as pool:
+              out = dict(zip(paths,pool.map(read,paths)))
+          code, health=out[paths[0]]
+          feed=health.get('feed',{})
+          print('HEALTH',code,health.get('status'),feed.get('last_issue'),feed.get('result_age_sec'),health.get('queues',{}).get('telegram_dropped'), flush=True)
+          code,state=out[paths[1]]
+          print('STATE',code,state.get('data_source'),(state.get('feed_health') or {}).get('status'), flush=True)
+          code,history=out[paths[2]]
+          rows=history['history']
+          gap=[r for r in rows if r[0]>'20261108103010632']
+          ids={r[0] for r in gap}
+          start=datetime(2026,11,8,10,32)
+          def issue(t): return t.strftime('%Y%m%d')+'10301'+f'{t.hour*60+t.minute+1:04d}'
+          expected=[]
+          if gap:
+              dt=start
+              while issue(dt)<=gap[-1][0]:
+                  expected.append(issue(dt));dt+=timedelta(minutes=1)
+          print('HISTORY',code,len(rows),len(gap),len([r for r in expected if r not in ids]),gap[0][0] if gap else None,gap[-1][0] if gap else None, flush=True)
+          code,latest=out[paths[3]]
+          print('LATEST',code,latest.get('round'),flush=True)
+          PY
