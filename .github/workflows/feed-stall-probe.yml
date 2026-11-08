@@ -1,66 +1,20 @@
-name: Read-only live feed diagnostic
+name: Check deployed TronGrid recovery
 on:
   push:
     branches: [diagnostics/feed-stall-20261108]
 permissions: {}
 jobs:
-  compare:
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Compare public health with primary provider
+      - name: Check recovery asset and authentication gate
         run: |
-          python - <<'PY'
-          import concurrent.futures, json, urllib.request, time
-          sources = {
-              "health": "https://trx-signal-web.onrender.com/api/health",
-              "latest": "https://trx-signal-web.onrender.com/api/latest",
-              "state": "https://trx-signal-web.onrender.com/api/state",
-              "primary_plain": "https://trxchart.com/api/trx-data",
-              "primary_home": "https://trxchart.com/",
-              "primary_tail": "https://trxchart.com/api/trx-data?limit=50",
-              "primary_fresh": "https://trxchart.com/api/trx-data?limit=1000&_trx_probe=" + str(time.time_ns()),
-          }
-          def read(item):
-              name, url = item
-              try:
-                  req = urllib.request.Request(url, headers={"Cache-Control":"no-cache","User-Agent":"Mozilla/5.0","Accept":"application/json"})
-                  try:
-                      response = urllib.request.urlopen(req, timeout=12)
-                  except urllib.error.HTTPError as error:
-                      response = error
-                  with response:
-                      if name == "primary_home":
-                          print(name, response.code, urllib.parse.urlparse(response.geturl()).path, response.headers.get("Content-Type"), flush=True)
-                          return
-                      result = json.load(response)
-                      if name == "health":
-                          engine = result.get("engine", {})
-                          feed = result.get("feed", {})
-                          summary = {k: feed.get(k) for k in ("last_issue","result_age_sec","seconds_since_request","request_count","recovery_count","failure_count","last_status_code")}
-                          summary.update(status=result.get("status"), connected=engine.get("connected"), worker=engine.get("thread_alive"))
-                      elif name == "state":
-                          summary = {"source": result.get("data_source"), "rounds": len(result.get("history") or []), "feed_status": (result.get("feed_health") or {}).get("status")}
-                      elif name == "latest":
-                          summary = result.get("round")
-                      else:
-                          rows = result if isinstance(result,list) else result.get("data", [])
-                          row = max(rows, key=lambda r: str(r.get("issueNumber", r.get("issue",""))), default={})
-                          summary = {k: row.get(k) for k in ("issueNumber","issue","blockTime","time")}
-                          if response.code == 403:
-                              print(name, "denial", "cf_mitigated", response.headers.get("cf-mitigated"), "body_shape", list(result)[:12] if isinstance(result, dict) else type(result).__name__, "body", str(result)[:200] if isinstance(result, dict) and set(result) <= {"error","message","status","code"} else "", flush=True)
-                      print(name, response.code, json.dumps(summary), flush=True)
-              except Exception as error:
-                  print(name, type(error).__name__, getattr(error, "code", None), flush=True)
-          with concurrent.futures.ThreadPoolExecutor() as pool:
-              list(pool.map(read, sources.items()))
-          PY
-      - name: Preserve public chart history before recovery
-        run: |
-          curl --fail --silent --show-error --max-time 30 'https://trx-signal-web.onrender.com/api/history?days=30' -o trx-history.json
-          python -c 'import json; d=json.load(open("trx-history.json")); assert len(d["history"]) >= 100; print(d["count"], d["history"][-1][0])'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: trx-public-history
-          path: trx-history.json
-          retention-days: 7
+          set -eu
+          site=https://trx-signal-web.onrender.com
+          curl --fail --silent --show-error --max-time 25 "$site/static/js/admin.js?v=21" -o admin.js
+          grep -q 'recover-trongrid' admin.js
+          grep -q '/api/admin/trongrid/recovery' admin.js
+          status=$(curl --silent --show-error --max-time 25 --output /dev/null --write-out '%{http_code}' "$site/api/admin/trongrid/recovery")
+          test "$status" = 401
+          printf 'Recovery UI asset served. Admin recovery endpoint returned %s without a session.\n' "$status"
