@@ -1,0 +1,47 @@
+name: Read-only live feed diagnostic
+on:
+  push:
+    branches: [diagnostics/feed-stall-20261108]
+permissions: {}
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Compare public health with primary provider
+        run: |
+          python - <<'PY'
+          import concurrent.futures, json, urllib.request, time
+          sources = {
+              "health": "https://trx-signal-web.onrender.com/api/health",
+              "latest": "https://trx-signal-web.onrender.com/api/latest",
+              "primary_tail": "https://trxchart.com/api/trx-data?limit=50",
+              "primary_fresh": "https://trxchart.com/api/trx-data?limit=1000&_trx_probe=" + str(time.time_ns()),
+          }
+          def read(item):
+              name, url = item
+              try:
+                  req = urllib.request.Request(url, headers={"Cache-Control":"no-cache","User-Agent":"Mozilla/5.0","Accept":"application/json"})
+                  try:
+                      response = urllib.request.urlopen(req, timeout=12)
+                  except urllib.error.HTTPError as error:
+                      response = error
+                  with response:
+                      result = json.load(response)
+                      if name == "health":
+                          engine = result.get("engine", {})
+                          feed = result.get("feed", {})
+                          summary = {k: feed.get(k) for k in ("last_issue","result_age_sec","seconds_since_request","request_count","recovery_count","failure_count","last_status_code")}
+                          summary.update(status=result.get("status"), connected=engine.get("connected"), worker=engine.get("thread_alive"))
+                      elif name == "latest":
+                          summary = result.get("round")
+                      else:
+                          rows = result if isinstance(result,list) else result.get("data", [])
+                          row = max(rows, key=lambda r: str(r.get("issueNumber", r.get("issue",""))), default={})
+                          summary = {k: row.get(k) for k in ("issueNumber","issue","blockTime","time")}
+                      print(name, response.code, json.dumps(summary), flush=True)
+              except Exception as error:
+                  print(name, type(error).__name__, getattr(error, "code", None), flush=True)
+          with concurrent.futures.ThreadPoolExecutor() as pool:
+              list(pool.map(read, sources.items()))
+          PY
