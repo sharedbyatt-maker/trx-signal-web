@@ -240,3 +240,25 @@ def test_public_state_excludes_admin_key_hints(monkeypatch):
         response=core.api_state()
         assert 'feed_runtime' not in response.json
         assert 'SECRET-HINT' not in response.get_data(as_text=True)
+
+
+def test_key_only_save_does_not_require_live_rounds_or_enable_backup(admin, monkeypatch):
+    client, store, core, _ = admin
+    login(client)
+    _, post, calls = fixture_blocks()
+    core.STATE['history'] = []
+    key = 'PRIVATE-TEST-KEY'
+    value = {'mode': 'disabled', 'key': key, 'revision': 0}
+    monkeypatch.setattr('trongrid_feed.requests.post', lambda *a, **k: SimpleNamespace(status_code=403))
+    assert client.put('/api/admin/trongrid', json=value, headers=headers(client)).status_code == 400
+    assert store.trongrid_config() == (0, DEFAULT_TRONGRID)
+
+    monkeypatch.setattr('trongrid_feed.requests.post', post)
+    saved = client.put('/api/admin/trongrid', json=value, headers=headers(client))
+    assert saved.status_code == 200
+    assert saved.json['settings']['mode'] == 'disabled'
+    assert saved.json['settings']['key_set'] is True
+    assert key not in saved.text
+    assert len(calls) == 1 and calls[0][1]['json'] == {'detail': False}
+    assert client.put('/api/admin/trongrid', json={'mode': 'backup', 'revision': 1}, headers=headers(client)).status_code == 400
+    assert store.trongrid_config() == (1, {'mode': 'disabled', 'key': key})

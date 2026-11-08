@@ -501,6 +501,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                     raise RuntimeError('TronGrid settings changed. Reload before saving.')
                 if request.method=='DELETE':value=copy.deepcopy(DEFAULT_TRONGRID)
                 elif value['mode']!='disabled':probe_trongrid(value)
+                elif value['key']:TronGridFeed().fetch(value['key'], (), probe=True, key_only=True)
                 if not authorized():return jsonify(error='Admin session expired during TronGrid verification.'),401
                 store.save_trongrid(value,revision)
                 from trongrid_feed import LIVE_TRONGRID

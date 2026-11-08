@@ -69,7 +69,7 @@ class TronGridFeed:
             self.head = None
             self.checked_at = self.retry_after = 0
 
-    def fetch(self, key, live, post=None, probe=False):
+    def fetch(self, key, live, post=None, probe=False, key_only=False):
         post = post or requests.post
         with self.lock:
             if key != self.key:
@@ -111,6 +111,8 @@ class TronGridFeed:
                 if age > 80 or age < -10:
                     raise ValueError('TronGrid latest block is stale or in the future.')
                 self.head, self.checked_at = raw, time.monotonic()
+            if key_only:
+                return
             h = self.head
             latest = (h['timestamp'] // 60000) * 60000 + 54000
             if latest > h['timestamp']:
