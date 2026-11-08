@@ -39,6 +39,8 @@ jobs:
                           rows = result if isinstance(result,list) else result.get("data", [])
                           row = max(rows, key=lambda r: str(r.get("issueNumber", r.get("issue",""))), default={})
                           summary = {k: row.get(k) for k in ("issueNumber","issue","blockTime","time")}
+                          if response.code == 403:
+                              print(name, "denial", "cf_mitigated", response.headers.get("cf-mitigated"), "body_shape", list(result)[:12] if isinstance(result, dict) else type(result).__name__, "body", str(result)[:200] if isinstance(result, dict) and set(result) <= {"error","message","status","code"} else "", flush=True)
                       print(name, response.code, json.dumps(summary), flush=True)
               except Exception as error:
                   print(name, type(error).__name__, getattr(error, "code", None), flush=True)
