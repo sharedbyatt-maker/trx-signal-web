@@ -69,7 +69,7 @@ class TronGridFeed:
             self.head = None
             self.checked_at = self.retry_after = 0
 
-    def fetch(self, key, live, post=None, probe=False):
+    def fetch(self, key, live, post=None, probe=False, key_only=False, recovery=False):
         post = post or requests.post
         with self.lock:
             if key != self.key:
@@ -111,10 +111,21 @@ class TronGridFeed:
                 if age > 80 or age < -10:
                     raise ValueError('TronGrid latest block is stale or in the future.')
                 self.head, self.checked_at = raw, time.monotonic()
+            if key_only:
+                return
             h = self.head
             latest = (h['timestamp'] // 60000) * 60000 + 54000
             if latest > h['timestamp']:
                 latest -= 60000
+            if recovery and live:
+                from feed_utils import source_time_utc
+                cursor = source_time_utc(live[-1].get('block_time'))
+                if cursor is None:
+                    raise ValueError('Recovery cursor has an invalid timestamp.')
+                cursor_ms = int(cursor.timestamp() * 1000)
+                if latest < cursor_ms:
+                    raise ValueError('TronGrid head is behind the recovery cursor.')
+                latest = min(latest, cursor_ms + 4 * 60000)
             targets = [latest - i * 60000 for i in range(3, -1, -1)]
             # Include every missing round between the existing live cursor and head.
             # Bound catch-up; never leap over unverified intermediate rounds.
@@ -148,7 +159,7 @@ class TronGridFeed:
                 self.rows = {}
                 raise ValueError('TronGrid results do not match at least 3 recent live rounds.')
             self.rows = {t: r for t, r in sorted(candidate.items())[-64:]}
-            return RoundResponse([self.rows[t] for t in sorted(self.rows)])
+            return RoundResponse([self.rows[t] for t in sorted(self.rows) if not recovery or t <= latest])
 
 
 LIVE_TRONGRID = TronGridFeed()

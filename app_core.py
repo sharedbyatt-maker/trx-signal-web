@@ -167,6 +167,7 @@ class TelegramNotification(str):
 
 
 _admin_history_refresh_requested = threading.Event()
+_trongrid_recovery_ready = threading.Event()
 _admin_history_refresh_result = {}
 
 def _admin_telegram_enabled():
@@ -1243,6 +1244,8 @@ def engine_loop():
     all_rows = []          # persistent parsed rows (newest at end)
     seen_issues = set()
     have_full = False      # boot-time full snapshot done?
+    recovery_seeded = False
+    check_recovery_snapshot = True
     err_streak = 0
     arr_strat = []         # walk-RSI series for staking engine
     types_strat = []       # parallel types (chronological)
@@ -1256,7 +1259,25 @@ def engine_loop():
             # to a small provider default after an upstream behavior change.
             admin_refresh = _admin_history_refresh_requested.is_set()
             timeout_sec = 30 if not have_full or admin_refresh else 6
-            res = fetch_feed(MAX_FULL_ROWS if not have_full or admin_refresh else TAIL_LIMIT,timeout_sec)
+            recovered = None
+            if check_recovery_snapshot or _trongrid_recovery_ready.is_set():
+                check_recovery_snapshot = False
+                _trongrid_recovery_ready.clear()
+                store = globals().get('_admin_store')
+                if store and hasattr(store, 'path'):
+                    path = store.path.with_suffix('.trongrid-history.json')
+                    if path.exists() and store.trongrid_config()[1]['mode'] in ('backup', 'live'):
+                        from trongrid_recovery import read_snapshot
+                        seed = read_snapshot(path, parse_history, MAX_FULL_ROWS)
+                        if not all_rows or seed[-1]['issue_int'] > all_rows[-1]['issue_int']:
+                            from trongrid_feed import RoundResponse
+                            recovered = RoundResponse([{'issue': r['issue'], 'number': r['number'],
+                                                        'time': r['block_time']} for r in seed])
+                            # The snapshot supersedes the old buffer. The usual
+                            # engine replay keeps the existing settlement cursor.
+                            have_full = False
+                            recovery_seeded = True
+            res = recovered or fetch_feed(MAX_FULL_ROWS if not have_full or admin_refresh else TAIL_LIMIT,timeout_sec)
             if res.status_code == 200:
                 data = res.json()
                 data_list = data if isinstance(data, list) else data.get("data", []) if isinstance(data, dict) else []
@@ -1321,7 +1342,7 @@ def engine_loop():
                             analysis = analyze_all_in_one(all_rows)
                             latest = all_rows[-1]
                             with LOCK:
-                                STATE.update(connected=True, error=None, history=all_rows[-HISTORY_KEEP:],
+                                STATE.update(connected=recovered is None, error=None, history=all_rows[-HISTORY_KEEP:],
                                     full_history=full_hist, analysis=analysis,
                                     next_issue=next_issue_number(latest['issue']),
                                     last_result_received_mono=received_at,
@@ -1331,7 +1352,7 @@ def engine_loop():
                                         'from':full_hist[0]['issue'],'to':full_hist[-1]['issue']})
                     for parsed_history in completed_prefixes(all_rows, last_issue):
                         is_latest = parsed_history[-1]["issue"] == all_rows[-1]["issue"]
-                        _notification_context.historical = not is_latest
+                        _notification_context.historical = recovered is not None or not is_latest
 
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         latest = parsed_history[-1]
@@ -1708,7 +1729,7 @@ def engine_loop():
                                     "to": full_hist[-1]["issue"] if full_hist else None,
                                 }
                                 STATE.update({
-                                    "connected": is_latest,
+                                    "connected": is_latest and recovered is None,
                                     "last_result_received_mono": received_at,
                                     "error": None,
                                     "last_update": now,
@@ -1756,14 +1777,14 @@ def engine_loop():
                     _notification_context.historical = False
             else:
                 err_streak += 1
-                if have_full and err_streak >= 5:
+                if have_full and not recovery_seeded and err_streak >= 5:
                     have_full = False   # tail fetch ထပ်ခါထပ်ခါ fail → full snapshot ပြန်ယူ
                 with LOCK:
                     STATE["connected"] = False
                     STATE["error"] = f"HTTP {res.status_code}"
         except Exception as e:
             err_streak += 1
-            if have_full and err_streak >= 5:
+            if have_full and not recovery_seeded and err_streak >= 5:
                 have_full = False
             with LOCK:
                 STATE["connected"] = False

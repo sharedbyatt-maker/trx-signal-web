@@ -161,6 +161,36 @@ function fillTronGrid(data){trongridData=data;byId('trongrid-mode').value=data.s
 async function loadTronGrid(){fillTronGrid(await api('/api/admin/trongrid'));}
 byId('check-trongrid').addEventListener('click',()=>run(async()=>{const result=await api('/api/admin/trongrid/check','POST',trongridDraft());byId('trongrid-state').textContent=`Verified · ${result.matched_rounds} matching rounds · Latest ${result.latest_issue}`;},'TronGrid verified. No settings changed.'));
 byId('trongrid-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{if(!trongridData)throw Error('TronGrid settings are still loading.');fillTronGrid(await api('/api/admin/trongrid','PUT',{revision:trongridData.revision,...trongridDraft()}));await Promise.all([loadEvents(),loadApiRuntime()]);},'TronGrid settings saved. Strategy rules unchanged.');});
+byId('save-trongrid-key-only').addEventListener('click',()=>run(async()=>{
+  if(!trongridData)throw Error('TronGrid settings are still loading.');
+  const key=trongridDraft().key;
+  if(!key)throw Error('Enter the TronGrid API key to check and save it.');
+  if(trongridData.settings.mode!=='disabled')throw Error('Key-only save is available while TronGrid is disabled.');
+  fillTronGrid(await api('/api/admin/trongrid','PUT',{revision:trongridData.revision,mode:'disabled',key}));
+  await Promise.all([loadEvents(),loadApiRuntime()]);
+},'TronGrid key verified and saved. Backup is disabled until round verification passes.'));
+let recoveryTimer;
+async function showTronGridRecovery(){
+  const result=await api('/api/admin/trongrid/recovery');
+  const latest=result.latest_issue?' · '+result.latest_issue:'';
+  byId('trongrid-recovery-status').textContent=result.status==='idle'?'':
+    `Recovery ${result.status}${latest} · ${result.added||0} added${result.error?' · '+result.error:''}`;
+  clearTimeout(recoveryTimer);
+  if(result.status==='running'){
+    recoveryTimer=setTimeout(()=>showTronGridRecovery().catch(()=>{}),4000);
+  }else if(result.status==='complete'){
+    await Promise.all([loadTronGrid(),loadApiRuntime()]);
+  }
+}
+byId('recover-trongrid').addEventListener('click',()=>run(async()=>{
+  if(!trongridData)throw Error('TronGrid settings are still loading.');
+  const draft=trongridDraft();
+  const file=byId('trongrid-history-file').files[0];
+  const history=file?JSON.parse(await file.text()).history:undefined;
+  await api('/api/admin/trongrid/recovery','POST',{revision:trongridData.revision,...draft,history});
+  await showTronGridRecovery();
+},'Recovery started. Follow progress under TronGrid.'));
+showTronGridRecovery().catch(()=>{});
 byId('reload-trongrid').addEventListener('click',()=>run(loadTronGrid,'Saved TronGrid settings loaded.'));
 byId('clear-trongrid').addEventListener('click',()=>run(async()=>{if(!trongridData)throw Error('TronGrid settings are still loading.');fillTronGrid(await api('/api/admin/trongrid','DELETE',{revision:trongridData.revision}));await Promise.all([loadEvents(),loadApiRuntime()]);},'TronGrid disabled and API key removed.'));
 
@@ -232,7 +262,7 @@ run(async()=>{await loadSettings();const results=await Promise.allSettled([refre
 
 function restoreReady(){return settings&&strategyData.l1&&strategyData.twelve&&policyData&&messageData;}
 function updateMaintenanceControls(){for(const btn of document.querySelectorAll('[data-action]'))btn.disabled=busy||maintenanceBusy;}
-function updateReadyControls(){updateMaintenanceControls();updateOrderControls();for(const id of ['trade-refresh','journal-refresh'])byId(id).disabled=busy||workspaceRefreshing;for(const id of ['journal-server-refresh','journal-disconnect'])byId(id).disabled=!journalAccount?.active;for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
+function updateReadyControls(){updateMaintenanceControls();updateOrderControls();for(const id of ['trade-refresh','journal-refresh'])byId(id).disabled=busy||workspaceRefreshing;for(const id of ['journal-server-refresh','journal-disconnect'])byId(id).disabled=!journalAccount?.active;for(const id of ['journal-save','journal-import','journal-export'])byId(id).disabled=!journalData;byId('restore-backup').disabled=!restoreReady();byId('export-reports').disabled=!reportData;for(const [id,ready] of [['check-trongrid',trongridData],['save-trongrid',trongridData],['save-trongrid-key-only',trongridData?.settings.mode==='disabled'],['clear-trongrid',trongridData],['reload-trongrid',trongridData],['default-feed',feedData],['check-feed',feedData],['reset-policy',policyData],['save-policy',policyData],['preview-streak',policyData],['save-messages',messageData],['default-message',messageData],['message-mode',messageData],['message-engine',messageData],['message-category',messageData]])byId(id).disabled=!ready;byId('feed-form').querySelector('button[type="submit"]').disabled=!feedData;}
 
 byId('journal-copy-sync').addEventListener('click',()=>run(async()=>{
   const response=await fetch('/static/js/trxchart-history-bridge.js',{credentials:'same-origin'});

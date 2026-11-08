@@ -240,3 +240,59 @@ def test_public_state_excludes_admin_key_hints(monkeypatch):
         response=core.api_state()
         assert 'feed_runtime' not in response.json
         assert 'SECRET-HINT' not in response.get_data(as_text=True)
+
+
+def test_key_only_save_does_not_require_live_rounds_or_enable_backup(admin, monkeypatch):
+    client, store, core, _ = admin
+    login(client)
+    _, post, calls = fixture_blocks()
+    core.STATE['history'] = []
+    key = 'PRIVATE-TEST-KEY'
+    value = {'mode': 'disabled', 'key': key, 'revision': 0}
+    monkeypatch.setattr('trongrid_feed.requests.post', lambda *a, **k: SimpleNamespace(status_code=403))
+    assert client.put('/api/admin/trongrid', json=value, headers=headers(client)).status_code == 400
+    assert store.trongrid_config() == (0, DEFAULT_TRONGRID)
+
+    monkeypatch.setattr('trongrid_feed.requests.post', post)
+    saved = client.put('/api/admin/trongrid', json=value, headers=headers(client))
+    assert saved.status_code == 200
+    assert saved.json['settings']['mode'] == 'disabled'
+    assert saved.json['settings']['key_set'] is True
+    assert key not in saved.text
+    assert len(calls) == 1 and calls[0][1]['json'] == {'detail': False}
+    assert client.put('/api/admin/trongrid', json={'mode': 'backup', 'revision': 1}, headers=headers(client)).status_code == 400
+    assert store.trongrid_config() == (1, {'mode': 'disabled', 'key': key})
+
+
+def test_resumable_trongrid_recovery_verifies_overlap_and_fills_long_gap(tmp_path):
+    from app_core import parse_history
+    from feed_utils import source_time_utc
+    from trongrid_recovery import extend_rows, read_snapshot, write_snapshot
+
+    live, post, calls = fixture_blocks()
+    latest = int(source_time_utc(live[-1]['block_time']).timestamp() * 1000)
+    head = post(ENDPOINT, json={'detail': False}).json()['block_header']['raw_data']
+    raw = []
+    for minutes_ago in range(111, 11, -1):
+        stamp = latest - minutes_ago * 60000
+        height = head['number'] + (stamp - head['timestamp']) // 3000
+        raw.append(block_record(post(ENDPOINT, json={'id_or_num': str(height)}).json(), stamp))
+    rows = parse_history(raw)
+    with pytest.raises(ValueError, match='8 minutes'):
+        TronGridFeed().fetch('key', rows, post=post)
+    bad = copy.deepcopy(rows)
+    bad[-1]['number'] = (bad[-1]['number'] + 1) % 10
+    with pytest.raises(ValueError, match='do not match'):
+        TronGridFeed().fetch('key', bad, post=post, recovery=True)
+
+    checkpoint = tmp_path / 'history.json'
+    for expected_count in (4, 4, 4, 0):
+        # A new adapter on each iteration simulates a restarted worker.
+        response = TronGridFeed().fetch('key', rows, post=post, recovery=True)
+        additions = extend_rows(rows, response, parse_history)
+        assert len(additions) == expected_count
+        rows.extend(additions)
+        write_snapshot(checkpoint, rows)
+        rows = read_snapshot(checkpoint, parse_history, 1000)
+    assert rows[-1]['issue'] == live[-1]['issue']
+    assert len(rows) == 112
