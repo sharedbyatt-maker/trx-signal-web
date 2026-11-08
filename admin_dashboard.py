@@ -19,6 +19,7 @@ from telegram_controls import TELEGRAM_DEFAULTS, validate_telegram, validate_str
 from feed_connection import DEFAULT_FEED, validate_feed, public_feed, request_feed, masked_key
 from trongrid_feed import DEFAULT_TRONGRID, validate_trongrid, public_trongrid, TronGridFeed
 from feed_utils import source_age_seconds
+from trongrid_recovery import extend_rows, read_snapshot, seed_rows, write_snapshot
 from core_notifications import format_streak_telegram
 from telegram_messages import MESSAGE_DEFAULTS, VARIABLES, ENGINES, KINDS, validate_messages, render_message
 
@@ -467,6 +468,79 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
         return {'ok':True,'rows':len(rows),'matched_rounds':sum(r['issueNumber'] in recent for r in rows),
                 'latest_issue':rows[-1]['issueNumber'],'note':'No settings changed. No wallet transaction or Telegram message sent.'}
 
+    recovery_lock = threading.Lock()
+    recovery = {'status': 'idle'}
+
+    @app.route('/api/admin/trongrid/recovery', methods=['GET', 'POST'])
+    @protect
+    def recover_trongrid():
+        if request.method == 'GET':
+            with recovery_lock:
+                return jsonify(recovery.copy())
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify(error='Provide TronGrid recovery settings.'), 400
+        with recovery_lock:
+            if recovery['status'] == 'running':
+                return jsonify(error='TronGrid recovery is already running.'), 409
+            try:
+                revision, value = candidate_trongrid(data)
+                if revision != data.get('revision'):
+                    return jsonify(error='TronGrid settings changed. Reload before recovery.'), 409
+                if value['mode'] not in ('live', 'backup'):
+                    raise ValueError('Select Backup or Live and enter a TronGrid key.')
+                partial = store.path.with_suffix('.trongrid-progress.json')
+                ready = store.path.with_suffix('.trongrid-history.json')
+                history = data.get('history')
+                if history is None:
+                    with core.LOCK:
+                        current = list(core.STATE.get('full_history') or [])
+                    history = [[r['issue'], r['number'], r['block_time']] for r in current]
+                if partial.exists() and history is not None and not data.get('new_snapshot'):
+                    rows = read_snapshot(partial, core.parse_history, core.MAX_FULL_ROWS)
+                else:
+                    rows = seed_rows(history, core.parse_history, core.MAX_FULL_ROWS)
+            except (ValueError, OSError) as exc:
+                return jsonify(error=str(exc) if isinstance(exc, ValueError) else 'Recovery snapshot could not be read.'), 400
+            recovery.update(status='running', latest_issue=rows[-1]['issue'], added=0, error=None)
+
+        def work():
+            adapter = TronGridFeed()
+            try:
+                for _ in range(240):
+                    if store.trongrid_config()[0] != revision:
+                        raise ValueError('TronGrid settings changed. Reload and resume.')
+                    additions = extend_rows(rows, adapter.fetch(value['key'], rows, recovery=True),
+                                            core.parse_history)
+                    if not additions:
+                        # Store the verified snapshot before enabling the source.
+                        with store.lock:
+                            if store.trongrid_config()[0] != revision:
+                                raise ValueError('TronGrid settings changed. Reload and resume.')
+                            write_snapshot(ready, rows)
+                            store.save_trongrid(value, revision)
+                        core._trongrid_recovery_ready.set()
+                        partial.unlink(missing_ok=True)
+                        with recovery_lock:
+                            recovery.update(status='complete')
+                        return
+                    rows.extend(additions)
+                    del rows[:-core.MAX_FULL_ROWS]
+                    write_snapshot(partial, rows)
+                    with recovery_lock:
+                        recovery.update(latest_issue=rows[-1]['issue'], added=recovery['added'] + len(additions))
+                    time.sleep(0.3)
+                raise ValueError('Recovery paused after 960 rounds. Resume to continue.')
+            except (ValueError, RuntimeError) as exc:
+                with recovery_lock:
+                    recovery.update(status='failed', error=str(exc))
+            except Exception:
+                with recovery_lock:
+                    recovery.update(status='failed', error='Recovery interrupted. Resume from the last saved round.')
+
+        threading.Thread(target=work, name='trongrid-recovery', daemon=True).start()
+        return jsonify(status='running'), 202
+
     @app.get('/api/admin/feed/status')
     @protect
     def feed_runtime_status():
@@ -501,6 +575,7 @@ def install_admin(core, health_fn, l1_service, cache_clear, password_hash=None, 
                     raise RuntimeError('TronGrid settings changed. Reload before saving.')
                 if request.method=='DELETE':value=copy.deepcopy(DEFAULT_TRONGRID)
                 elif value['mode']!='disabled':probe_trongrid(value)
+                elif value['key']:TronGridFeed().fetch(value['key'], (), probe=True, key_only=True)
                 if not authorized():return jsonify(error='Admin session expired during TronGrid verification.'),401
                 store.save_trongrid(value,revision)
                 from trongrid_feed import LIVE_TRONGRID
