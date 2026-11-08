@@ -1,20 +1,20 @@
 {
-  "attempt_at_utc": "2026-11-08T19:56:38.077255+00:00",
-  "status": "ready",
+  "attempt_at_utc": "2026-11-08T23:21:53.816929+00:00",
+  "status": "failed",
   "timeframes": {
     "1": {
-      "attempt_at_utc": "2026-11-08T19:56:53.033918+00:00",
-      "status": "ready",
+      "attempt_at_utc": "2026-11-08T23:21:55.549093+00:00",
+      "status": "failed",
       "timeframe": 1,
-      "latest_file": "forecasts/20261108103011196-1-1caae72b3bce79ea.json"
+      "reason": "Source feed is stale or future-dated; no inference published"
     },
     "5": {
-      "attempt_at_utc": "2026-11-08T19:56:38.742759+00:00",
-      "status": "ready",
+      "attempt_at_utc": "2026-11-08T23:21:54.753468+00:00",
+      "status": "failed",
       "timeframe": 5,
-      "latest_file": "forecasts/20261108103011196-5-0f302cfbdc531171.json"
+      "reason": "Source feed is stale or future-dated; no inference published"
     }
   },
   "schedule_minutes": 5,
-  "reason": ""
+  "reason": "5m inference: Source feed is stale or future-dated; no inference published; 1m inference: Source feed is stale or future-dated; no inference published"
 }
