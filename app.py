@@ -40,6 +40,7 @@ from l1_capital import install_l1_capital
 _original_session_get = core.session.get
 _feed_cache_lock = threading.Lock()
 _feed_cache = {}
+_feed_denials = {}
 _feed_health = {
     "last_issue": "", "last_advance": 0.0, "last_http_ok": 0.0,
     "last_request": 0.0, "last_latency_ms": None, "last_status_code": None,
@@ -186,6 +187,15 @@ def _resilient_session_get(url, *args, **kwargs):
         hdr.update({"Cache-Control": "no-cache, no-store, max-age=0", "Pragma": "no-cache"})
         kwargs["headers"] = hdr
 
+    if is_feed:
+        # Keep one denial per polling mode. Changing the endpoint or credentials
+        # invalidates the wait immediately, and admin probes bypass this wrapper.
+        denial_key = (url_s, tuple(sorted((kwargs.get("headers") or {}).items())))
+        with _feed_cache_lock:
+            denial = _feed_denials.get(is_tail)
+            if denial and denial[0] == denial_key and time.monotonic() < denial[1]:
+                return denial[2]
+
     try:
         response = _original_session_get(actual_url, *args, **kwargs)
         if is_feed:
@@ -194,6 +204,13 @@ def _resilient_session_get(url, *args, **kwargs):
                 _feed_health["last_latency_ms"] = round((time.monotonic() - request_started) * 1000, 1)
                 _feed_health["last_status_code"] = int(response.status_code)
                 _feed_health["request_count"] = int(_feed_health.get("request_count", 0)) + 1
+                if response.status_code in (403, 429):
+                    _feed_denials[is_tail] = (denial_key, time.monotonic() + 30, response)
+                else:
+                    _feed_denials.pop(is_tail, None)
+            if response.status_code in (403, 429):
+                _publish_feed_health("OFFLINE", f"Upstream HTTP {response.status_code}; retrying in 30s")
+                print(f"[FEED] upstream HTTP {response.status_code}; pausing this poll mode for 30s", flush=True)
         if not is_feed or response.status_code != 200:
             return response
 
@@ -570,6 +587,7 @@ from admin_dashboard import install_admin
 def _admin_clear_caches():
     with _feed_cache_lock:
         _feed_cache.clear()
+        _feed_denials.clear()
     with core.LOCK:
         core._rsi_ext_cache = {'ts': 0.0, 'data': None}
 

@@ -80,9 +80,26 @@ def test_recovery_does_not_regress_issue():
     app.FEED_RECOVERY_COOLDOWN_SEC = 0.0
     assert app._recovery_fetch("300") is None
 
+def test_forbidden_feed_waits_then_resumes_and_allows_new_credentials():
+    reset()
+    base = app.core.URL_DATA + "?limit=50"
+    denied, fresh = Resp(100, status=403), Resp(101)
+    with patch.object(app, "_feed_denials", {}), patch.object(
+        app, "_original_session_get", side_effect=[denied, denied, fresh]
+    ) as upstream, patch.object(app.time, "monotonic", return_value=100) as clock:
+        assert app._resilient_session_get(base, headers={"Authorization": "old"}) is denied
+        assert app._resilient_session_get(base, headers={"Authorization": "old"}) is denied
+        assert upstream.call_count == 1
+        assert app._resilient_session_get(base, headers={"Authorization": "new"}) is denied
+        clock.return_value = 131
+        assert app._resilient_session_get(base, headers={"Authorization": "new"}) is fresh
+        assert upstream.call_count == 3
+        assert app._feed_health["last_issue"] == "101"
+
+
 if __name__ == "__main__":
     test_stale_200_recovers_newer_issue()
     test_timeout_attempts_recovery_before_cache()
     test_recovery_does_not_regress_issue()
+    test_forbidden_feed_waits_then_resumes_and_allows_new_credentials()
     print("FEED RECOVERY TESTS: ALL PASSED")
-
