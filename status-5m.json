@@ -1,5 +1,5 @@
 {
-  "attempt_at_utc": "2026-11-09T02:45:59.373644+00:00",
+  "attempt_at_utc": "2026-11-09T10:24:52.883274+00:00",
   "status": "failed",
   "timeframe": 5,
   "reason": "Source feed is stale or future-dated; no inference published"
