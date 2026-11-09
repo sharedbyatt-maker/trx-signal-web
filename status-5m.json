@@ -1,6 +1,6 @@
 {
-  "attempt_at_utc": "2026-11-09T10:24:52.883274+00:00",
-  "status": "failed",
+  "attempt_at_utc": "2026-11-09T20:53:04.767028+00:00",
+  "status": "ready",
   "timeframe": 5,
-  "reason": "Source feed is stale or future-dated; no inference published"
+  "latest_file": "forecasts/20261109103011253-5-12eee0ae1d6ba000.json"
 }
