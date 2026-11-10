@@ -2,6 +2,18 @@
   "schema": "kronos-index-v1",
   "forecasts": [
     {
+      "file": "forecasts/20261110103010180-1-08f2dcecb9ebbde1.json",
+      "timeframe": 1,
+      "origin_issue": "20261110103010180",
+      "generated_at_utc": "2026-11-10T03:00:12.994667+00:00"
+    },
+    {
+      "file": "forecasts/20261110103010179-5-77e17c08c3b3aba8.json",
+      "timeframe": 5,
+      "origin_issue": "20261110103010179",
+      "generated_at_utc": "2026-11-10T02:59:58.719021+00:00"
+    },
+    {
       "file": "forecasts/20261109103011253-1-eb39a8cca17f7631.json",
       "timeframe": 1,
       "origin_issue": "20261109103011253",
