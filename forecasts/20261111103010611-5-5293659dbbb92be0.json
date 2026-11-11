@@ -1,0 +1,124 @@
+{
+  "schema": "kronos-round-snapshot-v1",
+  "data_source": "big-small-walk",
+  "model": "Kronos-mini",
+  "timeframe_minutes": 5,
+  "origin_issue": "20261111103010611",
+  "forecast_close": [
+    122.6349,
+    122.673,
+    124.3378,
+    126.6112,
+    127.6058,
+    128.1734,
+    130.8059,
+    129.3307,
+    129.4769,
+    129.6234,
+    129.7894,
+    129.9373
+  ],
+  "forecast_ohlc": [
+    {
+      "open": 122.6316,
+      "high": 123.7602,
+      "low": 121.2055,
+      "close": 122.6349
+    },
+    {
+      "open": 122.607,
+      "high": 123.7101,
+      "low": 121.2805,
+      "close": 122.673
+    },
+    {
+      "open": 122.9382,
+      "high": 124.8752,
+      "low": 122.4124,
+      "close": 124.3378
+    },
+    {
+      "open": 125.0955,
+      "high": 127.8209,
+      "low": 124.5735,
+      "close": 126.6112
+    },
+    {
+      "open": 127.1298,
+      "high": 128.8017,
+      "low": 126.237,
+      "close": 127.6058
+    },
+    {
+      "open": 127.9717,
+      "high": 129.3816,
+      "low": 126.9669,
+      "close": 128.1734
+    },
+    {
+      "open": 128.7514,
+      "high": 131.3739,
+      "low": 128.1371,
+      "close": 130.8059
+    },
+    {
+      "open": 130.8025,
+      "high": 131.2393,
+      "low": 128.743,
+      "close": 129.3307
+    },
+    {
+      "open": 129.7155,
+      "high": 130.707,
+      "low": 128.5272,
+      "close": 129.4769
+    },
+    {
+      "open": 129.6857,
+      "high": 130.7315,
+      "low": 128.6451,
+      "close": 129.6234
+    },
+    {
+      "open": 129.8829,
+      "high": 130.8742,
+      "low": 128.8518,
+      "close": 129.7894
+    },
+    {
+      "open": 130.0369,
+      "high": 130.9954,
+      "low": 129.0208,
+      "close": 129.9373
+    }
+  ],
+  "generated_at_utc": "2026-11-11T10:11:09.143831+00:00",
+  "seed": 0,
+  "torch_version": "2.15.0+cpu",
+  "model_revision": "f4e68697d9d5aed55cef5c96aabc3376bcad9f81",
+  "tokenizer_revision": "26966d0035065a0cae0ebad7af8ece35bc1fb51c",
+  "origin_bar_time_local": "2026-11-11T16:40:00",
+  "source_timezone": "Asia/Yangon",
+  "origin_close": 122.0,
+  "input_sha256": "aae60f8b9d4da84191d1548c0ef7662c99afcbf7e068504c4471a6dff095befd",
+  "forecast_delta": [
+    0.6349,
+    0.673,
+    2.3378,
+    4.6112,
+    5.6058,
+    6.1734,
+    8.8059,
+    7.3307,
+    7.4769,
+    7.6234,
+    7.7894,
+    7.9373
+  ],
+  "inference_seconds": 0.811,
+  "lookback_bars": 256,
+  "source": "official-kronos-inference-cpu",
+  "research_only": true,
+  "run_url": "https://github.com/sharedbyatt-maker/trx-signal-web/actions/runs/43001350991",
+  "code_revision": "6322c1cd18fde6414e8989f5b012e1c7758479ac"
+}
